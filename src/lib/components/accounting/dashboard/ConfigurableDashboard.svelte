@@ -12,15 +12,30 @@
 		saveDashboardLayout,
 		type DashboardLayout
 	} from '$lib/apis/accounting';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+	import Plus from '@lucide/svelte/icons/plus';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Check from '@lucide/svelte/icons/check';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
 	import WidgetCard from './WidgetCard.svelte';
 	import { createCommonData, COMMON_DATA_CTX } from './store';
-	import { WIDGETS, WIDGET_BY_TYPE, defaultLayout, type LayoutItem, type WidgetCategory } from './registry';
+	import {
+		WIDGETS,
+		WIDGET_BY_TYPE,
+		defaultLayout,
+		type LayoutItem,
+		type WidgetCategory
+	} from './registry';
 
 	export let companyId: number;
 
 	const i18n: any = getContext('i18n');
-	const T = (k: string) => (i18n?.t ? i18n.t(k) : k);
+	// The context is a store of i18next: read it with $ (i18n.t does not exist on the store).
+	const T = (k: string) => ($i18n?.t ? $i18n.t(k) : k);
 
 	// ── Shared common-data store (KPI tiles + alerts read from this) ──
 	const common = createCommonData();
@@ -40,7 +55,10 @@
 	let idSeq = 1;
 
 	const categories: WidgetCategory[] = ['KPI', 'Charts', 'Lists', 'Panels'];
-	$: catalogByCat = categories.map((c) => ({ cat: c, items: WIDGETS.filter((w) => w.category === c) }));
+	$: catalogByCat = categories.map((c) => ({
+		cat: c,
+		items: WIDGETS.filter((w) => w.category === c)
+	}));
 
 	function newId() {
 		return `w${Date.now().toString(36)}${idSeq++}`;
@@ -80,7 +98,9 @@
 			const [stats, balanceSheet, profitLoss] = await Promise.all([
 				getCompanyStats(companyId).catch(() => ({})),
 				getBalanceSheet({ company_id: companyId }).catch(() => null),
-				getProfitLoss({ date_from: monthStart, date_to: monthEnd, company_id: companyId }).catch(() => null)
+				getProfitLoss({ date_from: monthStart, date_to: monthEnd, company_id: companyId }).catch(
+					() => null
+				)
 			]);
 			common.set({ loading: false, stats, balanceSheet, profitLoss });
 		} catch {
@@ -120,8 +140,10 @@
 		grid = GridStackCls.init(
 			{
 				column: 12,
-				cellHeight: 54,
-				margin: 6,
+				// 64px rows and 8px margins: 16px between cards (design system → Layout), and a
+				// 2-row KPI tile fits its label, figure and one footer line.
+				cellHeight: 64,
+				margin: 8,
 				// float:true — widgets stay exactly where the user puts them; moving
 				// or resizing one never reflows/compacts the others. Only widgets the
 				// dragged item directly collides with get pushed.
@@ -178,18 +200,20 @@
 			const nodes = (grid ? (grid.save(false) as any[]) : []).filter((n) => n.id != null);
 			const payload: DashboardLayout = {
 				version: 1,
-				widgets: nodes.map((n) => {
-					const it = meta[String(n.id)];
-					return {
-						id: String(n.id),
-						type: it?.type,
-						x: n.x ?? 0,
-						y: n.y ?? 0,
-						w: n.w ?? 1,
-						h: n.h ?? 1,
-						...(it?.options ? { options: it.options } : {})
-					};
-				}).filter((w) => w.type)
+				widgets: nodes
+					.map((n) => {
+						const it = meta[String(n.id)];
+						return {
+							id: String(n.id),
+							type: it?.type,
+							x: n.x ?? 0,
+							y: n.y ?? 0,
+							w: n.w ?? 1,
+							h: n.h ?? 1,
+							...(it?.options ? { options: it.options } : {})
+						};
+					})
+					.filter((w) => w.type)
 			};
 			await saveDashboardLayout(companyId, payload);
 			dirty = false;
@@ -260,79 +284,80 @@
 	});
 </script>
 
-<div class="py-3">
+<div class="flex flex-col gap-4">
 	<!-- Toolbar -->
-	<div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-		<div class="text-xs text-gray-400 dark:text-gray-500">
+	<div class="flex flex-wrap items-center justify-between gap-2">
+		<p class="text-sm text-muted-foreground">
 			{#if editing}
 				{T('Drag to move, resize from the corner, or add widgets below.')}
 			{/if}
-		</div>
+		</p>
 		<div class="flex items-center gap-2">
 			{#if editing}
-				<button
-					class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-					on:click={resetDefault}
-				>
-					{T('Reset to default')}
-				</button>
-				<button
-					class="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition flex items-center gap-1.5"
-					on:click={exitEdit}
-					disabled={saving}
-				>
-					{#if saving}<Spinner className="size-3" />{/if}
+				<Button variant="outline" size="sm" onclick={resetDefault}>
+					<RotateCcw />{T('Reset to default')}
+				</Button>
+				<Button size="sm" onclick={exitEdit} disabled={saving}>
+					{#if saving}<Spinner />{:else}<Check />{/if}
 					{T('Done')}
-				</button>
+				</Button>
 			{:else}
-				<button
-					class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850 transition flex items-center gap-1.5"
-					on:click={enterEdit}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5">
-						<path d="M8.34 1.804A1 1 0 0 1 9.32 1h1.36a1 1 0 0 1 .98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 0 1 1.262.125l.962.962a1 1 0 0 1 .125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.294a1 1 0 0 1 .804.98v1.361a1 1 0 0 1-.804.98l-1.473.295a6.95 6.95 0 0 1-.587 1.416l.834 1.25a1 1 0 0 1-.125 1.262l-.962.962a1 1 0 0 1-1.262.125l-1.25-.834a6.953 6.953 0 0 1-1.416.587l-.294 1.473a1 1 0 0 1-.98.804H9.32a1 1 0 0 1-.98-.804l-.295-1.473a6.957 6.957 0 0 1-1.416-.587l-1.25.834a1 1 0 0 1-1.262-.125l-.962-.962a1 1 0 0 1-.125-1.262l.834-1.25a6.957 6.957 0 0 1-.587-1.416l-1.473-.294A1 1 0 0 1 1 10.68V9.32a1 1 0 0 1 .804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 0 1 .125-1.262l.962-.962A1 1 0 0 1 5.38 3.03l1.25.834a6.957 6.957 0 0 1 1.416-.587l.294-1.473ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-					</svg>
-					{T('Configure')}
-				</button>
+				<Button variant="outline" size="sm" onclick={enterEdit} disabled={loading}>
+					<SlidersHorizontal />{T('Configure')}
+				</Button>
 			{/if}
 		</div>
 	</div>
 
 	<!-- Catalog (edit mode) -->
 	{#if editing && showCatalog}
-		<div class="mb-3 p-3 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-850/30">
-			<div class="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">{T('Add widgets')}</div>
-			<div class="space-y-2">
+		<Card.Root size="sm" class="border-dashed shadow-none">
+			<Card.Header>
+				<Card.Title>{T('Add widgets')}</Card.Title>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-3">
 				{#each catalogByCat as group}
 					{#if group.items.length}
-						<div>
-							<div class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">{T(group.cat)}</div>
+						<div class="flex flex-col gap-1.5">
+							<div class="text-sm font-medium text-muted-foreground">{T(group.cat)}</div>
 							<div class="flex flex-wrap gap-1.5">
 								{#each group.items as w}
-									<button
-										class="group px-2.5 py-1 text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center gap-1"
-										title={w.description}
-										on:click={() => addWidget(w.type)}
-									>
-										<span class="text-blue-500 group-hover:text-blue-600">+</span>{T(w.title)}
-									</button>
+									<Tip content={T(w.description)}>
+										<Button variant="outline" size="xs" onclick={() => addWidget(w.type)}>
+											<Plus />{T(w.title)}
+										</Button>
+									</Tip>
 								{/each}
 							</div>
 						</div>
 					{/if}
 				{/each}
+			</Card.Content>
+		</Card.Root>
+	{/if}
+
+	{#if loading}
+		<div class="flex flex-col gap-4" aria-busy="true">
+			<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+				{#each Array(4) as _}<Skeleton class="h-28 rounded-xl" />{/each}
+			</div>
+			<div class="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr]">
+				<Skeleton class="h-72 rounded-xl" />
+				<Skeleton class="h-72 rounded-xl" />
 			</div>
 		</div>
 	{/if}
 
-	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
-	{/if}
-
 	<!-- Grid. NB: use class: directives (classList-based) — never an interpolated
 	     class="" attribute here, which would rewrite className on every `editing`
-	     change and clobber the classes gridstack adds to this element. -->
-	<div class="grid-stack" bind:this={gridEl} class:is-editing={editing} class:invisible={loading}>
+	     change and clobber the classes gridstack adds to this element. The -m-2 cancels
+	     gridstack's outer 8px margin so the cards line up with the page edges. -->
+	<div
+		class="grid-stack -m-2"
+		bind:this={gridEl}
+		class:is-editing={editing}
+		class:invisible={loading}
+	>
 		{#each layout as item (item.id)}
 			{@const def = WIDGET_BY_TYPE[item.type]}
 			<div class="grid-stack-item" use:gsItem={{ item, def }} bind:this={els[item.id]}>
@@ -345,7 +370,11 @@
 							padded={!def.flush}
 							on:remove={() => removeWidget(item)}
 						>
-							<svelte:component this={def.component} {companyId} options={item.options ?? def.options ?? {}} />
+							<svelte:component
+								this={def.component}
+								{companyId}
+								options={item.options ?? def.options ?? {}}
+							/>
 						</WidgetCard>
 					{/if}
 				</div>
@@ -360,8 +389,9 @@
 		inset: 0;
 		overflow: visible;
 	}
-	/* Remove button + edit-only chrome are hidden unless the grid is editing. */
-	:global(.grid-stack:not(.is-editing) .wcard-remove) {
+	/* Edit-only chrome is hidden unless the grid is editing. */
+	:global(.grid-stack:not(.is-editing) .wcard-remove),
+	:global(.grid-stack:not(.is-editing) .wcard-handle) {
 		display: none;
 	}
 	/* Edit-mode affordances: draggable cursor, no text selection, dashed outline. */
@@ -378,11 +408,20 @@
 		cursor: grabbing;
 	}
 	.grid-stack.is-editing :global(.wcard) {
-		outline: 1px dashed rgba(59, 130, 246, 0.45);
-		outline-offset: -1px;
+		border-style: dashed;
+		border-color: color-mix(in oklab, var(--ring) 55%, var(--border));
+		box-shadow: none;
 	}
+	/* Links inside widgets would navigate on drop; they come back when editing ends. */
 	.grid-stack.is-editing :global(.wcard-link) {
 		display: none;
+	}
+	/* the remove button takes the top-right corner */
+	.grid-stack.is-editing :global(.wcard-corner) {
+		visibility: hidden;
+	}
+	.grid-stack.is-editing :global(.wcard a) {
+		pointer-events: none;
 	}
 	/* Resize handles — visible only while editing, with a grabbable hit area. */
 	.grid-stack.is-editing :global(.ui-resizable-handle) {
@@ -391,20 +430,23 @@
 	}
 	.grid-stack.is-editing :global(.ui-resizable-se) {
 		z-index: 21;
+		/* inside the card's corner: gridstack's 8px margin + 3px */
 		width: 18px;
 		height: 18px;
-		right: 3px;
-		bottom: 3px;
+		right: 11px;
+		bottom: 11px;
 		background-image: none;
-		border-right: 2px solid rgba(59, 130, 246, 0.75);
-		border-bottom: 2px solid rgba(59, 130, 246, 0.75);
-		border-bottom-right-radius: 5px;
+		/* gridstack rotates its own arrow icon; this corner mark must stay upright */
+		transform: none;
+		border-right: 2px solid var(--ring);
+		border-bottom: 2px solid var(--ring);
+		border-bottom-right-radius: 6px;
 		cursor: se-resize;
 	}
 	/* Placeholder shown while dragging. */
 	:global(.grid-stack .grid-stack-placeholder > .placeholder-content) {
-		border: 1px dashed rgba(59, 130, 246, 0.5);
-		border-radius: 0.75rem;
-		background: rgba(59, 130, 246, 0.06);
+		border: 1px dashed var(--ring);
+		border-radius: 0.875rem;
+		background: color-mix(in oklab, var(--ring) 6%, transparent);
 	}
 </style>

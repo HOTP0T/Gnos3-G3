@@ -21,9 +21,24 @@
 	} from '$lib/apis/accounting';
 	import { convertAmount } from '$lib/utils/currency';
 	import ReportAmount from '$lib/components/accounting/ReportAmount.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	const i18n = getContext('i18n');
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import Download from '@lucide/svelte/icons/download';
+	import Scale from '@lucide/svelte/icons/scale';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { cn } from '$lib/utils/shadcn.js';
+
+	const i18n: any = getContext('i18n');
 	export let companyId: number;
 	export let layoutLabel: string | null = null;
 	export let layoutKey: string | null = null;
@@ -33,17 +48,18 @@
 	$: vertical = (presentation ?? (hk ? 'vertical' : 'side_by_side')) === 'vertical';
 	$: tabs = hk
 		? [
-				{ id: 'balance-sheet', label: 'Statement of Financial Position 財務狀況表' },
-				{ id: 'profit-loss', label: 'Statement of Profit or Loss 損益表' }
+				{ id: 'balance-sheet', label: 'Statement of Financial Position' },
+				{ id: 'profit-loss', label: 'Statement of Profit or Loss' }
 			]
 		: [
-				{ id: 'balance-sheet', label: '资产负债表 Balance Sheet' },
-				{ id: 'profit-loss', label: '利润表 P&L' }
+				{ id: 'balance-sheet', label: 'Balance Sheet' },
+				{ id: 'profit-loss', label: 'Profit & Loss' }
 			];
 
 	type Which = 'balance-sheet' | 'profit-loss';
 	let which: Which = 'balance-sheet';
 	let loading = false;
+	let loadError = '';
 	let bs: any = null;
 	let pl: any = null;
 
@@ -68,14 +84,20 @@
 	let selectedMonth = '';
 	let monthOptions: MonthOption[] = [];
 
-
 	onMount(async () => {
 		try {
-			const [res, co] = await Promise.all([getPeriods({ company_id: companyId }), getCompany(companyId).catch(() => null)]);
-			monthOptions = buildMonthOptions(res.periods ?? res ?? [], Number(co?.fiscal_year_start_month ?? 1) || 1);
+			const [res, co] = await Promise.all([
+				getPeriods({ company_id: companyId }),
+				getCompany(companyId).catch(() => null)
+			]);
+			monthOptions = buildMonthOptions(
+				res.periods ?? res ?? [],
+				Number(co?.fiscal_year_start_month ?? 1) || 1
+			);
 			const now = new Date();
 			const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-			selectedMonth = monthOptions.find((o) => o.value === curKey)?.value ?? monthOptions[0]?.value ?? '';
+			selectedMonth =
+				monthOptions.find((o) => o.value === curKey)?.value ?? monthOptions[0]?.value ?? '';
 			if (selectedMonth) await load();
 		} catch (err) {
 			console.error('Failed to load periods:', err);
@@ -89,6 +111,7 @@
 			return;
 		}
 		loading = true;
+		loadError = '';
 		try {
 			if (which === 'balance-sheet') {
 				bs = await getStatutoryBalanceSheet({ company_id: companyId, as_of: opt.to });
@@ -96,6 +119,7 @@
 				pl = await getStatutoryProfitLoss({ company_id: companyId, as_of: opt.to });
 			}
 		} catch (err) {
+			loadError = `${err}`;
 			toast.error(`${err}`);
 		}
 		loading = false;
@@ -104,7 +128,8 @@
 	const doExport = async () => {
 		const opt = monthOptions.find((o) => o.value === selectedMonth);
 		if (!opt) return;
-		if (which === 'balance-sheet') await exportStatutoryBalanceSheet({ company_id: companyId, as_of: opt.to });
+		if (which === 'balance-sheet')
+			await exportStatutoryBalanceSheet({ company_id: companyId, as_of: opt.to });
 		else await exportStatutoryProfitLoss({ company_id: companyId, as_of: opt.to });
 	};
 
@@ -113,157 +138,222 @@
 		load();
 	}
 
-	const label = (l: StatementLine) => (hk ? `${l.label_en}  ${l.label_zh}` : `${l.label_zh} ${l.label_en}`).trim();
+	// Lines read in the UI language. The layout's own Chinese wording is the
+	// official one, so it is used as is when the UI is in that script (CAS lines
+	// are Simplified, HK lines Traditional); every other language translates the
+	// English line. The Excel export keeps both, as filed.
+	$: officialZh = $i18n.language === (hk ? 'zh-TW' : 'zh-CN');
+	$: label = (l: StatementLine) => (officialZh ? l.label_zh : $i18n.t(l.label_en)).trim();
 	const visible = (rows: any[]) => (rows ?? []).filter((l: any) => !l.hidden);
 	const monthHeader = (m: string) => (m.includes('-') ? m : `${pl?.fiscal_year}/${m}`);
 	const rowClass = (l: StatementLine) =>
 		l.header
-			? 'font-semibold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-850/40'
+			? 'bg-muted/50 font-medium hover:bg-muted/50'
 			: l.is_total
-				? 'font-semibold border-t border-gray-200 dark:border-gray-700'
+				? 'border-t font-semibold'
 				: l.memo
-					? 'text-gray-500 dark:text-gray-400 italic'
+					? 'text-muted-foreground'
 					: '';
 
 	$: monthsShown = pl ? (pl.months ?? []).slice(0, pl.months_through ?? 12) : [];
+
+	// Dense report table: 13px, 6px row padding, 12px at the outer edges (design system → Reports).
+	const TABLE =
+		'text-[13px] [&_td]:py-1.5 [&_td:first-child]:pl-3 [&_th:first-child]:pl-3 [&_td:last-child]:pr-3 [&_th:last-child]:pr-3';
 </script>
 
-<div class="space-y-3">
+{#snippet unmappedAlert(unmapped: any[])}
+	<Alert.Root variant="warning">
+		<TriangleAlert />
+		<Alert.Title class="whitespace-normal"
+			>{$i18n.t('Accounts with no dedicated line, included under an "other" line:')}</Alert.Title
+		>
+		<Alert.Description class="font-mono text-[13px]">
+			{unmapped.map((u: any) => `${u.account_code}`).join(', ')}
+		</Alert.Description>
+	</Alert.Root>
+{/snippet}
+
+<div class="flex min-w-0 flex-col gap-4">
 	<!-- Controls -->
-	<div class="flex flex-wrap items-center gap-3">
-		<div class="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
-			{#each tabs as t}
-				<button
-					class="px-3 py-1.5 text-sm font-medium rounded-md transition
-						{which === t.id
-						? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-						: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-					on:click={() => (which = t.id as Which)}
+	<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+		<!-- Which statement: line tabs, so they don't read as one control with the report picker above
+		     (bottom padding keeps the underline inside the scrolling list) -->
+		<Tabs.Root value={which} onValueChange={(v) => (which = v as Which)} class="max-w-full min-w-0">
+			<Tabs.List
+				variant="line"
+				aria-label={layoutLabel ?? undefined}
+				class="max-w-full justify-start overflow-x-auto pb-[6px] [scrollbar-width:none]"
+			>
+				{#each tabs as t}
+					<Tabs.Trigger value={t.id} class="flex-none px-2">{$i18n.t(t.label)}</Tabs.Trigger>
+				{/each}
+			</Tabs.List>
+		</Tabs.Root>
+
+		<div class="flex flex-wrap items-center gap-2">
+			<div class="relative">
+				<CalendarDays
+					class="pointer-events-none absolute top-1/2 left-2.5 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<NativeSelect.Root
+					size="sm"
+					class="[&>select]:pl-8"
+					bind:value={selectedMonth}
+					aria-label={$i18n.t('Month')}
 				>
-					{t.label}
-				</button>
-			{/each}
+					{#each monthOptions as o}
+						<NativeSelect.Option value={o.value}>{o.label}</NativeSelect.Option>
+					{/each}
+				</NativeSelect.Root>
+			</div>
+
+			<Button variant="outline" size="sm" onclick={doExport} disabled={!active}>
+				<Download />
+				{$i18n.t('Export Excel')}
+			</Button>
+
+			{#if layoutLabel}
+				<span class="text-sm text-muted-foreground">{layoutLabel}</span>
+			{/if}
 		</div>
-
-		<select
-			bind:value={selectedMonth}
-			class="text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-		>
-			{#each monthOptions as o}
-				<option value={o.value}>{o.label}</option>
-			{/each}
-		</select>
-
-		<button
-			class="px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-			on:click={doExport}
-			disabled={!active}
-		>
-			{$i18n.t('Export Excel')}
-		</button>
-
-		{#if layoutLabel}
-			<span class="text-xs text-gray-400">{layoutLabel}</span>
-		{/if}
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center py-10"><Spinner /></div>
+		<div class="flex max-w-4xl flex-col gap-2 rounded-md border p-3">
+			{#each Array(12) as _}
+				<Skeleton class="h-6 w-full" />
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the report.')}</Alert.Title>
+			<Alert.Description>{loadError}</Alert.Description>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
 	{:else if which === 'balance-sheet' && bs}
 		{#if !bs.is_balanced}
-			<div class="px-3 py-2 text-sm rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300">
-				{$i18n.t('Assets do not equal liabilities plus equity. The ledger detail behind one of the lines needs review.')}
-			</div>
+			<Alert.Root variant="destructive">
+				<CircleAlert />
+				<Alert.Title class="whitespace-normal">
+					{$i18n.t(
+						'Assets do not equal liabilities plus equity. The ledger detail behind one of the lines needs review.'
+					)}
+				</Alert.Title>
+			</Alert.Root>
 		{:else}
-			<div class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
-				<span aria-hidden="true">✓</span>
+			<p class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+				<Scale class="size-4 shrink-0 text-success" aria-hidden="true" />
 				{$i18n.t('Balanced — total assets equal liabilities plus equity in both columns')}
-			</div>
+			</p>
 		{/if}
 		{#if bs.unmapped?.length}
-			<div class="px-3 py-2 text-xs rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300">
-				{$i18n.t('Accounts with no dedicated line, included under an "other" line:')}
-				{bs.unmapped.map((u: any) => `${u.account_code}`).join(', ')}
-			</div>
+			{@render unmappedAlert(bs.unmapped)}
 		{/if}
 
-		<div class="grid grid-cols-1 {vertical ? '' : 'xl:grid-cols-2'} gap-4">
-			{#each vertical
-				? [{ title: `${bs.company_name} — ${$i18n.t('as at')} ${bs.as_of}`, rows: [...visible(bs.assets), ...visible(bs.liabilities), ...visible(bs.equity)] }]
-				: [{ title: '资产 ASSETS', rows: bs.assets }, { title: '负债和所有者权益 LIABILITIES AND EQUITY', rows: [...bs.liabilities, ...bs.equity] }] as block}
-				<div class="overflow-x-auto {vertical ? 'max-w-4xl' : ''}">
-					<table class="w-full text-xs">
-						<thead class="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-							<tr>
-								<th class="px-2 py-2 text-left">{block.title}</th>
-								<th class="px-2 py-2 text-center w-12">{$i18n.t(vertical ? 'Note' : 'Line')}</th>
+		<div class={cn('grid min-w-0 grid-cols-1 items-start gap-4', !vertical && 'xl:grid-cols-2')}>
+			{#each vertical ? [{ title: `${bs.company_name} — ${$i18n.t('as at')} ${bs.as_of}`, rows: [...visible(bs.assets), ...visible(bs.liabilities), ...visible(bs.equity)] }] : [{ title: $i18n.t('ASSETS'), rows: bs.assets }, { title: $i18n.t('LIABILITIES AND EQUITY'), rows: [...bs.liabilities, ...bs.equity] }] as block}
+				<div class={cn('min-w-0 overflow-hidden rounded-md border', vertical && 'max-w-4xl')}>
+					<Table.Root class={TABLE}>
+						<Table.Header class="bg-muted/50">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Head class="whitespace-normal">{block.title}</Table.Head>
+								<Table.Head class="w-12 text-center"
+									>{$i18n.t(vertical ? 'Note' : 'Line', { context: 'gnos3' })}</Table.Head
+								>
 								{#if vertical}
-									<th class="px-2 py-2 text-right w-32">{bs.as_of}</th>
-									<th class="px-2 py-2 text-right w-32">{bs.beginning_date}</th>
+									<Table.Head class="w-28 min-w-24 text-right tabular-nums">{bs.as_of}</Table.Head>
+									<Table.Head class="w-28 min-w-24 text-right tabular-nums"
+										>{bs.beginning_date}</Table.Head
+									>
 								{:else}
-									<th class="px-2 py-2 text-right w-32">{bs.beginning_date}</th>
-									<th class="px-2 py-2 text-right w-32">{bs.as_of}</th>
+									<Table.Head class="w-28 min-w-24 text-right tabular-nums"
+										>{bs.beginning_date}</Table.Head
+									>
+									<Table.Head class="w-28 min-w-24 text-right tabular-nums">{bs.as_of}</Table.Head>
 								{/if}
-							</tr>
-						</thead>
-						<tbody>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
 							{#each block.rows as l}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 {rowClass(l)}">
-									<td class="px-2 py-1.5" style="padding-left: {0.5 + l.indent * 1}rem">{label(l)}</td>
-									<td class="px-2 py-1.5 text-center text-gray-400">{l.line_no ?? ''}</td>
-									<td class="px-2 py-1.5 text-right font-mono">
-										{#if !l.header}<ReportAmount value={vertical ? l.ending : l.beginning} {...fxProps} />{/if}
-									</td>
-									<td class="px-2 py-1.5 text-right font-mono">
-										{#if !l.header}<ReportAmount value={vertical ? l.beginning : l.ending} {...fxProps} />{/if}
-									</td>
-								</tr>
+								<Table.Row class={rowClass(l)}>
+									<Table.Cell
+										class="min-w-48 whitespace-normal"
+										style="padding-left: {0.75 + l.indent * 1}rem">{label(l)}</Table.Cell
+									>
+									<Table.Cell class="text-center font-normal text-muted-foreground tabular-nums"
+										>{l.line_no ?? ''}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums">
+										{#if !l.header}<ReportAmount
+												value={vertical ? l.ending : l.beginning}
+												{...fxProps}
+											/>{/if}
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">
+										{#if !l.header}<ReportAmount
+												value={vertical ? l.beginning : l.ending}
+												{...fxProps}
+											/>{/if}
+									</Table.Cell>
+								</Table.Row>
 							{/each}
-						</tbody>
-					</table>
+						</Table.Body>
+					</Table.Root>
 				</div>
 			{/each}
 		</div>
 	{:else if which === 'profit-loss' && pl}
 		{#if pl.unmapped?.length}
-			<div class="px-3 py-2 text-xs rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300">
-				{$i18n.t('Accounts with no dedicated line, included under an "other" line:')}
-				{pl.unmapped.map((u: any) => `${u.account_code}`).join(', ')}
-			</div>
+			{@render unmappedAlert(pl.unmapped)}
 		{/if}
-		<div class="overflow-x-auto">
-			<table class="w-full text-xs">
-				<thead class="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-					<tr>
-						<th class="px-2 py-2 text-left">{hk ? 'Item' : '项目 Item'}</th>
-						<th class="px-2 py-2 text-center w-12">{$i18n.t(hk ? 'Note' : 'Line')}</th>
+		<div class="min-w-0 overflow-hidden rounded-md border">
+			<Table.Root class={TABLE}>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Item')}</Table.Head>
+						<Table.Head class="w-12 text-center">{$i18n.t(hk ? 'Note' : 'Line', { context: 'gnos3' })}</Table.Head>
 						{#each monthsShown as m}
-							<th class="px-2 py-2 text-right w-28">{monthHeader(m)}</th>
+							<Table.Head class="w-28 min-w-28 text-right tabular-nums">{monthHeader(m)}</Table.Head
+							>
 						{/each}
-						<th class="px-2 py-2 text-right w-32 font-semibold">YTD {pl.fiscal_year}</th>
-					</tr>
-				</thead>
-				<tbody>
+						<Table.Head class="w-32 min-w-28 text-right font-semibold tabular-nums"
+							>YTD {pl.fiscal_year}</Table.Head
+						>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each visible(pl.lines) as l}
-						<tr class="border-b border-gray-50 dark:border-gray-850/30 {rowClass(l)}">
-							<td class="px-2 py-1.5" style="padding-left: {0.5 + l.indent * 1}rem">{label(l)}</td>
-							<td class="px-2 py-1.5 text-center text-gray-400">{l.line_no ?? ''}</td>
+						<Table.Row class={rowClass(l)}>
+							<Table.Cell
+								class="min-w-48 whitespace-normal"
+								style="padding-left: {0.75 + l.indent * 1}rem">{label(l)}</Table.Cell
+							>
+							<Table.Cell class="text-center font-normal text-muted-foreground tabular-nums"
+								>{l.line_no ?? ''}</Table.Cell
+							>
 							{#each monthsShown as m}
-								<td class="px-2 py-1.5 text-right font-mono">
+								<Table.Cell class="text-right tabular-nums">
 									<ReportAmount value={l.months?.[m]} {...fxProps} />
-								</td>
+								</Table.Cell>
 							{/each}
-							<td class="px-2 py-1.5 text-right font-mono font-semibold">
+							<Table.Cell class="text-right font-semibold tabular-nums">
 								<ReportAmount value={l.ytd} {...fxProps} />
-							</td>
-						</tr>
+							</Table.Cell>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
 		</div>
 	{:else}
-		<div class="py-10 text-center text-sm text-gray-400 italic">
-			{$i18n.t('Select a period to build the statement.')}
-		</div>
+		<Empty.Root class="max-w-4xl border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><FileSpreadsheet /></Empty.Media>
+				<Empty.Description>{$i18n.t('Select a period to build the statement.')}</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{/if}
 </div>

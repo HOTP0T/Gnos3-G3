@@ -1,22 +1,42 @@
 <script lang="ts">
-	import { onMount, onDestroy, getContext } from 'svelte';
+	import { onMount, onDestroy, getContext, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 
-	import { getInvoices, getVendors, getSpendingSummary, getNeedsReview, getProcessingInvoices, getInvoiceStats } from '$lib/apis/invoices';
-	import { theme } from '$lib/stores';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import Receipt from '@lucide/svelte/icons/receipt';
+
+	import {
+		getInvoices,
+		getVendors,
+		getSpendingSummary,
+		getNeedsReview,
+		getProcessingInvoices,
+		getInvoiceStats
+	} from '$lib/apis/invoices';
 
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import Badge from '$lib/components/common/Badge.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import KpiCard from '$lib/components/gnos3-ui/KpiCard.svelte';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
 
-	const i18n = getContext('i18n');
-
-	$: isDark = $theme.includes('dark');
+	const i18n: any = getContext('i18n');
 
 	let loading = true;
+	let loadError = '';
 
 	// Stats
 	let totalInvoices = 0;
@@ -41,15 +61,28 @@
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 	let polling = false;
 
-	// Chart instances
+	// Chart instance (monthly spending; vendors are plain bars)
 	let monthlyCanvas: HTMLCanvasElement;
-	let vendorCanvas: HTMLCanvasElement;
 	let monthlyChart: any = null;
-	let vendorChart: any = null;
 	let Chart: any = null;
+	let themeObserver: MutationObserver | null = null;
+
+	const num = (v: any) => {
+		const n = parseFloat(String(v));
+		return isFinite(n) ? n : 0;
+	};
+	const fmtAmount = (v: any) =>
+		num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	const fmtCompact = (v: any) =>
+		new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+			num(v)
+		);
 
 	const loadData = async ({ silent = false } = {}) => {
-		if (!silent) loading = true;
+		if (!silent) {
+			loading = true;
+			loadError = '';
+		}
 		try {
 			const [stats, vendors, monthly, byVendor, review, processing] = await Promise.all([
 				getInvoiceStats(localStorage.token),
@@ -69,21 +102,21 @@
 			processingInvoices = (processing?.invoices ?? []).slice(0, 10);
 
 			const nextMonthly = monthly ?? [];
-			const nextVendor = (byVendor ?? []).slice(0, 10);
-			const chartsChanged =
-				JSON.stringify(nextMonthly) !== JSON.stringify(monthlyData) ||
-				JSON.stringify(nextVendor) !== JSON.stringify(vendorData);
+			const chartsChanged = JSON.stringify(nextMonthly) !== JSON.stringify(monthlyData);
 			monthlyData = nextMonthly;
-			vendorData = nextVendor;
+			vendorData = byVendor ?? [];
 
 			// A silent reload keeps the page on screen; the reactive block below only
-			// rebuilds the charts on the initial (non-silent) load, so redraw here
+			// rebuilds the chart on the initial (non-silent) load, so redraw here
 			// when the spending data actually moved.
 			if (silent && chartsChanged) {
 				createCharts();
 			}
 		} catch (err) {
-			if (!silent) toast.error(`${err}`);
+			if (!silent) {
+				loadError = `${err}`;
+				toast.error(`${err}`);
+			}
 		}
 		if (!silent) loading = false;
 	};
@@ -112,151 +145,118 @@
 		}
 	};
 
+	// Chart colours come from the theme tokens, read when the chart is (re)built.
+	const cssVar = (name: string, fallback: string) =>
+		getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+
 	const createCharts = async () => {
 		if (!Chart) {
 			const module = await import('chart.js/auto');
 			Chart = module.default;
 		}
+		await tick();
 
-		// Monthly spending bar chart
-		if (monthlyCanvas && monthlyData.length) {
-			if (monthlyChart) monthlyChart.destroy();
+		if (!monthlyCanvas || !monthlyData.length) return;
+		if (monthlyChart) monthlyChart.destroy();
 
-			monthlyChart = new Chart(monthlyCanvas, {
-				type: 'bar',
-				data: {
-					labels: monthlyData.map((d) => d.period),
-					datasets: [
-						{
-							label: 'Spending',
-							data: monthlyData.map((d) => parseFloat(String(d.total_amount))),
-							backgroundColor: '#5ba3c8',
-							borderRadius: 4,
-							barPercentage: 0.7,
-							categoryPercentage: 0.8
+		const bar = cssVar('--chart-1', '#2a78d6');
+		const muted = cssVar('--muted-foreground', '#6b7280');
+		const grid = cssVar('--border', '#e5e7eb');
+		const popover = cssVar('--popover', '#ffffff');
+		const popoverFg = cssVar('--popover-foreground', '#111827');
+		const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
+
+		monthlyChart = new Chart(monthlyCanvas, {
+			type: 'bar',
+			data: {
+				labels: monthlyData.map((d) => d.period),
+				datasets: [
+					{
+						label: $i18n.t('Monthly Spending'),
+						data: monthlyData.map((d) => num(d.total_amount)),
+						backgroundColor: bar,
+						hoverBackgroundColor: bar,
+						borderRadius: 4,
+						borderSkipped: 'start',
+						maxBarThickness: 28,
+						barPercentage: 0.8,
+						categoryPercentage: 0.8
+					}
+				]
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				plugins: {
+					legend: { display: false },
+					tooltip: {
+						backgroundColor: popover,
+						titleColor: popoverFg,
+						bodyColor: popoverFg,
+						borderColor: grid,
+						borderWidth: 1,
+						cornerRadius: 8,
+						padding: 8,
+						displayColors: false,
+						titleFont: { family, size: 12, weight: '500' },
+						bodyFont: { family, size: 12 },
+						callbacks: {
+							label: (ctx: any) => fmtAmount(ctx.raw)
 						}
-					]
+					}
 				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: { display: false },
-						tooltip: {
-							backgroundColor: 'rgba(17, 24, 39, 0.9)',
-							titleColor: '#f3f4f6',
-							bodyColor: '#d1d5db',
-							borderColor: 'rgba(75, 85, 99, 0.3)',
-							borderWidth: 1,
+				scales: {
+					x: {
+						grid: { display: false },
+						ticks: { color: muted, font: { family, size: 11 } },
+						border: { color: grid }
+					},
+					y: {
+						grid: { color: grid, drawTicks: false },
+						ticks: {
+							color: muted,
+							font: { family, size: 11 },
 							padding: 8,
-							callbacks: {
-								label: (ctx: any) => `$${ctx.raw.toLocaleString()}`
-							}
-						}
-					},
-					scales: {
-						x: {
-							grid: { display: false },
-							ticks: { color: '#6b7280', font: { size: 10 } },
-							border: { display: false }
+							maxTicksLimit: 5,
+							callback: (value: number) => fmtCompact(value)
 						},
-						y: {
-							grid: { color: 'rgba(107, 114, 128, 0.1)', drawTicks: false },
-							ticks: {
-								color: '#6b7280',
-								font: { size: 10 },
-								padding: 8,
-								callback: (value: number) => `$${value.toLocaleString()}`
-							},
-							border: { display: false }
-						}
-					},
-					animation: { duration: 400, easing: 'easeOutQuart' }
-				}
-			});
-		}
-
-		// Vendor spending doughnut chart
-		if (vendorCanvas && vendorData.length) {
-			if (vendorChart) vendorChart.destroy();
-
-			const colors = [
-				'#5ba3c8',
-				'#d97c5a',
-				'#6bc87a',
-				'#c85ba3',
-				'#c8b85b',
-				'#5b6bc8',
-				'#c85b5b',
-				'#5bc8b8',
-				'#a35bc8',
-				'#c8a35b'
-			];
-
-			const legendTextColor = isDark ? '#d1d5db' : '#374151';
-
-			// Truncate labels for display, keep originals for tooltips
-			const truncatedLabels = vendorData.map((d) =>
-				d.period.length > 20 ? d.period.substring(0, 20) + '...' : d.period
-			);
-
-			vendorChart = new Chart(vendorCanvas, {
-				type: 'doughnut',
-				data: {
-					labels: truncatedLabels,
-					datasets: [
-						{
-							data: vendorData.map((d) => parseFloat(String(d.total_amount))),
-							backgroundColor: colors.slice(0, vendorData.length),
-							borderWidth: 0
-						}
-					]
+						border: { display: false }
+					}
 				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					cutout: '60%',
-					plugins: {
-						legend: {
-							position: 'right',
-							labels: {
-								color: legendTextColor,
-								font: { size: 11 },
-								boxWidth: 12,
-								padding: 8
-							}
-						},
-						tooltip: {
-							backgroundColor: 'rgba(17, 24, 39, 0.9)',
-							titleColor: '#f3f4f6',
-							bodyColor: '#d1d5db',
-							borderColor: 'rgba(75, 85, 99, 0.3)',
-							borderWidth: 1,
-							padding: 8,
-							callbacks: {
-								label: (ctx: any) => {
-								const fullName = vendorData[ctx.dataIndex]?.period ?? ctx.label;
-								return `${fullName}: $${ctx.raw.toLocaleString()}`;
-							}
-							}
-						}
-					},
-					animation: { duration: 400, easing: 'easeOutQuart' }
-				}
-			});
-		}
+				animation: { duration: 400, easing: 'easeOutQuart' }
+			}
+		});
 	};
 
-	$: if (!loading && monthlyCanvas && vendorCanvas && isDark !== undefined) {
+	$: if (!loading && monthlyCanvas) {
 		createCharts();
 	}
+
+	// Spending by vendor: top five and the rest, largest first.
+	$: vendorSorted = [...vendorData].sort((a, b) => num(b.total_amount) - num(a.total_amount));
+	$: vendorTop = vendorSorted.slice(0, 5);
+	$: vendorRest = vendorSorted.slice(5);
+	$: vendorOther = vendorRest.reduce((s, d) => s + num(d.total_amount), 0);
+	$: vendorMax = Math.max(1, ...vendorTop.map((d) => num(d.total_amount)), vendorOther);
+
+	const openVendor = (invoice: any) =>
+		goto(`/invoices/data?vendor=${encodeURIComponent(invoice.vendor_name)}`);
 
 	onMount(() => {
 		loadData();
 		refreshInterval = setInterval(pollStats, POLL_INTERVAL_MS);
+		// Rebuild the chart when the theme flips (the <html> class changes).
+		themeObserver = new MutationObserver(() => {
+			if (monthlyChart) createCharts();
+		});
+		themeObserver.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['class']
+		});
 	});
 
 	onDestroy(() => {
+		themeObserver?.disconnect();
 		if (refreshInterval) {
 			clearInterval(refreshInterval);
 			refreshInterval = null;
@@ -265,209 +265,284 @@
 			monthlyChart.destroy();
 			monthlyChart = null;
 		}
-		if (vendorChart) {
-			vendorChart.destroy();
-			vendorChart = null;
-		}
 	});
 </script>
 
-{#if loading}
-	<div class="flex justify-center my-10">
-		<Spinner className="size-5" />
+<div class="flex flex-col gap-4">
+	<div class="flex items-center justify-between gap-2">
+		<h1 class="text-2xl font-semibold tracking-tight">{$i18n.t('Invoices')}</h1>
+		<Button variant="outline" size="sm" onclick={() => loadData()} disabled={loading}>
+			{#if loading}<Spinner />{:else}<RefreshCw />{/if}
+			{$i18n.t('Refresh')}
+		</Button>
 	</div>
-{:else}
-	<div class="py-3 space-y-4">
-		<!-- Stat Cards -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Total Invoices')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200">
-					{totalInvoices.toLocaleString()}
-				</div>
-			</div>
 
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border {processingCount > 0 ? 'border-blue-200 dark:border-blue-800/50' : 'border-gray-100/30 dark:border-gray-850/30'}"
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Processing')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200 flex items-center gap-2">
-					{processingCount}
-					{#if processingCount > 0}
-						<Spinner className="size-4" />
-					{/if}
-				</div>
-			</div>
+	{#if loadError && !loading}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the dashboard.')}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={() => loadData()}>
+					<RefreshCw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{/if}
 
-			<button
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border {needsReviewCount > 0 ? 'border-orange-200 dark:border-orange-800/50' : 'border-gray-100/30 dark:border-gray-850/30'} text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
-				on:click={() => goto('/invoices/data?needs_review=true')}
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Needs Attention')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200 flex items-center gap-2">
-					{needsReviewCount}
-					{#if needsReviewCount > 0}
-						<Badge type="warning" content={$i18n.t('Review')} />
-					{/if}
-				</div>
-			</button>
-
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Vendors')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200">
-					{vendorCount}
-				</div>
-			</div>
+	{#if loading}
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			{#each Array(4) as _}<Skeleton class="h-[104px] rounded-xl" />{/each}
 		</div>
-
-		<!-- Processing Banner -->
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(20rem,100%),1fr))] gap-4">
+			<Skeleton class="h-72 rounded-xl" />
+			<Skeleton class="h-72 rounded-xl" />
+		</div>
+	{:else if !loadError}
 		{#if processingCount > 0}
-			<div
-				class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200/50 dark:border-blue-800/30 flex items-center gap-3"
-			>
-				<Spinner className="size-4 text-blue-500" />
-				<div class="text-sm text-blue-700 dark:text-blue-300">
-					{processingCount} {processingCount === 1 ? 'invoice is' : 'invoices are'} currently being processed.
-					{$i18n.t('This page will update automatically.')}
-				</div>
-			</div>
+			<Alert.Root>
+				<LoaderCircle class="animate-spin motion-reduce:animate-none" />
+				<Alert.Title>
+					{processingCount}
+					{processingCount === 1
+						? $i18n.t('invoice is currently being processed')
+						: $i18n.t('invoices are currently being processed')}
+				</Alert.Title>
+				<Alert.Description>{$i18n.t('This page will update automatically.')}</Alert.Description>
+			</Alert.Root>
 		{/if}
 
-		<!-- Charts -->
-		<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-			<!-- Monthly Spending -->
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
+		<!-- KPI cards -->
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			<KpiCard label={$i18n.t('Total Invoices')} value={totalInvoices.toLocaleString()} />
+			<KpiCard label={$i18n.t('Processing')} value={processingCount.toLocaleString()}>
+				{#snippet action()}
+					{#if processingCount > 0}
+						<LoaderCircle
+							class="size-4 animate-spin text-muted-foreground motion-reduce:animate-none"
+							aria-hidden="true"
+						/>
+					{/if}
+				{/snippet}
+			</KpiCard>
+			<KpiCard
+				label={$i18n.t('Needs Attention')}
+				value={needsReviewCount.toLocaleString()}
+				href="/invoices/data?needs_review=true"
 			>
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">
-					{$i18n.t('Monthly Spending')}
-				</div>
-				{#if monthlyData.length === 0}
-					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
-						{$i18n.t('No data')}
-					</div>
-				{:else}
-					<div class="h-48">
-						<canvas bind:this={monthlyCanvas}></canvas>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Spending by Vendor -->
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">
-					{$i18n.t('Spending by Vendor')}
-				</div>
-				{#if vendorData.length === 0}
-					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
-						{$i18n.t('No data')}
-					</div>
-				{:else}
-					<div class="h-48">
-						<canvas bind:this={vendorCanvas}></canvas>
-					</div>
-				{/if}
-			</div>
+				{#snippet action()}
+					{#if needsReviewCount > 0}<Badge variant="warning">{$i18n.t('Review')}</Badge>{/if}
+				{/snippet}
+				{#snippet footer()}
+					<span class="inline-flex items-center gap-1 text-link"
+						>{$i18n.t('Open the review list')}<ArrowRight class="size-3.5" /></span
+					>
+				{/snippet}
+			</KpiCard>
+			<KpiCard label={$i18n.t('Vendors')} value={vendorCount.toLocaleString()} />
 		</div>
 
-		<!-- Needs Review Table -->
-		{#if reviewInvoices.length > 0}
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="flex justify-between items-center mb-3">
-					<div class="text-sm font-medium dark:text-gray-200">
-						{$i18n.t('Invoices Needing Review')}
-					</div>
-					<a
-						href="/invoices/data"
-						class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-					>
-						{$i18n.t('View All')} &rarr;
-					</a>
-				</div>
+		{#if totalInvoices === 0}
+			<Empty.Root class="border border-dashed">
+				<Empty.Header>
+					<Empty.Media variant="icon"><Receipt /></Empty.Media>
+					<Empty.Title>{$i18n.t('No invoices yet.')}</Empty.Title>
+					<Empty.Description>
+						{$i18n.t('Tag a K4mi document with')} <code>invoice</code>
+						{$i18n.t('to get started.')}
+					</Empty.Description>
+				</Empty.Header>
+			</Empty.Root>
+		{:else}
+			<!-- Charts -->
+			<div class="grid grid-cols-[repeat(auto-fit,minmax(min(20rem,100%),1fr))] gap-4">
+				<Card.Root>
+					<Card.Header>
+						<Card.Title>{$i18n.t('Monthly Spending')}</Card.Title>
+						<Card.Description>{$i18n.t('Invoice totals per month')}</Card.Description>
+					</Card.Header>
+					<Card.Content>
+						{#if monthlyData.length === 0}
+							<div class="flex h-56 items-center justify-center text-sm text-muted-foreground">
+								{$i18n.t('No data')}
+							</div>
+						{:else}
+							<div class="h-56" role="img" aria-label={$i18n.t('Monthly Spending')}>
+								<canvas bind:this={monthlyCanvas}></canvas>
+							</div>
+						{/if}
+					</Card.Content>
+					{#if monthlyData.length > 0}
+						<Card.Footer>
+							<Collapsible.Root class="w-full">
+								<Collapsible.Trigger
+									class="group inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+								>
+									<ChevronRight
+										class="size-4 transition-transform group-data-[state=open]:rotate-90 motion-reduce:transition-none"
+									/>
+									{$i18n.t('Data table')}
+								</Collapsible.Trigger>
+								<Collapsible.Content>
+									<div class="mt-3 max-h-64 overflow-y-auto rounded-md border">
+										<Table.Root>
+											<Table.Header class="bg-muted/50">
+												<Table.Row class="hover:bg-transparent">
+													<Table.Head>{$i18n.t('Month')}</Table.Head>
+													<Table.Head class="text-right">{$i18n.t('Invoices')}</Table.Head>
+													<Table.Head class="text-right">{$i18n.t('Total')}</Table.Head>
+												</Table.Row>
+											</Table.Header>
+											<Table.Body>
+												{#each monthlyData as d}
+													<Table.Row>
+														<Table.Cell class="tabular-nums">{d.period}</Table.Cell>
+														<Table.Cell class="text-right tabular-nums"
+															>{d.invoice_count ?? '—'}</Table.Cell
+														>
+														<Table.Cell class="text-right tabular-nums"
+															>{fmtAmount(d.total_amount)}</Table.Cell
+														>
+													</Table.Row>
+												{/each}
+											</Table.Body>
+										</Table.Root>
+									</div>
+								</Collapsible.Content>
+							</Collapsible.Root>
+						</Card.Footer>
+					{/if}
+				</Card.Root>
 
-				<table
-					class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto"
-				>
-					<thead
-						class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200"
-					>
-						<tr
-							class="border-b-[1.5px] border-gray-50 dark:border-gray-850/30"
-						>
-							<th class="px-2.5 py-2">{$i18n.t('Vendor')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('Invoice #')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('Date')}</th>
-							<th class="px-2.5 py-2 text-right">{$i18n.t('Total')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('Confidence')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('K4mi')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each reviewInvoices as invoice}
-							<tr
-								class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
-								on:click={() => goto(`/invoices/data?vendor=${encodeURIComponent(invoice.vendor_name)}`)}
-							>
-								<td class="px-3 py-1.5">{invoice.vendor_name}</td>
-								<td class="px-3 py-1.5">{invoice.invoice_number ?? '-'}</td>
-								<td class="px-3 py-1.5">
-									{invoice.invoice_date
-										? dayjs(invoice.invoice_date).format('YYYY-MM-DD')
-										: '-'}
-								</td>
-								<td class="px-3 py-1.5 text-right">
-									{invoice.currency ?? 'USD'}{parseFloat(
-										invoice.total_amount
-									).toLocaleString(undefined, {
-										minimumFractionDigits: 2
-									})}
-								</td>
-								<td class="px-3 py-1.5">
-									{#if invoice.confidence_score !== null}
-										<Badge
-											type={parseFloat(invoice.confidence_score) >= 0.7
-												? 'success'
-												: parseFloat(invoice.confidence_score) >= 0.4
-													? 'warning'
-													: 'error'}
-											content={`${(parseFloat(invoice.confidence_score) * 100).toFixed(0)}%`}
-										/>
-									{:else}
-										<Badge type="muted" content="N/A" />
-									{/if}
-								</td>
-								<td class="px-3 py-1.5">
-									<!-- svelte-ignore a11y-click-events-have-key-events -->
-									<!-- svelte-ignore a11y-no-static-element-interactions -->
-									<K4miDocLink
-										docId={invoice.k4mi_document_id}
-										extraClass="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-										stopPropagation
+				<Card.Root>
+					<Card.Header>
+						<Card.Title>{$i18n.t('Spending by Vendor')}</Card.Title>
+						<Card.Description>{$i18n.t('Top 5 and the rest')}</Card.Description>
+					</Card.Header>
+					<Card.Content>
+						{#if vendorData.length === 0}
+							<div class="flex h-56 items-center justify-center text-sm text-muted-foreground">
+								{$i18n.t('No data')}
+							</div>
+						{:else}
+							<ul class="grid gap-2.5">
+								{#each vendorTop as d}
+									<li
+										class="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-3 text-[13px]"
+										title="{d.period}: {fmtAmount(d.total_amount)}"
 									>
-										#{invoice.k4mi_document_id}
-									</K4miDocLink>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+										<span class="truncate">{d.period}</span>
+										<div class="h-5">
+											<div
+												class="h-full min-w-0.5 rounded-r bg-chart-1"
+												style="width: {(num(d.total_amount) / vendorMax) * 100}%"
+											></div>
+										</div>
+										<span class="text-right tabular-nums">{fmtCompact(d.total_amount)}</span>
+									</li>
+								{/each}
+								{#if vendorRest.length > 0}
+									<li
+										class="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-3 text-[13px] text-muted-foreground"
+										title="{$i18n.t('Other')} ({vendorRest.length}): {fmtAmount(vendorOther)}"
+									>
+										<span class="truncate">{$i18n.t('Other')} ({vendorRest.length})</span>
+										<div class="h-5">
+											<div
+												class="h-full min-w-0.5 rounded-r bg-muted-foreground/45"
+												style="width: {(vendorOther / vendorMax) * 100}%"
+											></div>
+										</div>
+										<span class="text-right tabular-nums">{fmtCompact(vendorOther)}</span>
+									</li>
+								{/if}
+							</ul>
+						{/if}
+					</Card.Content>
+				</Card.Root>
 			</div>
+
+			<!-- Needs review -->
+			{#if reviewInvoices.length > 0}
+				<Card.Root>
+					<Card.Header>
+						<Card.Title>{$i18n.t('Invoices Needing Review')}</Card.Title>
+						<Card.Description>{$i18n.t('Low confidence or flagged in K4mi')}</Card.Description>
+						<Card.Action>
+							<Button variant="ghost" size="sm" href="/invoices/data?needs_review=true">
+								{$i18n.t('View All')}<ArrowRight />
+							</Button>
+						</Card.Action>
+					</Card.Header>
+					<Card.Content>
+						<div class="overflow-hidden rounded-md border">
+							<Table.Root>
+								<Table.Header class="bg-muted/50">
+									<Table.Row class="hover:bg-transparent">
+										<Table.Head>{$i18n.t('Vendor')}</Table.Head>
+										<Table.Head>{$i18n.t('Invoice #')}</Table.Head>
+										<Table.Head>{$i18n.t('Date')}</Table.Head>
+										<Table.Head class="text-right">{$i18n.t('Total')}</Table.Head>
+										<Table.Head>{$i18n.t('Confidence')}</Table.Head>
+										<Table.Head>{$i18n.t('K4mi')}</Table.Head>
+									</Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{#each reviewInvoices as invoice}
+										<Table.Row
+											class="cursor-pointer"
+											tabindex={0}
+											onclick={() => openVendor(invoice)}
+											onkeydown={(e: KeyboardEvent) => {
+												if (e.key === 'Enter') openVendor(invoice);
+											}}
+										>
+											<Table.Cell class="max-w-[16rem] truncate font-medium">
+												{invoice.vendor_name ?? '—'}
+											</Table.Cell>
+											<Table.Cell class="font-mono text-[13px]">
+												{#if invoice.invoice_number}{invoice.invoice_number}{:else}<span
+														class="text-muted-foreground">—</span
+													>{/if}
+											</Table.Cell>
+											<Table.Cell class="tabular-nums">
+												{#if invoice.invoice_date}{dayjs(invoice.invoice_date).format(
+														'YYYY-MM-DD'
+													)}{:else}<span class="text-muted-foreground">—</span>{/if}
+											</Table.Cell>
+											<Table.Cell class="text-right tabular-nums">
+												{#if invoice.total_amount !== null && invoice.total_amount !== undefined}
+													{invoice.currency ? `${invoice.currency} ` : ''}{fmtAmount(
+														invoice.total_amount
+													)}
+												{:else}
+													<span class="text-muted-foreground">—</span>
+												{/if}
+											</Table.Cell>
+											<Table.Cell>
+												{#if invoice.confidence_score !== null && invoice.confidence_score !== undefined}
+													<StatusBadge kind="confidence" status={invoice.confidence_score} />
+												{:else}
+													<span class="text-muted-foreground">—</span>
+												{/if}
+											</Table.Cell>
+											<Table.Cell>
+												<K4miDocLink
+													docId={invoice.k4mi_document_id}
+													extraClass="font-mono text-[13px] text-link underline-offset-4 hover:underline"
+													stopPropagation
+												>
+													#{invoice.k4mi_document_id}
+												</K4miDocLink>
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
 		{/if}
-	</div>
-{/if}
+	{/if}
+</div>

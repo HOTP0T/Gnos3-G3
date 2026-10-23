@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { WEBUI_NAME, mobile, showSidebar, user, isAdmin} from '$lib/stores';
 	import { page } from '$app/stores';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import { WEBUI_NAME, user, isAdmin } from '$lib/stores';
+	import ModuleShell from '$lib/components/gnos3-ui/ModuleShell.svelte';
+	import ViewTabs from '$lib/components/gnos3-ui/ViewTabs.svelte';
 	import PrimaryDataNav from '$lib/components/data-nav/PrimaryDataNav.svelte';
 
-	const i18n = getContext('i18n');
-	let loaded = false;
+	let { children } = $props();
+
+	const i18n: any = getContext('i18n');
+	let loaded = $state(false);
 
 	// RBAC: client-side guard. API enforces this too — this is UX polish.
 	onMount(async () => {
-		const canAccess =
-			$isAdmin ||
-			Boolean($user?.permissions?.modules?.business_cards?.read);
+		const canAccess = $isAdmin || Boolean($user?.permissions?.modules?.business_cards?.read);
 		if (!canAccess) {
 			await goto('/');
 			return;
@@ -30,61 +30,25 @@
 </svelte:head>
 
 {#if loaded}
-	<div class="flex flex-col h-screen max-h-[100dvh] flex-1 transition-width duration-200 ease-in-out {$showSidebar ? 'md:max-w-[calc(100%-var(--sidebar-width))]' : 'md:max-w-[calc(100%-49px)]'} w-full max-w-full">
-		<nav class="px-2.5 pt-1.5 backdrop-blur-xl drag-region">
-			<div class="flex items-center gap-1">
-				{#if $mobile}
-					<div
-						class="{$showSidebar
-							? 'md:hidden'
-							: ''} self-center flex flex-none items-center"
-					>
-						<Tooltip
-							content={$showSidebar
-								? $i18n.t('Close Sidebar')
-								: $i18n.t('Open Sidebar')}
-							interactive={true}
-						>
-							<button
-								id="sidebar-toggle-button"
-								class="cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-								on:click={() => {
-									showSidebar.set(!$showSidebar);
-								}}
-							>
-								<div class="self-center p-1.5">
-									<Sidebar />
-								</div>
-							</button>
-						</Tooltip>
-					</div>
-				{/if}
-
-				<div class="flex flex-col">
-					<PrimaryDataNav />
-
-					<div
-						class="flex gap-1 scrollbar-none overflow-x-auto w-fit text-center text-xs font-medium rounded-full bg-transparent pl-3 pb-1"
-					>
-						<a
-							class="min-w-fit px-1.5 py-1 {$page.url.pathname.includes('/business-cards/dashboard')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							href="/business-cards/dashboard">{$i18n.t('Dashboard')}</a
-						>
-						<a
-							class="min-w-fit px-1.5 py-1 {$page.url.pathname.includes('/business-cards/data')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							href="/business-cards/data">{$i18n.t('table')}</a
-						>
-					</div>
-				</div>
-			</div>
-		</nav>
-
-		<div class="pb-1 px-3 md:px-[18px] flex-1 max-h-full overflow-y-auto" id="business-cards-container">
-			<slot />
+	<ModuleShell containerId="business-cards-container">
+		{#snippet nav()}<PrimaryDataNav />{/snippet}
+		<ViewTabs
+			label={$i18n.t('Business cards')}
+			items={[
+				{
+					href: '/business-cards/dashboard',
+					label: $i18n.t('Dashboard'),
+					active: $page.url.pathname.includes('/business-cards/dashboard')
+				},
+				{
+					href: '/business-cards/data',
+					label: $i18n.t('Table'),
+					active: $page.url.pathname.includes('/business-cards/data')
+				}
+			]}
+		/>
+		<div class="mt-4">
+			{@render children?.()}
 		</div>
-	</div>
+	</ModuleShell>
 {/if}

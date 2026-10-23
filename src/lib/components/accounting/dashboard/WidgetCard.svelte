@@ -1,12 +1,18 @@
 <script lang="ts">
-	// Shared frame for every dashboard widget. IMPORTANT: none of this
-	// component's props change when the dashboard enters/leaves edit mode — the
-	// edit affordances (remove button, outline, drag cursor) are pure CSS keyed
-	// off an ancestor `.grid-stack.is-editing` class. That's deliberate: mutating
-	// a gridstack-owned item from Svelte makes gridstack lose track of it.
+	// Shared frame for every dashboard widget: a plain Card (design system → Cards). IMPORTANT:
+	// none of this component's props change when the dashboard enters/leaves edit mode — the
+	// edit affordances (drag handle, remove button, dashed outline, drag cursor) are pure CSS
+	// keyed off an ancestor `.grid-stack.is-editing` class. That's deliberate: mutating a
+	// gridstack-owned item from Svelte makes gridstack lose track of it.
 	import { createEventDispatcher, getContext } from 'svelte';
+	import GripHorizontal from '@lucide/svelte/icons/grip-horizontal';
+	import X from '@lucide/svelte/icons/x';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+
 	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
+	const T = (k: string) => ($i18n?.t ? $i18n.t(k) : k);
 
 	export let title = '';
 	export let href: string | null = null;
@@ -14,30 +20,54 @@
 	export let padded = true;
 </script>
 
-<div class="wcard h-full w-full flex flex-col bg-white dark:bg-gray-900 rounded-xl border border-gray-100/40 dark:border-gray-850/40 overflow-hidden relative">
-	<!-- Remove button — CSS-hidden unless the grid is in edit mode. -->
-	<button
-		class="wcard-remove absolute top-1.5 right-1.5 z-20 text-gray-400 hover:text-red-500 bg-white/80 dark:bg-gray-900/80 rounded-md p-0.5 transition"
-		title={i18n?.t ? i18n.t('Remove widget') : 'Remove widget'}
-		on:pointerdown|stopPropagation
-		on:click|stopPropagation={() => dispatch('remove')}
+<div
+	class="wcard relative flex h-full w-full flex-col overflow-hidden rounded-xl border bg-card text-sm text-card-foreground shadow-sm"
+>
+	<!-- Edit-mode chrome — CSS-hidden unless the grid is editing. -->
+	<span
+		class="wcard-handle pointer-events-none absolute top-1 left-1/2 z-20 -translate-x-1/2 text-muted-foreground"
+		aria-hidden="true"
 	>
-		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-			<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-		</svg>
-	</button>
+		<GripHorizontal class="size-4" />
+	</span>
+	<div class="wcard-remove absolute top-2 right-2 z-20">
+		<Tip content={T('Remove widget')}>
+			<Button
+				variant="outline"
+				size="icon-xs"
+				class="bg-card hover:text-destructive"
+				aria-label={T('Remove widget')}
+				onpointerdown={(e: PointerEvent) => e.stopPropagation()}
+				onclick={(e: MouseEvent) => {
+					e.stopPropagation();
+					dispatch('remove');
+				}}
+			>
+				<X />
+			</Button>
+		</Tip>
+	</div>
 
 	{#if title}
-		<div class="flex items-center gap-2 px-3.5 pt-3 pb-2 flex-shrink-0">
-			<div class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-1">{title}</div>
+		<div class="flex shrink-0 items-center gap-2 px-4 pt-4 pb-3">
+			<h3 class="min-w-0 flex-1 truncate text-base leading-5 font-semibold">{title}</h3>
 			{#if href}
-				<a {href} class="wcard-link text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition whitespace-nowrap">
-					{linkLabel || (i18n?.t ? i18n.t('View all') : 'View all')} &rarr;
+				<a
+					{href}
+					class="wcard-link text-sm whitespace-nowrap text-link underline-offset-4 hover:underline"
+				>
+					{linkLabel || T('View all')}
 				</a>
 			{/if}
 		</div>
 	{/if}
-	<div class="flex-1 min-h-0 {padded ? 'px-3.5 pb-3.5' : ''} {title ? '' : padded ? 'pt-3.5' : ''} overflow-hidden">
+	<div
+		class="min-h-0 flex-1 overflow-hidden {padded ? 'px-4 pb-4' : ''} {title
+			? ''
+			: padded
+				? 'pt-4'
+				: ''}"
+	>
 		<slot />
 	</div>
 </div>

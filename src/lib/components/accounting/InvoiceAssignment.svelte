@@ -23,12 +23,55 @@
 	} from '$lib/apis/accounting';
 	import { updateInvoice } from '$lib/apis/invoices';
 	import { convertRowAmount } from '$lib/utils/currency';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
 	import DocumentPreviewModal from '$lib/components/invoices/DocumentPreviewModal.svelte';
 	import InvoiceCreateModal from '$lib/components/accounting/InvoiceCreateModal.svelte';
 
-	const i18n = getContext('i18n');
+	import Sparkles from '@lucide/svelte/icons/sparkles';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Eye from '@lucide/svelte/icons/eye';
+	import Download from '@lucide/svelte/icons/download';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import ListFilter from '@lucide/svelte/icons/list-filter';
+	import Search from '@lucide/svelte/icons/search';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import Check from '@lucide/svelte/icons/check';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import Info from '@lucide/svelte/icons/info';
+	import FileText from '@lucide/svelte/icons/file-text';
+	import Inbox from '@lucide/svelte/icons/inbox';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import UserMinus from '@lucide/svelte/icons/user-minus';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge, badgeVariants } from '$lib/components/ui/badge/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Progress } from '$lib/components/ui/progress/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import KpiCard from '$lib/components/gnos3-ui/KpiCard.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import TablePagination from '$lib/components/gnos3-ui/TablePagination.svelte';
+	import { cn } from '$lib/utils/shadcn.js';
+
+	const i18n: any = getContext('i18n');
+
 	const displayCurrency = getContext<Writable<string>>('displayCurrency');
 	const exchangeRates = getContext<Writable<any[]>>('exchangeRates');
 	const companyCurrencyCtx = getContext<Writable<string>>('companyCurrency');
@@ -39,6 +82,7 @@
 
 	let showCreateInvoice = false;
 	let loading = true;
+	let companyError = '';
 	let aiAvailable = false;
 	let aiCategorizing = false;
 	let companyInvoices: any[] = [];
@@ -107,9 +151,15 @@
 	const handlePreviewUpdate = (updated: any) => {
 		// Refresh the invoice in both lists
 		const ci = companyInvoices.findIndex((i) => i.id === updated.id);
-		if (ci >= 0) { companyInvoices[ci] = updated; companyInvoices = companyInvoices; }
+		if (ci >= 0) {
+			companyInvoices[ci] = updated;
+			companyInvoices = companyInvoices;
+		}
 		const ui = unassignedInvoices.findIndex((i) => i.id === updated.id);
-		if (ui >= 0) { unassignedInvoices[ui] = updated; unassignedInvoices = unassignedInvoices; }
+		if (ui >= 0) {
+			unassignedInvoices[ui] = updated;
+			unassignedInvoices = unassignedInvoices;
+		}
 	};
 
 	// Stats
@@ -139,7 +189,10 @@
 
 	const updateAiBanner = () => {
 		const done = Math.max(aiBatchTotal - aiBatchRemaining, 0);
-		aiActivity = $i18n.t('AI is suggesting accounts — {{done}} of {{total}} done', { done, total: aiBatchTotal });
+		aiActivity = $i18n.t('AI is suggesting accounts — {{done}} of {{total}} done', {
+			done,
+			total: aiBatchTotal
+		});
 	};
 
 	const pollAiBatch = async () => {
@@ -234,7 +287,8 @@
 	let pickCounterpartyId: number | '' = '';
 	let pickTaxId: number | '' = '';
 	let splitMode = false;
-	let splitLines: Array<{ account_id: number | null; amount: number | null; description: string }> = [];
+	let splitLines: Array<{ account_id: number | null; amount: number | null; description: string }> =
+		[];
 	let lineSearch: Record<string, string> = {};
 	let editingLine: string | null = null; // role whose account picker is open
 
@@ -284,13 +338,20 @@
 			// Adopt what the engine resolved (rule / mapping / defaults) as the
 			// current choice, so it is visible and can be changed.
 			for (const l of plan.lines ?? []) {
-				if (l.role === 'counterparty' && l.account_id && pickCounterpartyId === '') pickCounterpartyId = l.account_id;
+				if (l.role === 'counterparty' && l.account_id && pickCounterpartyId === '')
+					pickCounterpartyId = l.account_id;
 				if (l.role === 'tax' && l.account_id && pickTaxId === '') pickTaxId = l.account_id;
 			}
 			if (!splitMode) {
 				const main = (plan.lines ?? []).find((l: any) => l.role === 'main');
 				splitLines = main
-					? [{ account_id: main.account_id ?? null, amount: main.amount, description: main.description ?? '' }]
+					? [
+							{
+								account_id: main.account_id ?? null,
+								amount: main.amount,
+								description: main.description ?? ''
+							}
+						]
 					: [];
 			}
 		} catch (err: any) {
@@ -318,11 +379,21 @@
 	const candidatesFor = (line: any, q: string, leafAccounts: any[]) => {
 		q = (q ?? '').toLowerCase();
 		const typeOk = (a: any) =>
-			line.role === 'tax' ? ['liability', 'asset'].includes(a.account_type) : line.role === 'counterparty' ? ['liability', 'asset'].includes(a.account_type) : true;
+			line.role === 'tax'
+				? ['liability', 'asset'].includes(a.account_type)
+				: line.role === 'counterparty'
+					? ['liability', 'asset'].includes(a.account_type)
+					: true;
 		const cands = (line.candidates ?? []).map((c: any) => c.id);
 		return leafAccounts
-			.filter((a: any) => typeOk(a) && (!q || a.code.includes(q) || a.name.toLowerCase().includes(q)))
-			.sort((a: any, b: any) => (cands.includes(b.id) ? 1 : 0) - (cands.includes(a.id) ? 1 : 0) || a.code.localeCompare(b.code))
+			.filter(
+				(a: any) => typeOk(a) && (!q || a.code.includes(q) || a.name.toLowerCase().includes(q))
+			)
+			.sort(
+				(a: any, b: any) =>
+					(cands.includes(b.id) ? 1 : 0) - (cands.includes(a.id) ? 1 : 0) ||
+					a.code.localeCompare(b.code)
+			)
 			.slice(0, 60);
 	};
 
@@ -334,15 +405,17 @@
 		company: 'company default',
 		missing: 'account required'
 	};
-	const sourceClass = (src: string) =>
-		src === 'missing'
-			? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
-			: src === 'default'
-				? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
-				: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300';
+	// Design system → "Booking an invoice": a gap is danger, a country default to confirm is
+	// warning, anything a person chose or mapped is a neutral outline chip.
+	const sourceVariant = (src: string): 'danger' | 'warning' | 'outline' =>
+		src === 'missing' ? 'danger' : src === 'default' ? 'warning' : 'outline';
 
 	$: splitTotal = Math.round(splitLines.reduce((s, l) => s + (l.amount ?? 0), 0) * 100) / 100;
-	$: splitOk = !splitMode || (splitLines.length > 0 && splitLines.every((l) => l.account_id) && Math.abs(splitTotal - (bookingPlan?.subtotal ?? 0)) < 0.005);
+	$: splitOk =
+		!splitMode ||
+		(splitLines.length > 0 &&
+			splitLines.every((l) => l.account_id) &&
+			Math.abs(splitTotal - (bookingPlan?.subtotal ?? 0)) < 0.005);
 	$: planReady = !!bookingPlan && !bookingLoading && bookingPlan.complete && splitOk;
 
 	const handleConfirmPicker = async () => {
@@ -353,7 +426,12 @@
 			counterparty_account_id: pickCounterpartyId === '' ? undefined : Number(pickCounterpartyId),
 			tax_account_id: pickTaxId === '' ? undefined : Number(pickTaxId)
 		};
-		if (splitMode) payload.main_lines = splitLines.map((l) => ({ account_id: l.account_id, amount: l.amount ?? 0, description: l.description }));
+		if (splitMode)
+			payload.main_lines = splitLines.map((l) => ({
+				account_id: l.account_id,
+				amount: l.amount ?? 0,
+				description: l.description
+			}));
 		closePicker();
 		aiProcessingIds.add(invoiceId);
 		aiProcessingIds = aiProcessingIds;
@@ -362,14 +440,20 @@
 			const result = await confirmInvoiceCategory(invoiceId, payload);
 			const txnId = result?.transaction_id;
 			if (txnId && result?.booking_gaps?.length) {
-				toast.warning($i18n.t('Draft entry') + ` #${txnId} ` + $i18n.t('created with lines still needing an account — open it in Entries'));
+				toast.warning(
+					$i18n.t('Draft entry') +
+						` #${txnId} ` +
+						$i18n.t('created with lines still needing an account — open it in Entries')
+				);
 			} else if (txnId) {
 				toast.success($i18n.t('Draft entry') + ` #${txnId} ` + $i18n.t('created'));
 			} else {
 				toast.success($i18n.t('Account confirmed'));
 			}
 			await reloadAll();
-		} catch (err: any) { toast.error(err?.detail ?? `${err}`); }
+		} catch (err: any) {
+			toast.error(err?.detail ?? `${err}`);
+		}
 		aiProcessingIds.delete(invoiceId);
 		aiProcessingIds = aiProcessingIds;
 		aiActivity = '';
@@ -382,8 +466,11 @@
 		return true;
 	});
 
-	$: allCompanySelected = filteredCompany.length > 0 && filteredCompany.every((i) => selectedCompanyIds.has(i.id));
-	$: allUnassignedSelected = unassignedInvoices.length > 0 && unassignedInvoices.every((i) => selectedUnassignedIds.has(i.id));
+	$: allCompanySelected =
+		filteredCompany.length > 0 && filteredCompany.every((i) => selectedCompanyIds.has(i.id));
+	$: allUnassignedSelected =
+		unassignedInvoices.length > 0 &&
+		unassignedInvoices.every((i) => selectedUnassignedIds.has(i.id));
 
 	const loadCompanyInvoices = async (opts: { keepSelection?: boolean } = {}) => {
 		try {
@@ -403,7 +490,11 @@
 			totalAmount = companyInvoices.reduce((s, i) => s + (parseFloat(i.total_amount) || 0), 0);
 			reviewCount = companyInvoices.filter((i) => i.needs_review).length;
 			if (!opts.keepSelection) selectedCompanyIds = new Set();
-		} catch (err) { toast.error(`${err}`); }
+			companyError = '';
+		} catch (err: any) {
+			companyError = err?.detail ?? `${err}`;
+			toast.error(`${err}`);
+		}
 	};
 
 	const loadUnassignedInvoices = async () => {
@@ -422,22 +513,34 @@
 			unassignedInvoices = res.invoices ?? [];
 			unassignedTotal = res.total ?? 0;
 			selectedUnassignedIds = new Set();
-		} catch (err) { toast.error(`${err}`); }
+		} catch (err) {
+			toast.error(`${err}`);
+		}
 	};
 
 	const reloadAll = async () => {
-		await Promise.all([loadCompanyInvoices(), showUnassigned ? loadUnassignedInvoices() : Promise.resolve()]);
+		await Promise.all([
+			loadCompanyInvoices(),
+			showUnassigned ? loadUnassignedInvoices() : Promise.resolve()
+		]);
 	};
 
 	const handleBulkAssign = async () => {
 		if (selectedUnassignedIds.size === 0) return;
 		const count = selectedUnassignedIds.size;
-		aiActivity = $i18n.t('AI is categorizing') + ` ${count} ` + $i18n.t('invoice(s) and creating journal entries...');
+		aiActivity =
+			$i18n.t('AI is categorizing') +
+			` ${count} ` +
+			$i18n.t('invoice(s) and creating journal entries...');
 		try {
 			await bulkAssignInvoices(companyId, [...selectedUnassignedIds]);
-			toast.success($i18n.t(`${count} invoice(s) assigned — AI categorized and created draft entries`));
+			toast.success(
+				$i18n.t(`${count} invoice(s) assigned — AI categorized and created draft entries`)
+			);
 			await reloadAll();
-		} catch (err) { toast.error(`${err}`); }
+		} catch (err) {
+			toast.error(`${err}`);
+		}
 		aiActivity = '';
 	};
 
@@ -447,18 +550,27 @@
 			await bulkUnassignInvoices(companyId, [...selectedCompanyIds]);
 			toast.success($i18n.t(`${selectedCompanyIds.size} invoice(s) removed`));
 			await reloadAll();
-		} catch (err) { toast.error(`${err}`); }
+		} catch (err) {
+			toast.error(`${err}`);
+		}
 	};
 
 	const toggleSort = (field: string, panel: 'company' | 'unassigned') => {
 		if (panel === 'company') {
 			if (companySortBy === field) companySortDir = companySortDir === 'asc' ? 'desc' : 'asc';
-			else { companySortBy = field; companySortDir = 'asc'; }
+			else {
+				companySortBy = field;
+				companySortDir = 'asc';
+			}
 			companyPage = 0;
 			loadCompanyInvoices();
 		} else {
-			if (unassignedSortBy === field) unassignedSortDir = unassignedSortDir === 'asc' ? 'desc' : 'asc';
-			else { unassignedSortBy = field; unassignedSortDir = 'asc'; }
+			if (unassignedSortBy === field)
+				unassignedSortDir = unassignedSortDir === 'asc' ? 'desc' : 'asc';
+			else {
+				unassignedSortBy = field;
+				unassignedSortDir = 'asc';
+			}
 			unassignedPage = 0;
 			loadUnassignedInvoices();
 		}
@@ -489,12 +601,30 @@
 	};
 
 	let searchTimer: ReturnType<typeof setTimeout>;
-	const onSearchCompany = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { companyPage = 0; loadCompanyInvoices(); }, 300); };
+	const onSearchCompany = () => {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => {
+			companyPage = 0;
+			loadCompanyInvoices();
+		}, 300);
+	};
 	let searchTimer2: ReturnType<typeof setTimeout>;
-	const onSearchUnassigned = () => { clearTimeout(searchTimer2); searchTimer2 = setTimeout(() => { unassignedPage = 0; loadUnassignedInvoices(); }, 300); };
+	const onSearchUnassigned = () => {
+		clearTimeout(searchTimer2);
+		searchTimer2 = setTimeout(() => {
+			unassignedPage = 0;
+			loadUnassignedInvoices();
+		}, 300);
+	};
 
-	const onCompanyFilterChange = () => { companyPage = 0; loadCompanyInvoices(); };
-	const onUnassignedFilterChange = () => { unassignedPage = 0; loadUnassignedInvoices(); };
+	const onCompanyFilterChange = () => {
+		companyPage = 0;
+		loadCompanyInvoices();
+	};
+	const onUnassignedFilterChange = () => {
+		unassignedPage = 0;
+		loadUnassignedInvoices();
+	};
 
 	const clearCompanyFilters = () => {
 		dateFrom = '';
@@ -520,12 +650,30 @@
 
 	const setCompanySortPreset = (value: string) => {
 		switch (value) {
-			case 'date_desc': companySortBy = 'invoice_date'; companySortDir = 'desc'; break;
-			case 'date_asc': companySortBy = 'invoice_date'; companySortDir = 'asc'; break;
-			case 'amount_desc': companySortBy = 'total_amount'; companySortDir = 'desc'; break;
-			case 'amount_asc': companySortBy = 'total_amount'; companySortDir = 'asc'; break;
-			case 'vendor_asc': companySortBy = 'vendor_name'; companySortDir = 'asc'; break;
-			case 'vendor_desc': companySortBy = 'vendor_name'; companySortDir = 'desc'; break;
+			case 'date_desc':
+				companySortBy = 'invoice_date';
+				companySortDir = 'desc';
+				break;
+			case 'date_asc':
+				companySortBy = 'invoice_date';
+				companySortDir = 'asc';
+				break;
+			case 'amount_desc':
+				companySortBy = 'total_amount';
+				companySortDir = 'desc';
+				break;
+			case 'amount_asc':
+				companySortBy = 'total_amount';
+				companySortDir = 'asc';
+				break;
+			case 'vendor_asc':
+				companySortBy = 'vendor_name';
+				companySortDir = 'asc';
+				break;
+			case 'vendor_desc':
+				companySortBy = 'vendor_name';
+				companySortDir = 'desc';
+				break;
 		}
 		companyPage = 0;
 		loadCompanyInvoices();
@@ -533,12 +681,30 @@
 
 	const setUnassignedSortPreset = (value: string) => {
 		switch (value) {
-			case 'date_desc': unassignedSortBy = 'invoice_date'; unassignedSortDir = 'desc'; break;
-			case 'date_asc': unassignedSortBy = 'invoice_date'; unassignedSortDir = 'asc'; break;
-			case 'amount_desc': unassignedSortBy = 'total_amount'; unassignedSortDir = 'desc'; break;
-			case 'amount_asc': unassignedSortBy = 'total_amount'; unassignedSortDir = 'asc'; break;
-			case 'vendor_asc': unassignedSortBy = 'vendor_name'; unassignedSortDir = 'asc'; break;
-			case 'vendor_desc': unassignedSortBy = 'vendor_name'; unassignedSortDir = 'desc'; break;
+			case 'date_desc':
+				unassignedSortBy = 'invoice_date';
+				unassignedSortDir = 'desc';
+				break;
+			case 'date_asc':
+				unassignedSortBy = 'invoice_date';
+				unassignedSortDir = 'asc';
+				break;
+			case 'amount_desc':
+				unassignedSortBy = 'total_amount';
+				unassignedSortDir = 'desc';
+				break;
+			case 'amount_asc':
+				unassignedSortBy = 'total_amount';
+				unassignedSortDir = 'asc';
+				break;
+			case 'vendor_asc':
+				unassignedSortBy = 'vendor_name';
+				unassignedSortDir = 'asc';
+				break;
+			case 'vendor_desc':
+				unassignedSortBy = 'vendor_name';
+				unassignedSortDir = 'desc';
+				break;
 		}
 		unassignedPage = 0;
 		loadUnassignedInvoices();
@@ -558,7 +724,14 @@
 	// Each invoice is shown in the selected display currency converted FROM ITS
 	// OWN currency (a EUR bill is EUR, whatever the company's books are in).
 	const cvt = (amount: any, date?: string, rowCurrency?: string | null) =>
-		convertRowAmount(amount, rowCurrency, $displayCurrency, nativeCurrency, $exchangeRates ?? [], date);
+		convertRowAmount(
+			amount,
+			rowCurrency,
+			$displayCurrency,
+			nativeCurrency,
+			$exchangeRates ?? [],
+			date
+		);
 
 	// The summary card: every invoice converted into the display currency (or the
 	// company currency), so mixed-currency lists add up to something meaningful.
@@ -568,7 +741,10 @@
 		let missing = 0;
 		for (const i of companyInvoices) {
 			const c = cvt(i.total_amount, i.invoice_date, i.currency);
-			if (!c.hasRate) { missing += 1; continue; }
+			if (!c.hasRate) {
+				missing += 1;
+				continue;
+			}
 			sum += parseFloat(String(c.display).replace(/[^0-9.-]/g, '')) || 0;
 		}
 		return { sum, missing };
@@ -580,10 +756,27 @@
 		return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	};
 
-	const sortIcon = (field: string, currentField: string, currentDir: string): string => {
-		if (field !== currentField) return '';
-		return currentDir === 'asc' ? ' \u25B2' : ' \u25BC';
-	};
+	const fmt2 = (n: number | null | undefined): string =>
+		n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+
+	$: activeFilterCount = [dateFrom, dateTo, minAmount, maxAmount].filter(Boolean).length;
+
+	// The invoice fields editable in the expanded row (saved on blur, as before)
+	const INVOICE_FIELDS: Array<{ field: string; label: string; type: 'text' | 'date' | 'number' }> =
+		[
+			{ field: 'vendor_name', label: 'Vendor', type: 'text' },
+			{ field: 'client_name', label: 'Client', type: 'text' },
+			{ field: 'invoice_number', label: 'Invoice #', type: 'text' },
+			{ field: 'invoice_date', label: 'Invoice Date', type: 'date' },
+			{ field: 'due_date', label: 'Due Date', type: 'date' },
+			{ field: 'total_amount', label: 'Total Amount', type: 'number' },
+			{ field: 'subtotal', label: 'Subtotal', type: 'number' },
+			{ field: 'tax_amount', label: 'Tax Amount', type: 'number' },
+			{ field: 'currency', label: 'Currency', type: 'text' },
+			{ field: 'description', label: 'Description', type: 'text' },
+			{ field: 'po_number', label: 'PO#', type: 'text' },
+			{ field: 'business_unit', label: 'Business Unit', type: 'text' }
+		];
 
 	async function handleAiCategorizeAll() {
 		aiCategorizing = true;
@@ -637,558 +830,974 @@
 			.catch(() => (aiAvailable = false));
 		// A batch started earlier (or on another tab) may still be running
 		getAiCategorizeAllStatus(companyId)
-			.then((s) => { if ((s.queued ?? 0) > 0) startAiPolling(s.queued, s.queued); })
+			.then((s) => {
+				if ((s.queued ?? 0) > 0) startAiPolling(s.queued, s.queued);
+			})
 			.catch(() => {});
 	});
 
 	onDestroy(stopAiPolling);
 </script>
 
-{#if loading}
-	<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
-{:else}
-	<div class="py-3 space-y-4">
-		<!-- AI Activity Banner -->
-		{#if aiActivity}
-			<div class="flex items-center gap-2 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl text-sm text-blue-700 dark:text-blue-300 animate-pulse">
-				<svg class="animate-spin h-4 w-4 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-				<span>{aiActivity}</span>
+<!-- Sortable column header (server-side sort) -->
+{#snippet sortHead(
+	field: string,
+	label: string,
+	panel: 'company' | 'unassigned',
+	right: boolean = false
+)}
+	{@const active = (panel === 'company' ? companySortBy : unassignedSortBy) === field}
+	{@const dir = panel === 'company' ? companySortDir : unassignedSortDir}
+	<Table.Head
+		class={right ? 'text-right' : ''}
+		aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
+	>
+		<button
+			type="button"
+			class={cn(
+				'-mx-1 inline-flex items-center gap-1 rounded-sm px-1 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+				right && 'flex-row-reverse'
+			)}
+			onclick={() => toggleSort(field, panel)}
+		>
+			{$i18n.t(label)}
+			{#if active}
+				{#if dir === 'asc'}<ArrowUp class="size-3.5 text-muted-foreground" />{:else}<ArrowDown
+						class="size-3.5 text-muted-foreground"
+					/>{/if}
+			{/if}
+		</button>
+	</Table.Head>
+{/snippet}
+
+<!-- Amount in the display currency, converted from the invoice's own currency -->
+{#snippet amountCell(inv: any)}
+	<Table.Cell class="text-right tabular-nums">
+		{#key $displayCurrency}
+			{@const c = cvt(inv.total_amount, inv.invoice_date, inv.currency)}
+			{#if c.converting}
+				{#if c.hasRate}
+					<div class="font-medium">
+						{c.display} <span class="text-xs font-normal text-muted-foreground">{c.to}</span>
+					</div>
+					<div class="text-xs text-muted-foreground">{c.original} {c.from}</div>
+				{:else}
+					<span class="inline-flex items-center gap-1">
+						{c.original}
+						<span class="text-xs text-muted-foreground">{c.from}</span>
+						<Tip content={$i18n.t('No exchange rate available')}>
+							<TriangleAlert
+								class="size-3.5 text-warning"
+								aria-label={$i18n.t('No exchange rate available')}
+							/>
+						</Tip>
+					</span>
+				{/if}
+			{:else}
+				{c.original} <span class="text-xs text-muted-foreground">{c.from}</span>
+			{/if}
+		{/key}
+	</Table.Cell>
+{/snippet}
+
+<!-- Secondary filters (shared by both lists, as before) -->
+{#snippet filtersPopover(panel: 'company' | 'unassigned')}
+	{@const onChange = panel === 'company' ? onCompanyFilterChange : onUnassignedFilterChange}
+	<Popover.Root>
+		<Popover.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="outline" size="sm">
+					<ListFilter />{$i18n.t('Filters')}
+					{#if activeFilterCount > 0}<Badge variant="count">{activeFilterCount}</Badge>{/if}
+				</Button>
+			{/snippet}
+		</Popover.Trigger>
+		<Popover.Content align="start" class="w-80">
+			<div class="grid gap-3">
+				<div class="grid grid-cols-2 gap-3">
+					<div class="grid gap-1.5">
+						<Label for="{panel}-date-from" class="text-[13px]">{$i18n.t('From')}</Label>
+						<Input
+							id="{panel}-date-from"
+							type="date"
+							class="h-8"
+							bind:value={dateFrom}
+							onchange={onChange}
+						/>
+					</div>
+					<div class="grid gap-1.5">
+						<Label for="{panel}-date-to" class="text-[13px]">{$i18n.t('To')}</Label>
+						<Input
+							id="{panel}-date-to"
+							type="date"
+							class="h-8"
+							bind:value={dateTo}
+							onchange={onChange}
+						/>
+					</div>
+					<div class="grid gap-1.5">
+						<Label for="{panel}-min" class="text-[13px]">{$i18n.t('Min Amount')}</Label>
+						<Input
+							id="{panel}-min"
+							type="number"
+							step="0.01"
+							placeholder="0.00"
+							class="h-8 text-right tabular-nums"
+							bind:value={minAmount}
+							onchange={onChange}
+						/>
+					</div>
+					<div class="grid gap-1.5">
+						<Label for="{panel}-max" class="text-[13px]">{$i18n.t('Max Amount')}</Label>
+						<Input
+							id="{panel}-max"
+							type="number"
+							step="0.01"
+							placeholder="0.00"
+							class="h-8 text-right tabular-nums"
+							bind:value={maxAmount}
+							onchange={onChange}
+						/>
+					</div>
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="{panel}-sort" class="text-[13px]">{$i18n.t('Sort')}</Label>
+					<NativeSelect.Root
+						id="{panel}-sort"
+						size="sm"
+						class="w-full"
+						value={panel === 'company' ? companySortPreset : unassignedSortPreset}
+						onchange={(e: Event) => {
+							const v = (e.currentTarget as HTMLSelectElement).value;
+							if (panel === 'company') setCompanySortPreset(v);
+							else setUnassignedSortPreset(v);
+						}}
+					>
+						<NativeSelect.Option value="date_desc">{$i18n.t('Date (newest)')}</NativeSelect.Option>
+						<NativeSelect.Option value="date_asc">{$i18n.t('Date (oldest)')}</NativeSelect.Option>
+						<NativeSelect.Option value="amount_desc"
+							>{$i18n.t('Amount (highest)')}</NativeSelect.Option
+						>
+						<NativeSelect.Option value="amount_asc"
+							>{$i18n.t('Amount (lowest)')}</NativeSelect.Option
+						>
+						<NativeSelect.Option value="vendor_asc">{$i18n.t('Vendor (A-Z)')}</NativeSelect.Option>
+						<NativeSelect.Option value="vendor_desc">{$i18n.t('Vendor (Z-A)')}</NativeSelect.Option>
+					</NativeSelect.Root>
+				</div>
+				<div class="flex justify-end">
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={panel === 'company' ? clearCompanyFilters : clearUnassignedFilters}
+					>
+						{$i18n.t('Clear Filters')}
+					</Button>
+				</div>
 			</div>
+		</Popover.Content>
+	</Popover.Root>
+{/snippet}
+
+{#snippet searchBox(id: string, placeholder: string, panel: 'company' | 'unassigned')}
+	<div class="relative w-full sm:w-72">
+		<Search
+			class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+		/>
+		{#if panel === 'company'}
+			<Input
+				{id}
+				type="search"
+				class="h-8 pl-8"
+				{placeholder}
+				aria-label={placeholder}
+				bind:value={searchCompany}
+				oninput={onSearchCompany}
+			/>
+		{:else}
+			<Input
+				{id}
+				type="search"
+				class="h-8 pl-8"
+				{placeholder}
+				aria-label={placeholder}
+				bind:value={searchUnassigned}
+				oninput={onSearchUnassigned}
+			/>
+		{/if}
+	</div>
+{/snippet}
+
+<div class="flex flex-col gap-4">
+	{#if loading}
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			{#each Array(3) as _}<Skeleton class="h-[104px] rounded-xl" />{/each}
+		</div>
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(8) as _}<Skeleton class="h-8 w-full" />{/each}
+		</div>
+	{:else}
+		<!-- AI activity: the batch shows "X of N done" with a progress bar; one-off work a spinner -->
+		{#if aiActivity}
+			<Card.Root size="sm" class="gap-2.5" aria-live="polite">
+				<Card.Content class="grid gap-2.5">
+					<div class="flex items-center gap-2 text-sm font-medium">
+						{#if aiBatchTotal > 0}
+							<Sparkles class="size-4 shrink-0" aria-hidden="true" />
+						{:else}
+							<Spinner class="size-4 shrink-0" />
+						{/if}
+						<span>{aiActivity}</span>
+					</div>
+					{#if aiBatchTotal > 0}
+						<Progress
+							value={Math.round(
+								(Math.max(aiBatchTotal - aiBatchRemaining, 0) / Math.max(aiBatchTotal, 1)) * 100
+							)}
+							max={100}
+							aria-label={$i18n.t('AI suggestions')}
+						/>
+					{/if}
+				</Card.Content>
+			</Card.Root>
 		{/if}
 
 		<!-- Stats -->
-		<div class="grid grid-cols-3 gap-3">
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100/30 dark:border-gray-850/30">
-				<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Invoice Treatment')}</div>
-				<div class="text-xl font-medium dark:text-gray-200">{companyTotal}</div>
-			</div>
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-100/30 dark:border-gray-850/30">
-				<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Total Amount')}</div>
-				<div class="text-xl font-medium dark:text-gray-200">
-					{#key $displayCurrency}
-						<span>{summary.sum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span class="text-xs text-gray-400">{summaryCurrency}</span></span>
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			<KpiCard label={$i18n.t('Invoice Treatment')} value={companyTotal} />
+			{#key $displayCurrency}
+				<KpiCard
+					label={$i18n.t('Total Amount')}
+					value={`${summary.sum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${summaryCurrency}`}
+				>
+					{#snippet footer()}
 						{#if summary.missing > 0}
-							<div class="text-[10px] text-amber-600">{$i18n.t('{{n}} invoice(s) without an exchange rate not included', { n: summary.missing })}</div>
+							<span class="inline-flex items-center gap-1">
+								<TriangleAlert class="size-3.5 text-warning" aria-hidden="true" />
+								{$i18n.t('{{n}} invoice(s) without an exchange rate not included', {
+									n: summary.missing
+								})}
+							</span>
 						{/if}
-					{/key}
-				</div>
-			</div>
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-3 border {reviewCount > 0 ? 'border-yellow-200 dark:border-yellow-800/50' : 'border-gray-100/30 dark:border-gray-850/30'}">
-				<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Needs Review')}</div>
-				<div class="text-xl font-medium {reviewCount > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'dark:text-gray-200'}">{reviewCount}</div>
+					{/snippet}
+				</KpiCard>
+			{/key}
+			<KpiCard label={$i18n.t('Needs Review')} value={reviewCount}>
+				{#snippet action()}
+					{#if reviewCount > 0}<StatusBadge kind="booking" status="review" />{/if}
+				{/snippet}
+			</KpiCard>
+		</div>
+
+		<!-- Company invoices: toolbar -->
+		<div class="flex flex-wrap items-center gap-2">
+			<Tabs.Root
+				value={filterReview}
+				onValueChange={(v) => {
+					filterReview = v as typeof filterReview;
+				}}
+			>
+				<Tabs.List>
+					<Tabs.Trigger value="all">{$i18n.t('All')}</Tabs.Trigger>
+					<Tabs.Trigger value="review">{$i18n.t('Needs Review')}</Tabs.Trigger>
+					<Tabs.Trigger value="ready">{$i18n.t('Ready')}</Tabs.Trigger>
+				</Tabs.List>
+			</Tabs.Root>
+			{@render searchBox(
+				'inv-search',
+				$i18n.t('Search by vendor, invoice #, client...'),
+				'company'
+			)}
+			{@render filtersPopover('company')}
+
+			<div class="ml-auto flex flex-wrap items-center gap-2">
+				{#if selectedCompanyIds.size > 0}
+					<div
+						class="flex items-center gap-2 rounded-lg border bg-card py-1 pr-1 pl-3 text-sm shadow-md"
+					>
+						<span
+							><span class="font-medium tabular-nums">{selectedCompanyIds.size}</span>
+							{$i18n.t('selected')}</span
+						>
+						<Button
+							variant="ghost"
+							size="xs"
+							class="text-destructive hover:text-destructive"
+							onclick={handleBulkUnassign}
+						>
+							<UserMinus />{$i18n.t('Unassign Selected')}
+						</Button>
+						<Tip content={$i18n.t('Clear')}>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label={$i18n.t('Clear')}
+								onclick={() => {
+									selectedCompanyIds = new Set();
+								}}
+							>
+								<X />
+							</Button>
+						</Tip>
+					</div>
+				{:else}
+					{#if aiAvailable && companyInvoices.some((i) => !i.final_account_code)}
+						<Tip
+							content={$i18n.t(
+								'The accounting AI will suggest an account for every invoice without one (vendors with a rule use the rule)'
+							)}
+						>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={aiCategorizing || aiBatchTotal > 0}
+								onclick={handleAiCategorizeAll}
+							>
+								{#if aiCategorizing || aiBatchTotal > 0}<Spinner />{:else}<Sparkles />{/if}
+								{$i18n.t('AI Categorize All')}
+							</Button>
+						</Tip>
+					{/if}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => {
+							showUnassigned = !showUnassigned;
+							if (showUnassigned) loadUnassignedInvoices();
+						}}
+					>
+						{showUnassigned ? $i18n.t('Hide Unassigned') : $i18n.t('Browse Unassigned')}
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => {
+							showCreateInvoice = true;
+						}}
+					>
+						<Plus />{$i18n.t('Create Invoice')}
+					</Button>
+				{/if}
+				<NativeSelect.Root
+					size="sm"
+					value={perPage}
+					aria-label={$i18n.t('Rows per page')}
+					onchange={(e: Event) => {
+						perPage = Number((e.currentTarget as HTMLSelectElement).value);
+						companyPage = 0;
+						loadCompanyInvoices();
+					}}
+				>
+					<NativeSelect.Option value={20}>20</NativeSelect.Option>
+					<NativeSelect.Option value={50}>50</NativeSelect.Option>
+					<NativeSelect.Option value={100}>100</NativeSelect.Option>
+				</NativeSelect.Root>
 			</div>
 		</div>
 
-		<!-- Company Invoices Panel -->
-		<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-			<div class="flex justify-between items-center mb-3 gap-2 flex-wrap">
-				<div class="text-sm font-medium dark:text-gray-200">{$i18n.t('Invoice Treatment')}</div>
-				<div class="flex items-center gap-2">
-					<!-- Review filter -->
-					<select bind:value={filterReview} class="text-xs rounded-lg px-2 py-1 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300">
-						<option value="all">{$i18n.t('All')}</option>
-						<option value="review">{$i18n.t('Needs Review')}</option>
-						<option value="ready">{$i18n.t('Ready')}</option>
-					</select>
-					<!-- Page size -->
-					<select bind:value={perPage} on:change={() => { companyPage = 0; loadCompanyInvoices(); }} class="text-xs rounded-lg px-2 py-1 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300">
-						<option value={20}>20</option>
-						<option value={50}>50</option>
-						<option value={100}>100</option>
-					</select>
-					<button class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition" on:click={() => { showCreateInvoice = true; }}>
-						{$i18n.t('Create Invoice')}
-					</button>
-					<button class="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition" on:click={() => { showUnassigned = !showUnassigned; if (showUnassigned) loadUnassignedInvoices(); }}>
-						{showUnassigned ? $i18n.t('Hide Unassigned') : $i18n.t('Browse Unassigned')}
-					</button>
-				</div>
-			</div>
-
-			<input type="text" placeholder={$i18n.t('Search by vendor, invoice #, client...')} bind:value={searchCompany} on:input={onSearchCompany} class="w-full mb-2 px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-
-			<!-- Filter toggle -->
-			<div class="flex items-center gap-2 mb-2">
-				<button class="text-xs px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition" on:click={() => showCompanyFilters = !showCompanyFilters}>
-					{$i18n.t('Filters')} {showCompanyFilters ? '\u25B2' : '\u25BC'}
-				</button>
-				{#if dateFrom || dateTo || minAmount || maxAmount}
-					<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{$i18n.t('Active')}</span>
+		<!-- Company invoices: table -->
+		{#if companyError && companyInvoices.length === 0}
+			<Alert.Root variant="destructive">
+				<CircleAlert />
+				<Alert.Title>{$i18n.t('Could not load the invoices')}</Alert.Title>
+				<Alert.Description>{companyError}</Alert.Description>
+				<Alert.Action>
+					<Button variant="outline" size="sm" onclick={() => loadCompanyInvoices()}>
+						{$i18n.t('Retry')}
+					</Button>
+				</Alert.Action>
+			</Alert.Root>
+		{:else if filteredCompany.length === 0}
+			<Empty.Root class="border border-dashed">
+				<Empty.Header>
+					<Empty.Media variant="icon"><FileText /></Empty.Media>
+					<Empty.Title>{$i18n.t('No invoices assigned to this company')}</Empty.Title>
+					<Empty.Description>
+						{$i18n.t('Assign invoices from the unassigned list, or create one.')}
+					</Empty.Description>
+				</Empty.Header>
+				{#if !showUnassigned}
+					<Empty.Content>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => {
+								showUnassigned = true;
+								loadUnassignedInvoices();
+							}}
+						>
+							{$i18n.t('Browse Unassigned')}
+						</Button>
+					</Empty.Content>
 				{/if}
-			</div>
-
-			{#if showCompanyFilters}
-				<div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-850 rounded-lg">
-					<div>
-						<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('From')}</label>
-						<input type="date" bind:value={dateFrom} on:change={onCompanyFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-					</div>
-					<div>
-						<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('To')}</label>
-						<input type="date" bind:value={dateTo} on:change={onCompanyFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-					</div>
-					<div>
-						<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('Min Amount')}</label>
-						<input type="number" step="0.01" placeholder="0.00" bind:value={minAmount} on:change={onCompanyFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-					</div>
-					<div>
-						<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('Max Amount')}</label>
-						<input type="number" step="0.01" placeholder="0.00" bind:value={maxAmount} on:change={onCompanyFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-					</div>
-					<div>
-						<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('Sort')}</label>
-						<select value={companySortPreset} on:change={(e) => setCompanySortPreset(e.target.value)} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200">
-							<option value="date_desc">{$i18n.t('Date (newest)')}</option>
-							<option value="date_asc">{$i18n.t('Date (oldest)')}</option>
-							<option value="amount_desc">{$i18n.t('Amount (highest)')}</option>
-							<option value="amount_asc">{$i18n.t('Amount (lowest)')}</option>
-							<option value="vendor_asc">{$i18n.t('Vendor (A-Z)')}</option>
-							<option value="vendor_desc">{$i18n.t('Vendor (Z-A)')}</option>
-						</select>
-					</div>
-				</div>
-				<div class="flex justify-end mb-2">
-					<button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition" on:click={clearCompanyFilters}>{$i18n.t('Clear Filters')}</button>
-				</div>
-			{/if}
-
-			<!-- Bulk bar -->
-			{#if selectedCompanyIds.size > 0}
-				<div class="flex items-center gap-3 mb-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
-					<span class="font-medium text-blue-700 dark:text-blue-300">{selectedCompanyIds.size} {$i18n.t('selected')}</span>
-					<button class="px-2 py-0.5 text-xs rounded bg-red-600 text-white hover:bg-red-700 transition" on:click={handleBulkUnassign}>{$i18n.t('Unassign Selected')}</button>
-					<button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" on:click={() => { selectedCompanyIds = new Set(); }}>{$i18n.t('Clear')}</button>
-				</div>
-			{/if}
-
-			<!-- AI Categorize All -->
-			{#if aiAvailable && companyInvoices.some((i) => !i.final_account_code)}
-				<div class="flex items-center gap-2 mb-2">
-					<button
-						class="px-3 py-1.5 text-xs rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-1.5"
-						disabled={aiCategorizing || aiBatchTotal > 0}
-						on:click={handleAiCategorizeAll}
-					>
-						{#if aiCategorizing || aiBatchTotal > 0}
-							<Spinner className="size-3" />
-						{/if}
-						{$i18n.t('AI Categorize All')}
-					</button>
-					<span class="text-[10px] text-gray-400">{$i18n.t('The accounting AI will suggest an account for every invoice without one (vendors with a rule use the rule)')}</span>
-				</div>
-			{/if}
-
-			{#if filteredCompany.length === 0}
-				<div class="text-center text-sm text-gray-500 py-6">{$i18n.t('No invoices assigned to this company')}</div>
-			{:else}
-				<div class="overflow-x-auto">
-					<table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto">
-						<thead class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200">
-							<tr class="border-b border-gray-50 dark:border-gray-850/30">
-								<th class="px-2 py-2 w-8"><input type="checkbox" checked={allCompanySelected} on:change={toggleSelectAllCompany} class="rounded" /></th>
-								<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('invoice_number', 'company')}>{$i18n.t('Invoice #')}{sortIcon('invoice_number', companySortBy, companySortDir)}</th>
-								<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('vendor_name', 'company')}>{$i18n.t('Vendor')}{sortIcon('vendor_name', companySortBy, companySortDir)}</th>
-								<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('client_name', 'company')}>{$i18n.t('Client')}{sortIcon('client_name', companySortBy, companySortDir)}</th>
-								<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('invoice_date', 'company')}>{$i18n.t('Date')}{sortIcon('invoice_date', companySortBy, companySortDir)}</th>
-								<th class="px-2 py-2 text-right cursor-pointer select-none" on:click={() => toggleSort('total_amount', 'company')}>{$i18n.t('Amount')}{sortIcon('total_amount', companySortBy, companySortDir)}</th>
-								<th class="px-2 py-2">{$i18n.t('Status')}</th>
-								<th class="px-2 py-2">{$i18n.t('Account')}</th>
-								<th class="px-2 py-2">{$i18n.t('Employee')}</th>
-								<th class="px-2 py-2">{$i18n.t('Category')}</th>
-										<th class="px-2 py-2">{$i18n.t('Journal')}</th>
-								<th class="px-2 py-2">{$i18n.t('Payment')}</th>
-								<th class="px-2 py-2"></th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each filteredCompany as inv (inv.id)}
-								<tr class="text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition border-b border-gray-50/50 dark:border-gray-850/30 cursor-pointer" on:click={() => { expandedId = expandedId === inv.id ? null : inv.id; }}>
-									<td class="px-2 py-1.5" on:click|stopPropagation><input type="checkbox" checked={selectedCompanyIds.has(inv.id)} on:change={() => toggleCompanySelect(inv.id)} class="rounded" /></td>
-									<td class="px-2 py-1.5 font-mono">{#if inv.k4mi_document_id}<K4miDocLink docId={inv.k4mi_document_id} title={$i18n.t('Open in K4mi')} stopPropagation>{inv.invoice_number ?? '-'}</K4miDocLink>{:else}{inv.invoice_number ?? '-'}{/if}</td>
-									<td class="px-2 py-1.5 max-w-[130px] truncate">{inv.vendor_name ?? '-'}</td>
-									<td class="px-2 py-1.5 max-w-[130px] truncate">{inv.client_name ?? '-'}</td>
-									<td class="px-2 py-1.5">{inv.invoice_date ?? '-'}</td>
-									<td class="px-2 py-1.5 text-right font-mono">
-										{#key $displayCurrency}
-										{@const c = cvt(inv.total_amount, inv.invoice_date, inv.currency)}
-										{#if c.converting}
-											{#if c.hasRate}
-												<span class="font-medium">{c.display} <span class="text-[9px] text-gray-400">{c.to}</span></span>
-												<div class="text-[9px] text-gray-400">{c.original} {c.from}</div>
-											{:else}
-												<span>{c.original} {c.from}</span>
-												<span class="text-[9px] text-amber-500 italic" title="No exchange rate available">&#9888;</span>
-											{/if}
-										{:else}
-											{c.original} <span class="text-[9px] text-gray-400">{c.from}</span>
-										{/if}
-										{/key}
-									</td>
-									<td class="px-2 py-1.5">
-										{#if inv.needs_review}<span class="text-yellow-600 dark:text-yellow-400 font-medium">Review</span>
-										{:else}<span class="text-green-600 dark:text-green-400">Ready</span>{/if}
-									</td>
-									<td class="px-2 py-1.5" on:click|stopPropagation>
-										{#if inv.final_account_code}
-											<button class="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/50 transition cursor-pointer" title="{accountLabel(inv.final_account_code)} — {$i18n.t('click to change')}" on:click={() => openAccountPicker(inv)}>{inv.final_account_code}</button>
-										{:else if inv.categorization_status === 'queued' || aiProcessingIds.has(inv.id)}
-											<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300" title={$i18n.t('AI is suggesting an account for this invoice')}>
-												<Spinner className="size-2.5" />
-												{$i18n.t('AI…')}
-											</span>
-										{:else if inv.suggested_account_code}
-											<button class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/50 transition" title="{$i18n.t('AI suggestion')}: {accountLabel(inv.suggested_account_code)}" on:click={() => openAccountPicker(inv)}>{inv.suggested_account_code} ?</button>
-										{:else}
-											<span class="inline-flex gap-1">
-												<button class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition cursor-pointer" title={$i18n.t('Click to assign account')} on:click={() => openAccountPicker(inv)}>{$i18n.t('Assign')}</button>
-												{#if aiAvailable}
-													<button class="text-[10px] px-1 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-800/50 transition" title={$i18n.t('AI categorize')} on:click={() => handleAiCategorizeOne(inv.id)}>AI</button>
-												{/if}
-											</span>
-										{/if}
-									</td>
-									<td class="px-2 py-1.5 max-w-[120px] truncate" on:click|stopPropagation title={employees.find((e) => e.id === inv.employee_id)?.full_name ?? ''}>
-										{#if inv.employee_id}
-											{@const emp = employees.find((e) => e.id === inv.employee_id)}
-											<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
-												{emp?.full_name ?? `#${inv.employee_id}`}
-											</span>
-										{:else}
-											<span class="text-gray-300 dark:text-gray-600 text-[10px]">—</span>
-										{/if}
-									</td>
-									<td class="px-2 py-1.5" on:click|stopPropagation>
-										{#if inv.expense_category_id}
-											{@const cat = expenseCategories.find((c) => c.id === inv.expense_category_id)}
-											<span class="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300">
-												{cat?.label ?? `#${inv.expense_category_id}`}
-											</span>
-										{:else}
-											<span class="text-gray-300 dark:text-gray-600 text-[10px]">—</span>
-										{/if}
-									</td>
-									<td class="px-2 py-1.5" on:click|stopPropagation>
-										{#if inv.transaction_id}
-											<span class="text-[10px] px-1.5 py-0.5 rounded {inv.transaction_status === 'posted' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : inv.transaction_status === 'draft' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}" title="{inv.transaction_status === 'draft' ? $i18n.t('Draft — review and post in Entries tab') : $i18n.t('Posted')}">
-												{inv.transaction_status === 'draft' ? $i18n.t('Draft') : $i18n.t('Posted')}
-											</span>
-										{:else}
-											<span class="text-gray-300 dark:text-gray-600 text-[10px]">—</span>
-										{/if}
-									</td>
-									<td class="px-2 py-1.5">
-									{#if inv.payment_status === 'paid'}
-										<span class="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">{$i18n.t('Paid')}</span>
-									{:else if inv.transaction_id}
-										<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">{$i18n.t('Unpaid')}</span>
-									{:else}
-										<span class="text-gray-300 dark:text-gray-600 text-[10px]">—</span>
-									{/if}
-								</td>
-								<td class="px-2 py-1.5 whitespace-nowrap" on:click|stopPropagation>
-										<button
-											class="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mr-1"
-											title={$i18n.t('Preview')}
-											on:click={() => openPreview(inv)}
+			</Empty.Root>
+		{:else}
+			<div class="overflow-hidden rounded-md border">
+				<Table.Root>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head class="w-8">
+								<Checkbox
+									checked={allCompanySelected}
+									onCheckedChange={toggleSelectAllCompany}
+									aria-label={$i18n.t('Select all')}
+								/>
+							</Table.Head>
+							{@render sortHead('invoice_number', 'Invoice #', 'company')}
+							{@render sortHead('vendor_name', 'Vendor', 'company')}
+							{@render sortHead('client_name', 'Client', 'company')}
+							{@render sortHead('invoice_date', 'Date', 'company')}
+							{@render sortHead('total_amount', 'Amount', 'company', true)}
+							<Table.Head>{$i18n.t('Status')}</Table.Head>
+							<Table.Head>{$i18n.t('Account', { context: 'gnos3' })}</Table.Head>
+							<Table.Head>{$i18n.t('Employee')}</Table.Head>
+							<Table.Head>{$i18n.t('Category')}</Table.Head>
+							<Table.Head>{$i18n.t('Journal')}</Table.Head>
+							<Table.Head>{$i18n.t('Payment')}</Table.Head>
+							<Table.Head class="w-16"><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head
+							>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each filteredCompany as inv (inv.id)}
+							<Table.Row
+								class={cn('cursor-pointer', expandedId === inv.id && 'bg-muted/50')}
+								data-state={selectedCompanyIds.has(inv.id) ? 'selected' : undefined}
+								aria-expanded={expandedId === inv.id}
+								tabindex={0}
+								onclick={() => {
+									expandedId = expandedId === inv.id ? null : inv.id;
+								}}
+								onkeydown={(e: KeyboardEvent) => {
+									if (e.target !== e.currentTarget) return;
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.preventDefault();
+										expandedId = expandedId === inv.id ? null : inv.id;
+									}
+								}}
+							>
+								<Table.Cell onclick={(e: MouseEvent) => e.stopPropagation()}>
+									<Checkbox
+										checked={selectedCompanyIds.has(inv.id)}
+										onCheckedChange={() => toggleCompanySelect(inv.id)}
+										aria-label={$i18n.t('Select')}
+									/>
+								</Table.Cell>
+								<Table.Cell class="font-mono text-[13px]">
+									{#if inv.k4mi_document_id}<K4miDocLink
+											docId={inv.k4mi_document_id}
+											title={$i18n.t('Open in K4mi')}
+											stopPropagation>{inv.invoice_number ?? '—'}</K4miDocLink
+										>{:else}{inv.invoice_number ?? '—'}{/if}
+								</Table.Cell>
+								<Table.Cell class="max-w-[10rem] truncate" title={inv.vendor_name ?? ''}
+									>{inv.vendor_name ?? '—'}</Table.Cell
+								>
+								<Table.Cell class="max-w-[10rem] truncate" title={inv.client_name ?? ''}
+									>{inv.client_name ?? '—'}</Table.Cell
+								>
+								<Table.Cell class="tabular-nums">{inv.invoice_date ?? '—'}</Table.Cell>
+								{@render amountCell(inv)}
+								<Table.Cell>
+									<StatusBadge kind="booking" status={inv.needs_review ? 'review' : 'ready'} />
+								</Table.Cell>
+								<Table.Cell onclick={(e: MouseEvent) => e.stopPropagation()}>
+									{#if inv.final_account_code}
+										<Tip
+											content="{accountLabel(inv.final_account_code)} — {$i18n.t(
+												'click to change'
+											)}"
 										>
-											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
-												<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
-												<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-											</svg>
-										</button>
-										{#if inv.source === 'manual'}
 											<button
-												class="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mr-1"
-												title={$i18n.t('Download PDF')}
-												on:click={() => downloadInvoicePdf(inv.id)}
+												type="button"
+												class={cn(
+													badgeVariants({ variant: 'outline' }),
+													'cursor-pointer hover:bg-accent'
+												)}
+												onclick={() => openAccountPicker(inv)}
 											>
-												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
-													<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-												</svg>
+												<Check aria-hidden="true" /><span class="font-mono"
+													>{inv.final_account_code}</span
+												>
 											</button>
-										{/if}
-										<button class="text-xs text-red-500 hover:text-red-700" on:click={() => { unassignInvoice(companyId, inv.id).then(() => { toast.success($i18n.t('Removed')); reloadAll(); }).catch((e) => toast.error(`${e}`)); }}>{$i18n.t('Remove')}</button>
-									</td>
-								</tr>
-								{#if expandedId === inv.id}
-									<tr class="bg-gray-50/50 dark:bg-gray-850/30">
-										<td colspan="14" class="px-4 py-3 text-xs">
-										<!-- Journal Entry Summary -->
-										{#if inv.transaction_lines?.length > 0}
-											<div class="mb-3 p-2.5 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-												<div class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5 flex items-center gap-2">
-													{$i18n.t('Journal Entry')}
-													{#if inv.transaction_id}
-														<span class="text-[9px] px-1.5 py-0.5 rounded {inv.transaction_status === 'posted' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}">
-															#{inv.transaction_id} — {inv.transaction_status}
-														</span>
-													{/if}
-												</div>
-												<table class="w-full text-[10px]">
-													<thead>
-														<tr class="text-gray-500 dark:text-gray-400">
-															<th class="text-left py-0.5 pr-2">{$i18n.t('Account')}</th>
-															<th class="text-left py-0.5 pr-2">{$i18n.t('Name')}</th>
-															<th class="text-right py-0.5 px-2">{$i18n.t('Debit')}</th>
-															<th class="text-right py-0.5 px-2">{$i18n.t('Credit')}</th>
-														</tr>
-													</thead>
-													<tbody>
-														{#each inv.transaction_lines as line}
-															<tr class="border-t border-gray-100 dark:border-gray-800">
-																<td class="py-1 pr-2 font-mono font-medium dark:text-gray-200">{line.account_code}</td>
-																<td class="py-1 pr-2 text-gray-600 dark:text-gray-400">{line.account_name}</td>
-																<td class="py-1 px-2 text-right font-mono {line.debit > 0 ? 'dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'}">
-																	{line.debit > 0 ? line.debit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : ''}
-																</td>
-																<td class="py-1 px-2 text-right font-mono {line.credit > 0 ? 'dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'}">
-																	{line.credit > 0 ? line.credit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : ''}
-																</td>
-															</tr>
-														{/each}
-													</tbody>
-												</table>
-											</div>
-										{:else if inv.final_account_code && !inv.transaction_id}
-											<div class="mb-3 p-2 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-800/30 text-[10px] text-amber-700 dark:text-amber-400">
-												{$i18n.t('Account assigned — create a journal entry in the Entries tab to complete the double-entry.')}
-											</div>
-										{/if}
-
-										<!-- Invoice Fields -->
-										<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Vendor')}</label>
-												<input type="text" value={inv.vendor_name ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'vendor_name', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Client')}</label>
-												<input type="text" value={inv.client_name ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'client_name', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Invoice #')}</label>
-												<input type="text" value={inv.invoice_number ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'invoice_number', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Invoice Date')}</label>
-												<input type="date" value={inv.invoice_date ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'invoice_date', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Due Date')}</label>
-												<input type="date" value={inv.due_date ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'due_date', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Total Amount')}</label>
-												<input type="number" step="0.01" value={inv.total_amount ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'total_amount', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Subtotal')}</label>
-												<input type="number" step="0.01" value={inv.subtotal ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'subtotal', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Tax Amount')}</label>
-												<input type="number" step="0.01" value={inv.tax_amount ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'tax_amount', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Currency')}</label>
-												<input type="text" maxlength="3" value={inv.currency ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition uppercase" on:blur={(e) => saveField(inv.id, 'currency', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Description')}</label>
-												<input type="text" value={inv.description ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'description', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('PO#')}</label>
-												<input type="text" value={inv.po_number ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'po_number', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Business Unit')}</label>
-												<input type="text" value={inv.business_unit ?? ''} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition" on:blur={(e) => saveField(inv.id, 'business_unit', e.currentTarget.value)} />
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Employee')}</label>
-												<select
-													value={inv.employee_id ?? ''}
-													disabled={inv.expense_sheet_id != null}
-													class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition disabled:opacity-60"
-													on:change={(e) => saveField(inv.id, 'employee_id', e.currentTarget.value)}
+										</Tip>
+									{:else if inv.categorization_status === 'queued' || aiProcessingIds.has(inv.id)}
+										<Tip content={$i18n.t('AI is suggesting an account for this invoice')}>
+											<Badge variant="status">
+												<LoaderCircle
+													class="animate-spin motion-reduce:animate-none"
+													aria-hidden="true"
+												/>{$i18n.t('AI…')}
+											</Badge>
+										</Tip>
+									{:else if inv.suggested_account_code}
+										<Tip
+											content="{$i18n.t('AI suggestion')}: {accountLabel(
+												inv.suggested_account_code
+											)}"
+										>
+											<button
+												type="button"
+												class={cn(badgeVariants({ variant: 'info' }), 'cursor-pointer')}
+												onclick={() => openAccountPicker(inv)}
+											>
+												<Sparkles aria-hidden="true" /><span class="font-mono"
+													>{inv.suggested_account_code}</span
 												>
-													<option value="">{$i18n.t('Unassigned')}</option>
-													{#each employees as emp}
-														<option value={emp.id}>{emp.full_name} ({emp.code})</option>
-													{/each}
-												</select>
-											</div>
-											<div>
-												<label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Expense Category')}</label>
-												<select
-													value={inv.expense_category_id ?? ''}
-													disabled={!inv.employee_id}
-													class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition disabled:opacity-60"
-													on:change={(e) => saveField(inv.id, 'expense_category_id', e.currentTarget.value)}
+												{$i18n.t('suggested')}
+											</button>
+										</Tip>
+									{:else}
+										<span class="inline-flex items-center gap-1">
+											<Tip content={$i18n.t('Click to assign account')}>
+												<Button variant="outline" size="xs" onclick={() => openAccountPicker(inv)}>
+													{$i18n.t('Assign')}
+												</Button>
+											</Tip>
+											{#if aiAvailable}
+												<Tip content={$i18n.t('AI categorize')}>
+													<Button
+														variant="ghost"
+														size="icon-xs"
+														aria-label={$i18n.t('AI categorize')}
+														onclick={() => handleAiCategorizeOne(inv.id)}
+													>
+														<Sparkles />
+													</Button>
+												</Tip>
+											{/if}
+										</span>
+									{/if}
+								</Table.Cell>
+								<Table.Cell
+									class="max-w-[9rem] truncate"
+									title={employees.find((e) => e.id === inv.employee_id)?.full_name ?? ''}
+									onclick={(e: MouseEvent) => e.stopPropagation()}
+								>
+									{#if inv.employee_id}
+										{@const emp = employees.find((e) => e.id === inv.employee_id)}
+										{emp?.full_name ?? `#${inv.employee_id}`}
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
+								</Table.Cell>
+								<Table.Cell onclick={(e: MouseEvent) => e.stopPropagation()}>
+									{#if inv.expense_category_id}
+										{@const cat = expenseCategories.find((c) => c.id === inv.expense_category_id)}
+										{cat?.label ?? `#${inv.expense_category_id}`}
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
+								</Table.Cell>
+								<Table.Cell onclick={(e: MouseEvent) => e.stopPropagation()}>
+									{#if inv.transaction_id}
+										<Tip
+											content={inv.transaction_status === 'draft'
+												? $i18n.t('Draft — review and post in Entries tab')
+												: $i18n.t('Posted')}
+										>
+											<StatusBadge
+												kind="entry"
+												status={inv.transaction_status === 'draft' ? 'draft' : 'posted'}
+											/>
+										</Tip>
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
+								</Table.Cell>
+								<Table.Cell>
+									{#if inv.payment_status === 'paid'}
+										<StatusBadge kind="booking" status="paid" />
+									{:else if inv.transaction_id}
+										<StatusBadge kind="booking" status="unpaid" />
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
+								</Table.Cell>
+								<Table.Cell class="text-right" onclick={(e: MouseEvent) => e.stopPropagation()}>
+									<div class="inline-flex items-center gap-0.5">
+										<Tip content={$i18n.t('Preview')}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Preview')}
+												onclick={() => openPreview(inv)}
+											>
+												<Eye />
+											</Button>
+										</Tip>
+										<DropdownMenu.Root>
+											<DropdownMenu.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														aria-label={$i18n.t('More actions')}
+													>
+														<Ellipsis />
+													</Button>
+												{/snippet}
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content align="end" class="w-52">
+												{#if inv.source === 'manual'}
+													<DropdownMenu.Item onSelect={() => downloadInvoicePdf(inv.id)}>
+														<Download />{$i18n.t('Download PDF')}
+													</DropdownMenu.Item>
+													<DropdownMenu.Separator />
+												{/if}
+												<DropdownMenu.Item
+													variant="destructive"
+													onSelect={() => {
+														unassignInvoice(companyId, inv.id)
+															.then(() => {
+																toast.success($i18n.t('Removed'));
+																reloadAll();
+															})
+															.catch((e) => toast.error(`${e}`));
+													}}
 												>
-													<option value="">{$i18n.t('Uncategorized')}</option>
-													{#each expenseCategories.filter((c) => c.is_active) as cat}
-														<option value={cat.id}>{cat.label}</option>
-													{/each}
-												</select>
-												{#if inv.expense_category_source}
-													<div class="text-[9px] text-gray-400 mt-0.5">
-														{$i18n.t('source')}: {inv.expense_category_source}
-														{#if inv.expense_category_confidence}
-															({Math.round(parseFloat(inv.expense_category_confidence) * 100)}%)
+													<UserMinus />{$i18n.t('Remove')}
+												</DropdownMenu.Item>
+											</DropdownMenu.Content>
+										</DropdownMenu.Root>
+									</div>
+								</Table.Cell>
+							</Table.Row>
+							{#if expandedId === inv.id}
+								<Table.Row class="bg-muted/30 hover:bg-muted/30">
+									<Table.Cell colspan={13} class="p-4 whitespace-normal">
+										<div class="sticky left-0 grid max-w-[calc(100vw-4rem)] gap-4">
+											<!-- Journal Entry Summary -->
+											{#if inv.transaction_lines?.length > 0}
+												<div class="grid gap-2">
+													<div class="flex items-center gap-2 text-sm font-medium">
+														{$i18n.t('Journal Entry')}
+														{#if inv.transaction_id}
+															<span class="font-mono text-[13px] text-muted-foreground"
+																>#{inv.transaction_id}</span
+															>
+															<StatusBadge kind="entry" status={inv.transaction_status} />
 														{/if}
 													</div>
-												{/if}
+													<div class="max-w-3xl overflow-hidden rounded-md border bg-card">
+														<Table.Root>
+															<Table.Header class="bg-muted/50">
+																<Table.Row class="hover:bg-transparent">
+																	<Table.Head class="h-8">{$i18n.t('Account', { context: 'gnos3' })}</Table.Head>
+																	<Table.Head class="h-8">{$i18n.t('Name', { context: 'gnos3' })}</Table.Head>
+																	<Table.Head class="h-8 text-right">{$i18n.t('Debit')}</Table.Head>
+																	<Table.Head class="h-8 text-right">{$i18n.t('Credit')}</Table.Head
+																	>
+																</Table.Row>
+															</Table.Header>
+															<Table.Body>
+																{#each inv.transaction_lines as line}
+																	<Table.Row class="hover:bg-transparent">
+																		<Table.Cell class="py-1.5 font-mono text-[13px]"
+																			>{line.account_code}</Table.Cell
+																		>
+																		<Table.Cell class="py-1.5 text-muted-foreground"
+																			>{line.account_name}</Table.Cell
+																		>
+																		<Table.Cell class="py-1.5 text-right tabular-nums">
+																			{line.debit > 0 ? fmt2(line.debit) : ''}
+																		</Table.Cell>
+																		<Table.Cell class="py-1.5 text-right tabular-nums">
+																			{line.credit > 0 ? fmt2(line.credit) : ''}
+																		</Table.Cell>
+																	</Table.Row>
+																{/each}
+															</Table.Body>
+														</Table.Root>
+													</div>
+												</div>
+											{:else if inv.final_account_code && !inv.transaction_id}
+												<Alert.Root variant="warning" class="max-w-3xl">
+													<TriangleAlert />
+													<Alert.Description>
+														{$i18n.t(
+															'Account assigned — create a journal entry in the Entries tab to complete the double-entry.'
+														)}
+													</Alert.Description>
+												</Alert.Root>
+											{/if}
+
+											<!-- Invoice Fields (saved on blur) -->
+											<div
+												class="grid grid-cols-[repeat(auto-fill,minmax(min(11rem,100%),1fr))] gap-3"
+											>
+												{#each INVOICE_FIELDS as { field, label, type }}
+													<div class="grid gap-1.5">
+														<Label for="inv-{inv.id}-{field}" class="text-[13px]"
+															>{$i18n.t(label)}</Label
+														>
+														<Input
+															id="inv-{inv.id}-{field}"
+															{type}
+															step={type === 'number' ? '0.01' : undefined}
+															maxlength={field === 'currency' ? 3 : undefined}
+															value={inv[field] ?? ''}
+															class={cn(
+																'h-8 bg-card',
+																type === 'number' && 'text-right tabular-nums',
+																field === 'currency' && 'uppercase'
+															)}
+															onblur={(e: FocusEvent) =>
+																saveField(
+																	inv.id,
+																	field,
+																	(e.currentTarget as HTMLInputElement).value
+																)}
+														/>
+													</div>
+												{/each}
+												<div class="grid gap-1.5">
+													<Label for="inv-{inv.id}-employee" class="text-[13px]"
+														>{$i18n.t('Employee')}</Label
+													>
+													<NativeSelect.Root
+														id="inv-{inv.id}-employee"
+														size="sm"
+														class="w-full bg-card"
+														value={inv.employee_id ?? ''}
+														disabled={inv.expense_sheet_id != null}
+														onchange={(e: Event) =>
+															saveField(
+																inv.id,
+																'employee_id',
+																(e.currentTarget as HTMLSelectElement).value
+															)}
+													>
+														<NativeSelect.Option value=""
+															>{$i18n.t('Unassigned')}</NativeSelect.Option
+														>
+														{#each employees as emp}
+															<NativeSelect.Option value={emp.id}
+																>{emp.full_name} ({emp.code})</NativeSelect.Option
+															>
+														{/each}
+													</NativeSelect.Root>
+												</div>
+												<div class="grid gap-1.5">
+													<Label for="inv-{inv.id}-category" class="text-[13px]"
+														>{$i18n.t('Expense Category')}</Label
+													>
+													<NativeSelect.Root
+														id="inv-{inv.id}-category"
+														size="sm"
+														class="w-full bg-card"
+														value={inv.expense_category_id ?? ''}
+														disabled={!inv.employee_id}
+														onchange={(e: Event) =>
+															saveField(
+																inv.id,
+																'expense_category_id',
+																(e.currentTarget as HTMLSelectElement).value
+															)}
+													>
+														<NativeSelect.Option value=""
+															>{$i18n.t('Uncategorized')}</NativeSelect.Option
+														>
+														{#each expenseCategories.filter((c) => c.is_active) as cat}
+															<NativeSelect.Option value={cat.id}>{cat.label}</NativeSelect.Option>
+														{/each}
+													</NativeSelect.Root>
+													{#if inv.expense_category_source}
+														<div class="text-xs text-muted-foreground">
+															{$i18n.t('source')}: {inv.expense_category_source}
+															{#if inv.expense_category_confidence}
+																({Math.round(parseFloat(inv.expense_category_confidence) * 100)}%)
+															{/if}
+														</div>
+													{/if}
+												</div>
 											</div>
 										</div>
-									</td>
-									</tr>
-								{/if}
-							{/each}
-						</tbody>
-					</table>
-				</div>
-				{#if companyTotal > perPage}
-					<div class="flex justify-between items-center mt-3 text-xs text-gray-500">
-						<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={companyPage === 0} on:click={() => { companyPage--; loadCompanyInvoices(); }}>{$i18n.t('Previous')}</button>
-						<span>{$i18n.t('Page')} {companyPage + 1} / {Math.ceil(companyTotal / perPage)}</span>
-						<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={(companyPage + 1) * perPage >= companyTotal} on:click={() => { companyPage++; loadCompanyInvoices(); }}>{$i18n.t('Next')}</button>
-					</div>
-				{/if}
-			{/if}
-		</div>
+									</Table.Cell>
+								</Table.Row>
+							{/if}
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
+			<TablePagination
+				bind:page={
+					() => companyPage + 1,
+					(v) => {
+						companyPage = v - 1;
+						loadCompanyInvoices();
+					}
+				}
+				count={companyTotal}
+				{perPage}
+			/>
+		{/if}
 
 		<!-- Unassigned Panel -->
 		{#if showUnassigned}
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-blue-200/50 dark:border-blue-800/30">
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">{$i18n.t('Unassigned Invoices')} ({unassignedTotal})</div>
-
-				<input type="text" placeholder={$i18n.t('Search unassigned...')} bind:value={searchUnassigned} on:input={onSearchUnassigned} class="w-full mb-2 px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-
-				<!-- Filter toggle -->
-				<div class="flex items-center gap-2 mb-2">
-					<button class="text-xs px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition" on:click={() => showUnassignedFilters = !showUnassignedFilters}>
-						{$i18n.t('Filters')} {showUnassignedFilters ? '\u25B2' : '\u25BC'}
-					</button>
-					{#if dateFrom || dateTo || minAmount || maxAmount}
-						<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{$i18n.t('Active')}</span>
-					{/if}
-				</div>
-
-				{#if showUnassignedFilters}
-					<div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-850 rounded-lg">
-						<div>
-							<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('From')}</label>
-							<input type="date" bind:value={dateFrom} on:change={onUnassignedFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-						</div>
-						<div>
-							<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('To')}</label>
-							<input type="date" bind:value={dateTo} on:change={onUnassignedFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-						</div>
-						<div>
-							<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('Min Amount')}</label>
-							<input type="number" step="0.01" placeholder="0.00" bind:value={minAmount} on:change={onUnassignedFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-						</div>
-						<div>
-							<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('Max Amount')}</label>
-							<input type="number" step="0.01" placeholder="0.00" bind:value={maxAmount} on:change={onUnassignedFilterChange} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200 focus:outline-none focus:border-blue-500" />
-						</div>
-						<div>
-							<label class="text-[10px] text-gray-500 dark:text-gray-400 block mb-0.5">{$i18n.t('Sort')}</label>
-							<select value={unassignedSortPreset} on:change={(e) => setUnassignedSortPreset(e.target.value)} class="w-full text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-200">
-								<option value="date_desc">{$i18n.t('Date (newest)')}</option>
-								<option value="date_asc">{$i18n.t('Date (oldest)')}</option>
-								<option value="amount_desc">{$i18n.t('Amount (highest)')}</option>
-								<option value="amount_asc">{$i18n.t('Amount (lowest)')}</option>
-								<option value="vendor_asc">{$i18n.t('Vendor (A-Z)')}</option>
-								<option value="vendor_desc">{$i18n.t('Vendor (Z-A)')}</option>
-							</select>
-						</div>
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2 text-base">
+						{$i18n.t('Unassigned Invoices')}
+						<Badge variant="count">{unassignedTotal}</Badge>
+					</Card.Title>
+					<Card.Action>
+						<Tip content={$i18n.t('Hide Unassigned')}>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								aria-label={$i18n.t('Hide Unassigned')}
+								onclick={() => {
+									showUnassigned = false;
+								}}
+							>
+								<X />
+							</Button>
+						</Tip>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content class="grid gap-4">
+					<div class="flex flex-wrap items-center gap-2">
+						{@render searchBox('unassigned-search', $i18n.t('Search unassigned...'), 'unassigned')}
+						{@render filtersPopover('unassigned')}
+						{#if selectedUnassignedIds.size > 0}
+							<div
+								class="ml-auto flex items-center gap-2 rounded-lg border bg-card py-1 pr-1 pl-3 text-sm shadow-md"
+							>
+								<span
+									><span class="font-medium tabular-nums">{selectedUnassignedIds.size}</span>
+									{$i18n.t('selected')}</span
+								>
+								<Button size="xs" onclick={handleBulkAssign}>{$i18n.t('Assign Selected')}</Button>
+								<Tip content={$i18n.t('Clear')}>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										aria-label={$i18n.t('Clear')}
+										onclick={() => {
+											selectedUnassignedIds = new Set();
+										}}
+									>
+										<X />
+									</Button>
+								</Tip>
+							</div>
+						{/if}
 					</div>
-					<div class="flex justify-end mb-2">
-						<button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition" on:click={clearUnassignedFilters}>{$i18n.t('Clear Filters')}</button>
-					</div>
-				{/if}
 
-				{#if selectedUnassignedIds.size > 0}
-					<div class="flex items-center gap-3 mb-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm">
-						<span class="font-medium text-green-700 dark:text-green-300">{selectedUnassignedIds.size} {$i18n.t('selected')}</span>
-						<button class="px-2 py-0.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition" on:click={handleBulkAssign}>{$i18n.t('Assign Selected')}</button>
-						<button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" on:click={() => { selectedUnassignedIds = new Set(); }}>{$i18n.t('Clear')}</button>
-					</div>
-				{/if}
-
-				{#if unassignedInvoices.length === 0}
-					<div class="text-center text-sm text-gray-500 py-6">{$i18n.t('No unassigned invoices')}</div>
-				{:else}
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto">
-							<thead class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200">
-								<tr class="border-b border-gray-50 dark:border-gray-850/30">
-									<th class="px-2 py-2 w-8"><input type="checkbox" checked={allUnassignedSelected} on:change={toggleSelectAllUnassigned} class="rounded" /></th>
-									<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('invoice_number', 'unassigned')}>{$i18n.t('Invoice #')}{sortIcon('invoice_number', unassignedSortBy, unassignedSortDir)}</th>
-									<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('vendor_name', 'unassigned')}>{$i18n.t('Vendor')}{sortIcon('vendor_name', unassignedSortBy, unassignedSortDir)}</th>
-									<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('client_name', 'unassigned')}>{$i18n.t('Client')}{sortIcon('client_name', unassignedSortBy, unassignedSortDir)}</th>
-									<th class="px-2 py-2 cursor-pointer select-none" on:click={() => toggleSort('invoice_date', 'unassigned')}>{$i18n.t('Date')}{sortIcon('invoice_date', unassignedSortBy, unassignedSortDir)}</th>
-									<th class="px-2 py-2 text-right cursor-pointer select-none" on:click={() => toggleSort('total_amount', 'unassigned')}>{$i18n.t('Amount')}{sortIcon('total_amount', unassignedSortBy, unassignedSortDir)}</th>
-									<th class="px-2 py-2"></th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each unassignedInvoices as inv (inv.id)}
-									<tr class="text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition border-b border-gray-50/50 dark:border-gray-850/30">
-										<td class="px-2 py-1.5"><input type="checkbox" checked={selectedUnassignedIds.has(inv.id)} on:change={() => toggleUnassignedSelect(inv.id)} class="rounded" /></td>
-										<td class="px-2 py-1.5 font-mono">{#if inv.k4mi_document_id}<K4miDocLink docId={inv.k4mi_document_id} title={$i18n.t('Open in K4mi')} stopPropagation>{inv.invoice_number ?? '-'}</K4miDocLink>{:else}{inv.invoice_number ?? '-'}{/if}</td>
-										<td class="px-2 py-1.5 max-w-[130px] truncate">{inv.vendor_name ?? '-'}</td>
-										<td class="px-2 py-1.5 max-w-[130px] truncate">{inv.client_name ?? '-'}</td>
-										<td class="px-2 py-1.5">{inv.invoice_date ?? '-'}</td>
-										<td class="px-2 py-1.5 text-right font-mono">
-											{#key $displayCurrency}
-											{@const c = cvt(inv.total_amount, inv.invoice_date, inv.currency)}
-											{#if c.converting}
-												{#if c.hasRate}
-													<span class="font-medium">{c.display} <span class="text-[9px] text-gray-400">{c.to}</span></span>
-													<div class="text-[9px] text-gray-400">{c.original} {c.from}</div>
-												{:else}
-													<span>{c.original} {c.from}</span>
-													<span class="text-[9px] text-amber-500 italic" title="No exchange rate available">&#9888;</span>
-												{/if}
-											{:else}
-												{c.original} <span class="text-[9px] text-gray-400">{c.from}</span>
-											{/if}
-											{/key}
-										</td>
-										<td class="px-2 py-1.5 whitespace-nowrap">
-											<button
-												class="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mr-1"
-												title={$i18n.t('Preview')}
-												on:click|stopPropagation={() => openPreview(inv)}
+					{#if unassignedInvoices.length === 0}
+						<Empty.Root class="border border-dashed py-8">
+							<Empty.Header>
+								<Empty.Media variant="icon"><Inbox /></Empty.Media>
+								<Empty.Title>{$i18n.t('No unassigned invoices')}</Empty.Title>
+								<Empty.Description>
+									{$i18n.t('Invoices extracted from K4mi that belong to no company appear here.')}
+								</Empty.Description>
+							</Empty.Header>
+						</Empty.Root>
+					{:else}
+						<div class="overflow-hidden rounded-md border">
+							<Table.Root>
+								<Table.Header class="bg-muted/50">
+									<Table.Row class="hover:bg-transparent">
+										<Table.Head class="w-8">
+											<Checkbox
+												checked={allUnassignedSelected}
+												onCheckedChange={toggleSelectAllUnassigned}
+												aria-label={$i18n.t('Select all')}
+											/>
+										</Table.Head>
+										{@render sortHead('invoice_number', 'Invoice #', 'unassigned')}
+										{@render sortHead('vendor_name', 'Vendor', 'unassigned')}
+										{@render sortHead('client_name', 'Client', 'unassigned')}
+										{@render sortHead('invoice_date', 'Date', 'unassigned')}
+										{@render sortHead('total_amount', 'Amount', 'unassigned', true)}
+										<Table.Head class="w-28"
+											><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head
+										>
+									</Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{#each unassignedInvoices as inv (inv.id)}
+										<Table.Row
+											data-state={selectedUnassignedIds.has(inv.id) ? 'selected' : undefined}
+										>
+											<Table.Cell>
+												<Checkbox
+													checked={selectedUnassignedIds.has(inv.id)}
+													onCheckedChange={() => toggleUnassignedSelect(inv.id)}
+													aria-label={$i18n.t('Select')}
+												/>
+											</Table.Cell>
+											<Table.Cell class="font-mono text-[13px]">
+												{#if inv.k4mi_document_id}<K4miDocLink
+														docId={inv.k4mi_document_id}
+														title={$i18n.t('Open in K4mi')}
+														stopPropagation>{inv.invoice_number ?? '—'}</K4miDocLink
+													>{:else}{inv.invoice_number ?? '—'}{/if}
+											</Table.Cell>
+											<Table.Cell class="max-w-[10rem] truncate" title={inv.vendor_name ?? ''}
+												>{inv.vendor_name ?? '—'}</Table.Cell
 											>
-												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
-													<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
-													<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-												</svg>
-											</button>
-											<button class="px-2 py-0.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 transition" on:click={() => { assignInvoiceToCompany(companyId, inv.id).then(() => { toast.success($i18n.t('Assigned')); reloadAll(); }).catch((e) => toast.error(`${e}`)); }}>{$i18n.t('Assign')}</button>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-					{#if unassignedTotal > perPage}
-						<div class="flex justify-between items-center mt-3 text-xs text-gray-500">
-							<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={unassignedPage === 0} on:click={() => { unassignedPage--; loadUnassignedInvoices(); }}>{$i18n.t('Previous')}</button>
-							<span>{$i18n.t('Page')} {unassignedPage + 1} / {Math.ceil(unassignedTotal / perPage)}</span>
-							<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={(unassignedPage + 1) * perPage >= unassignedTotal} on:click={() => { unassignedPage++; loadUnassignedInvoices(); }}>{$i18n.t('Next')}</button>
+											<Table.Cell class="max-w-[10rem] truncate" title={inv.client_name ?? ''}
+												>{inv.client_name ?? '—'}</Table.Cell
+											>
+											<Table.Cell class="tabular-nums">{inv.invoice_date ?? '—'}</Table.Cell>
+											{@render amountCell(inv)}
+											<Table.Cell class="text-right">
+												<div class="inline-flex items-center gap-1">
+													<Tip content={$i18n.t('Preview')}>
+														<Button
+															variant="ghost"
+															size="icon-xs"
+															aria-label={$i18n.t('Preview')}
+															onclick={(e: MouseEvent) => {
+																e.stopPropagation();
+																openPreview(inv);
+															}}
+														>
+															<Eye />
+														</Button>
+													</Tip>
+													<Button
+														variant="outline"
+														size="xs"
+														onclick={() => {
+															assignInvoiceToCompany(companyId, inv.id)
+																.then(() => {
+																	toast.success($i18n.t('Assigned'));
+																	reloadAll();
+																})
+																.catch((e) => toast.error(`${e}`));
+														}}>{$i18n.t('Assign')}</Button
+													>
+												</div>
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
 						</div>
+						<TablePagination
+							bind:page={
+								() => unassignedPage + 1,
+								(v) => {
+									unassignedPage = v - 1;
+									loadUnassignedInvoices();
+								}
+							}
+							count={unassignedTotal}
+							{perPage}
+						/>
 					{/if}
-				{/if}
-			</div>
+				</Card.Content>
+			</Card.Root>
 		{/if}
-	</div>
+	{/if}
+</div>
 
+{#if !loading}
 	<DocumentPreviewModal
 		bind:show={showPreview}
 		invoice={previewInvoice}
@@ -1196,190 +1805,390 @@
 	/>
 {/if}
 
-<!-- Booking dialog — MUST be outside the {#if loading}{:else} block to avoid re-renders -->
-{#if pickerInvoiceId !== null}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
-		class="fixed inset-0 bg-black/40 z-[50000] flex items-center justify-center p-4"
-		on:mousedown={closePicker}
-	>
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-5 w-full max-w-2xl space-y-3 max-h-[90vh] overflow-y-auto"
-			on:mousedown|stopPropagation
-		>
-			<div class="flex items-baseline justify-between gap-3">
-				<div class="text-sm font-medium dark:text-gray-200">{$i18n.t('Book invoice')}</div>
-				<div class="text-xs text-gray-500 dark:text-gray-400 truncate">
-					{pickerInvoice?.vendor_name ?? ''} · {pickerInvoice?.invoice_number ?? ''} · {pickerInvoice?.total_amount ?? ''} {pickerInvoice?.currency ?? ''}
-				</div>
-			</div>
+<!-- Booking dialog — MUST be outside the {#if loading}{:else} block to avoid re-renders.
+	 Every line shows where its account came from; the draft cannot be created with a gap. -->
+<Dialog.Root
+	open={pickerInvoiceId !== null}
+	onOpenChange={(v) => {
+		if (!v) closePicker();
+	}}
+>
+	<Dialog.Content class="max-h-[90vh] gap-5 overflow-y-auto sm:max-w-3xl [&>*]:min-w-0">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Book invoice')}</Dialog.Title>
+			<Dialog.Description class="truncate">
+				<span class="font-mono text-[13px]">{pickerInvoice?.invoice_number ?? ''}</span>
+				· {pickerInvoice?.vendor_name ?? ''} ·
+				<span class="tabular-nums"
+					>{pickerInvoice?.currency ?? ''} {pickerInvoice?.total_amount ?? ''}</span
+				>
+			</Dialog.Description>
+		</Dialog.Header>
 
-			<!-- Expense / revenue account -->
-			<div>
-				<div class="flex items-center justify-between mb-1">
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400">{$i18n.t('Expense / Revenue Account')}</label>
-					{#if pickerMainCode && bookingPlan}
-						<button class="text-[10px] text-blue-600 dark:text-blue-400 hover:underline" on:click={() => { splitMode = !splitMode; if (!splitMode) refreshPlan(); }}>
-							{splitMode ? $i18n.t('Single account') : $i18n.t('Split across accounts')}
-						</button>
-					{/if}
-				</div>
-				{#if pickerMainCode && editingLine !== 'main'}
-					<div class="flex items-center gap-2">
-						<span class="flex-1 text-sm px-3 py-2 rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 dark:text-gray-200 font-mono">
-							{pickerMainCode} — {accountMap[pickerMainCode] || ''}
-						</span>
-						<button class="text-[10px] text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap" on:click={() => { editingLine = 'main'; }}>{$i18n.t('Change')}</button>
-					</div>
-				{:else}
-					<input
-						type="text"
-						placeholder={$i18n.t('Search accounts...')}
-						class="w-full text-sm rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 outline-hidden focus:border-blue-500 transition mb-1"
-						on:input={(e) => { pickerMainSearch = e.currentTarget.value; }}
-					/>
-					<div class="max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-						{#each leafAccounts.filter(a => !pickerMainSearch || a.code.includes(pickerMainSearch) || a.name.toLowerCase().includes(pickerMainSearch.toLowerCase())) as acct}
-							<button
-								class="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 transition border-b border-gray-100 dark:border-gray-800 last:border-b-0"
-								on:click={() => chooseMain(acct.code)}
-							>
-								<span class="font-mono font-medium">{acct.code}</span>
-								<span class="text-gray-500 dark:text-gray-400 ml-1">{acct.name}</span>
-							</button>
-						{/each}
-					</div>
+		<!-- Expense / revenue account -->
+		<div class="flex flex-col gap-2">
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<span class="text-sm font-medium">{$i18n.t('Expense / Revenue Account')}</span>
+				{#if pickerMainCode && bookingPlan}
+					<ToggleGroup.Root
+						type="single"
+						variant="outline"
+						size="sm"
+						value={splitMode ? 'split' : 'single'}
+						onValueChange={(v) => {
+							if (!v || (v === 'split') === splitMode) return;
+							splitMode = !splitMode;
+							if (!splitMode) refreshPlan();
+						}}
+						aria-label={$i18n.t('Split')}
+					>
+						<ToggleGroup.Item value="single">{$i18n.t('Single account')}</ToggleGroup.Item>
+						<ToggleGroup.Item value="split">{$i18n.t('Split across accounts')}</ToggleGroup.Item>
+					</ToggleGroup.Root>
 				{/if}
 			</div>
-
-			<!-- Split lines -->
-			{#if splitMode && bookingPlan}
-				<div class="border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1.5">
-					{#each splitLines as sl, i}
-						<div class="flex gap-2 items-center">
-							<select class="flex-1 text-xs rounded-lg px-2 py-1.5 bg-white dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden" bind:value={sl.account_id}>
-								<option value={null}>{$i18n.t('— account —')}</option>
-								{#each leafAccounts.filter(a => ['expense','revenue'].includes(a.account_type)) as a}
-									<option value={a.id}>{a.code} - {a.name}</option>
-								{/each}
-							</select>
-							<input type="number" step="0.01" class="w-28 text-xs rounded-lg px-2 py-1.5 bg-white dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden text-right" bind:value={sl.amount} />
-							<input type="text" placeholder={$i18n.t('Description')} class="flex-1 text-xs rounded-lg px-2 py-1.5 bg-white dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden" bind:value={sl.description} />
-							<button class="text-gray-400 hover:text-red-600 text-sm" on:click={() => { splitLines = splitLines.filter((_, j) => j !== i); }}>×</button>
-						</div>
+			{#if pickerMainCode && editingLine !== 'main'}
+				<div class="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
+					<Check class="size-4 shrink-0 text-success" aria-hidden="true" />
+					<span class="min-w-0 flex-1 truncate">
+						<span class="font-mono text-[13px]">{pickerMainCode}</span>
+						{accountMap[pickerMainCode] || ''}
+					</span>
+					<Button
+						variant="link"
+						size="xs"
+						class="h-auto px-0"
+						onclick={() => {
+							editingLine = 'main';
+						}}>{$i18n.t('Change')}</Button
+					>
+				</div>
+			{:else}
+				<div class="relative">
+					<Search
+						class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+					/>
+					<Input
+						type="search"
+						class="pl-8"
+						placeholder={$i18n.t('Search accounts...')}
+						aria-label={$i18n.t('Search accounts...')}
+						oninput={(e: Event) => {
+							pickerMainSearch = (e.currentTarget as HTMLInputElement).value;
+						}}
+					/>
+				</div>
+				<div
+					class="max-h-40 overflow-y-auto rounded-md border"
+					role="listbox"
+					aria-label={$i18n.t('Account', { context: 'gnos3' })}
+				>
+					{#each leafAccounts.filter((a) => !pickerMainSearch || a.code.includes(pickerMainSearch) || a.name
+								.toLowerCase()
+								.includes(pickerMainSearch.toLowerCase())) as acct}
+						<button
+							type="button"
+							role="option"
+							aria-selected={acct.code === pickerMainCode}
+							class="flex w-full items-baseline gap-2 border-b px-3 py-1.5 text-left text-sm last:border-b-0 hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+							onclick={() => chooseMain(acct.code)}
+						>
+							<span class="font-mono text-[13px]">{acct.code}</span>
+							<span class="truncate text-muted-foreground">{acct.name}</span>
+						</button>
 					{/each}
-					<div class="flex items-center justify-between text-[11px]">
-						<button class="text-blue-600 dark:text-blue-400 hover:underline" on:click={() => { splitLines = [...splitLines, { account_id: null, amount: null, description: '' }]; }}>+ {$i18n.t('Add line')}</button>
-						<span class={Math.abs(splitTotal - (bookingPlan.subtotal ?? 0)) < 0.005 ? 'text-gray-500' : 'text-red-600 dark:text-red-300'}>
-							{$i18n.t('Lines')}: {splitTotal.toFixed(2)} / {$i18n.t('net')}: {(bookingPlan.subtotal ?? 0).toFixed(2)}
-						</span>
-					</div>
 				</div>
 			{/if}
+		</div>
 
-			<!-- The entry (stays on screen while a selection is re-resolved) -->
-			{#if bookingLoading && !bookingPlan}
-				<div class="flex items-center gap-2 text-xs text-gray-500"><Spinner className="size-4" /> {$i18n.t('Resolving accounts...')}</div>
-			{:else if bookingPlan}
-				<div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden {bookingLoading ? 'opacity-60' : ''}">
-					<table class="w-full text-xs">
-						<thead class="bg-gray-100 dark:bg-gray-800 text-[10px] uppercase text-gray-500 dark:text-gray-400">
-							<tr>
-								<th class="px-2 py-1.5 text-left">{$i18n.t('Line')}</th>
-								<th class="px-2 py-1.5 text-left">{$i18n.t('Account')}</th>
-								<th class="px-2 py-1.5 text-right">{$i18n.t('Debit')}</th>
-								<th class="px-2 py-1.5 text-right">{$i18n.t('Credit')}</th>
-							</tr>
-						</thead>
-						<tbody class="dark:text-gray-200">
-							{#each bookingPlan.lines as line}
-								{#if !(splitMode && line.role === 'main')}
-									<tr class="border-t border-gray-100 dark:border-gray-800 align-top">
-										<td class="px-2 py-1.5">
-											<div class="font-medium">{$i18n.t(line.label)}</div>
-											<div class="text-[10px] text-gray-400">{line.description}</div>
-										</td>
-										<td class="px-2 py-1.5">
-											{#if line.role === 'main'}
-												<span class="font-mono">{line.account_code} <span class="font-sans text-gray-500">{line.account_name}</span></span>
-											{:else if editingLine === line.role}
-												<input
-													type="text"
+		<!-- Split lines -->
+		{#if splitMode && bookingPlan}
+			<div class="grid gap-2 rounded-md border p-3">
+				{#each splitLines as sl, i}
+					<div class="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+						<NativeSelect.Root
+							size="sm"
+							class="min-w-0 flex-1"
+							value={sl.account_id ?? ''}
+							aria-label={$i18n.t('Account', { context: 'gnos3' })}
+							onchange={(e: Event) => {
+								const v = (e.currentTarget as HTMLSelectElement).value;
+								sl.account_id = v ? Number(v) : null;
+								splitLines = splitLines;
+							}}
+						>
+							<NativeSelect.Option value="">{$i18n.t('— account —')}</NativeSelect.Option>
+							{#each leafAccounts.filter( (a) => ['expense', 'revenue'].includes(a.account_type) ) as a}
+								<NativeSelect.Option value={a.id}>{a.code} - {a.name}</NativeSelect.Option>
+							{/each}
+						</NativeSelect.Root>
+						<Input
+							type="number"
+							step="0.01"
+							class="h-8 w-28 text-right tabular-nums"
+							aria-label={$i18n.t('Amount')}
+							bind:value={sl.amount}
+						/>
+						<Input
+							type="text"
+							class="h-8 min-w-0 flex-1"
+							placeholder={$i18n.t('Description')}
+							aria-label={$i18n.t('Description')}
+							bind:value={sl.description}
+						/>
+						<Tip content={$i18n.t('Remove')}>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label={$i18n.t('Remove')}
+								onclick={() => {
+									splitLines = splitLines.filter((_, j) => j !== i);
+								}}
+							>
+								<X />
+							</Button>
+						</Tip>
+					</div>
+				{/each}
+				<div class="flex items-center justify-between gap-2 text-sm">
+					<Button
+						variant="ghost"
+						size="xs"
+						onclick={() => {
+							splitLines = [...splitLines, { account_id: null, amount: null, description: '' }];
+						}}
+					>
+						<Plus />{$i18n.t('Add line')}
+					</Button>
+					{#if Math.abs(splitTotal - (bookingPlan.subtotal ?? 0)) < 0.005}
+						<span class="text-muted-foreground tabular-nums">
+							{$i18n.t('Lines')}: {splitTotal.toFixed(2)} / {$i18n.t('net')}: {(
+								bookingPlan.subtotal ?? 0
+							).toFixed(2)}
+						</span>
+					{:else}
+						<span class="inline-flex items-center gap-1 text-destructive tabular-nums">
+							<CircleAlert class="size-3.5" aria-hidden="true" />
+							{$i18n.t('Lines')}: {splitTotal.toFixed(2)} / {$i18n.t('net')}: {(
+								bookingPlan.subtotal ?? 0
+							).toFixed(2)}
+						</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		<!-- The entry (stays on screen while a selection is re-resolved) -->
+		{#if bookingLoading && !bookingPlan}
+			<div class="flex items-center gap-2 text-sm text-muted-foreground">
+				<Spinner />
+				{$i18n.t('Resolving accounts...')}
+			</div>
+		{:else if bookingPlan}
+			<div
+				class={cn(
+					'overflow-hidden rounded-md border transition-opacity',
+					bookingLoading && 'opacity-60'
+				)}
+				aria-busy={bookingLoading}
+			>
+				<Table.Root>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head>{$i18n.t('Line')}</Table.Head>
+							<Table.Head>{$i18n.t('Account', { context: 'gnos3' })}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Debit')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Credit')}</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each bookingPlan.lines as line}
+							{#if !(splitMode && line.role === 'main')}
+								<Table.Row
+									class={cn(
+										'align-top hover:bg-transparent',
+										line.source === 'missing' && 'bg-warning/5 hover:bg-warning/5'
+									)}
+								>
+									<Table.Cell class="min-w-[9rem] whitespace-normal">
+										<div class="font-medium">{$i18n.t(line.label)}</div>
+										{#if line.description}
+											<div class="text-xs text-muted-foreground">{line.description}</div>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="min-w-[16rem] whitespace-normal">
+										{#if line.role === 'main'}
+											{#if line.account_code}
+												<span
+													><span class="font-mono text-[13px]">{line.account_code}</span>
+													{line.account_name}</span
+												>
+											{/if}
+											{#if line.source === 'missing'}
+												<!-- chosen above ("Change"); shown here so the gap is visible on its line -->
+												<div class="grid justify-items-start gap-1">
+													{#if !line.account_code}
+														<span class="text-muted-foreground">{$i18n.t('No account')}</span>
+													{/if}
+													<Badge variant="danger">{$i18n.t(SOURCE_LABEL.missing)}</Badge>
+													{#if line.note}
+														<div class="flex items-start gap-1 text-xs text-muted-foreground">
+															<TriangleAlert
+																class="mt-px size-3.5 shrink-0 text-warning"
+																aria-hidden="true"
+															/>
+															<span>{$i18n.t(line.note)}</span>
+														</div>
+													{/if}
+												</div>
+											{/if}
+										{:else if editingLine === line.role}
+											<div class="grid gap-1.5">
+												<Input
+													type="search"
+													class="h-8"
 													placeholder={$i18n.t('Search accounts...')}
-													class="w-full text-xs rounded-lg px-2 py-1 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 outline-hidden mb-1"
-													on:input={(e) => { lineSearch = { ...lineSearch, [line.role]: e.currentTarget.value }; }}
+													aria-label={$i18n.t('Search accounts...')}
+													oninput={(e: Event) => {
+														lineSearch = {
+															...lineSearch,
+															[line.role]: (e.currentTarget as HTMLInputElement).value
+														};
+													}}
 												/>
-												<div class="max-h-28 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+												<div class="max-h-36 overflow-y-auto rounded-md border bg-card">
 													{#each candidatesFor(line, lineSearch[line.role] ?? '', leafAccounts) as a}
-														<button class="w-full text-left px-2 py-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-b border-gray-100 dark:border-gray-800 last:border-b-0" on:click={() => chooseLineAccount(line.role, a.id)}>
-															<span class="font-mono font-medium">{a.code}</span> <span class="text-gray-500">{a.name}</span>
-															{#if (line.candidates ?? []).some((c: any) => c.id === a.id)}<span class="ml-1 text-[9px] text-amber-600">{$i18n.t('suggested')}</span>{/if}
+														<button
+															type="button"
+															class="flex w-full items-baseline gap-2 border-b px-2 py-1 text-left text-sm last:border-b-0 hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+															onclick={() => chooseLineAccount(line.role, a.id)}
+														>
+															<span class="font-mono text-[13px]">{a.code}</span>
+															<span class="min-w-0 flex-1 truncate text-muted-foreground"
+																>{a.name}</span
+															>
+															{#if (line.candidates ?? []).some((c: any) => c.id === a.id)}
+																<Badge variant="outline">{$i18n.t('suggested')}</Badge>
+															{/if}
 														</button>
 													{/each}
 												</div>
-											{:else}
-												<div class="flex items-center gap-2 flex-wrap">
+											</div>
+										{:else}
+											<div class="grid justify-items-start gap-1">
+												{#if line.account_id}
+													<span
+														><span class="font-mono text-[13px]">{line.account_code}</span>
+														{line.account_name}</span
+													>
+												{:else}
+													<span class="text-muted-foreground">{$i18n.t('No account')}</span>
+												{/if}
+												<span class="inline-flex flex-wrap items-center gap-1.5">
+													<Badge variant={sourceVariant(line.source)}>
+														{$i18n.t(SOURCE_LABEL[line.source] ?? line.source)}
+													</Badge>
 													{#if line.account_id}
-														<span class="font-mono">{line.account_code} <span class="font-sans text-gray-500">{line.account_name}</span></span>
+														<Button
+															variant="link"
+															size="xs"
+															class="h-auto px-0"
+															onclick={() => {
+																editingLine = line.role;
+															}}>{$i18n.t('Change')}</Button
+														>
+													{:else}
+														<Button
+															size="xs"
+															onclick={() => {
+																editingLine = line.role;
+															}}>{$i18n.t('Choose')}</Button
+														>
 													{/if}
-													<span class="px-1.5 py-0.5 rounded-full text-[9px] font-medium {sourceClass(line.source)}">{$i18n.t(SOURCE_LABEL[line.source] ?? line.source)}</span>
-													<button class="text-[10px] text-blue-600 dark:text-blue-400 hover:underline" on:click={() => { editingLine = line.role; }}>
-														{line.account_id ? $i18n.t('Change') : $i18n.t('Choose')}
-													</button>
-												</div>
-												{#if line.note}<div class="text-[10px] text-amber-700 dark:text-amber-300 mt-0.5">{line.note}</div>{/if}
-											{/if}
-										</td>
-										<td class="px-2 py-1.5 text-right font-mono">{line.debit ? line.debit.toFixed(2) : ''}</td>
-										<td class="px-2 py-1.5 text-right font-mono">{line.credit ? line.credit.toFixed(2) : ''}</td>
-									</tr>
-								{/if}
-							{/each}
-						</tbody>
-					</table>
-				</div>
-				{#if bookingPlan.exchange_rate && bookingPlan.exchange_rate.currency !== bookingPlan.exchange_rate.base}
-					<div class="text-[11px] {bookingPlan.exchange_rate.rate ? 'text-gray-500 dark:text-gray-400' : 'text-red-700 dark:text-red-300'}">
+												</span>
+												{#if line.note}
+													<div class="flex items-start gap-1 text-xs text-muted-foreground">
+														<TriangleAlert
+															class="mt-px size-3.5 shrink-0 text-warning"
+															aria-hidden="true"
+														/>
+														<span>{$i18n.t(line.note)}</span>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt2(line.debit)}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt2(line.credit)}</Table.Cell>
+								</Table.Row>
+							{/if}
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
+			{#if bookingPlan.exchange_rate && bookingPlan.exchange_rate.currency !== bookingPlan.exchange_rate.base}
+				<div
+					class={cn(
+						'flex items-center gap-1.5 text-sm',
+						bookingPlan.exchange_rate.rate ? 'text-muted-foreground' : 'text-destructive'
+					)}
+				>
+					{#if bookingPlan.exchange_rate.rate}
+						<Info class="size-3.5 shrink-0" aria-hidden="true" />
+					{:else}
+						<CircleAlert class="size-3.5 shrink-0" aria-hidden="true" />
+					{/if}
+					<span class="tabular-nums">
 						{bookingPlan.exchange_rate.currency} → {bookingPlan.exchange_rate.base}:
 						{bookingPlan.exchange_rate.rate
 							? `${bookingPlan.exchange_rate.rate} (${$i18n.t('rate on file')}, ${bookingPlan.exchange_rate.date})`
-							: $i18n.t('no rate on file for {{date}} — add it in Exchange Rates', { date: bookingPlan.exchange_rate.date })}
-					</div>
-				{/if}
-				{#each bookingPlan.warnings ?? [] as w}
-					<div class="text-[11px] text-amber-700 dark:text-amber-300">{w}</div>
-				{/each}
-				{#if !bookingPlan.complete}
-					<div class="text-[11px] text-red-700 dark:text-red-300">
-						{$i18n.t('Every line needs an account before the entry can be created — nothing is guessed. Rules (Settings → Rules), Tax → Accounts and the company\'s default AP/AR account fill these in automatically next time.')}
-					</div>
-				{/if}
-			{:else if pickerMainCode === ''}
-				<p class="text-[10px] text-gray-400 dark:text-gray-500">{$i18n.t('Pick the expense / revenue account to see the full entry.')}</p>
+							: $i18n.t('no rate on file for {{date}} — add it in Exchange Rates', {
+									date: bookingPlan.exchange_rate.date
+								})}
+					</span>
+				</div>
 			{/if}
+			{#if (bookingPlan.warnings ?? []).length > 0}
+				<Alert.Root variant="warning">
+					<TriangleAlert />
+					<Alert.Description class="grid gap-1">
+						{#each bookingPlan.warnings ?? [] as w}
+							<p>{$i18n.t(w)}</p>
+						{/each}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
+			{#if !bookingPlan.complete}
+				<Alert.Root variant="warning">
+					<TriangleAlert />
+					<Alert.Description class="text-foreground">
+						{$i18n.t(
+							"Every line needs an account before the entry can be created — nothing is guessed. Rules (Settings → Rules), Tax → Accounts and the company's default AP/AR account fill these in automatically next time."
+						)}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
+		{:else if pickerMainCode === ''}
+			<p class="text-sm text-muted-foreground">
+				{$i18n.t('Pick the expense / revenue account to see the full entry.')}
+			</p>
+		{/if}
 
-			<div class="flex gap-2 pt-1">
-				<button
-					class="flex-1 text-sm px-3 py-2 rounded-xl bg-gray-900 hover:bg-gray-850 text-white dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium transition disabled:opacity-50"
-					disabled={!planReady}
-					on:click={handleConfirmPicker}
-				>{$i18n.t('Create Draft Entry')}</button>
-				<button
-					class="text-sm px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 font-medium transition"
-					on:click={closePicker}
-				>{$i18n.t('Cancel')}</button>
-			</div>
-		</div>
-	</div>
-{/if}
+		<Dialog.Footer>
+			<Button variant="outline" onclick={closePicker}>{$i18n.t('Cancel')}</Button>
+			<Button disabled={!planReady} onclick={handleConfirmPicker}
+				>{$i18n.t('Create Draft Entry')}</Button
+			>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- Invoice Create Modal -->
 <InvoiceCreateModal
 	bind:show={showCreateInvoice}
 	{companyId}
 	companyName={$companyNameCtx || ''}
-	on:save={() => { loadCompanyInvoices(); }}
+	on:save={() => {
+		loadCompanyInvoices();
+	}}
 />

@@ -1,52 +1,69 @@
 <script lang="ts">
-	// Actionable alerts (drafts / unmatched bank lines / overdue invoices).
+	// Actionable alerts (drafts / unmatched bank lines / overdue invoices) as a checklist:
+	// icon + what needs doing + an outline button that opens the page where it is fixed.
 	// Reads the shared common-data store so it doesn't refetch stats.
 	import { getContext } from 'svelte';
 	import type { Writable } from 'svelte/store';
-	import { goto } from '$app/navigation';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { COMMON_DATA_CTX, type CommonData } from '../store';
 
 	export let companyId: number;
 	export let options: Record<string, any> = {}; // unused; part of widget contract
 	const i18n: any = getContext('i18n');
 	const common = getContext<Writable<CommonData>>(COMMON_DATA_CTX);
+	const T = (k: string) => ($i18n?.t ? $i18n.t(k) : k);
 
 	$: stats = $common.stats ?? {};
 	$: drafts = stats.draft_count ?? 0;
 	$: unmatched = stats.unmatched_bank_lines ?? 0;
 	$: overdue = stats.overdue_invoices ?? 0;
 	$: anyAlerts = drafts > 0 || unmatched > 0 || overdue > 0;
-	const T = (k: string) => (i18n?.t ? i18n.t(k) : k);
+	$: base = `/accounting/company/${companyId}`;
 </script>
 
-<div class="h-full flex flex-col justify-center gap-1.5">
+<div class="h-full overflow-y-auto">
 	{#if $common.loading}
-		<div class="text-xs text-gray-400">{T('Loading…')}</div>
+		<div class="flex flex-col gap-2" aria-busy="true">
+			{#each Array(3) as _}<Skeleton class="h-7 w-full" />{/each}
+		</div>
 	{:else if !anyAlerts}
-		<div class="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
-			<span>&#10003;</span>{T('All clear — nothing needs attention')}
+		<div class="flex h-full items-center gap-2">
+			<CircleCheck class="size-4 shrink-0 text-success" aria-hidden="true" />
+			<span>{T('All clear — nothing needs attention')}</span>
 		</div>
 	{:else}
-		{#if drafts > 0}
-			<button class="w-full flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-lg text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition text-left"
-				on:click={() => goto(`/accounting/company/${companyId}/entries`)}>
-				<span class="text-amber-500">&#9888;</span><span class="font-medium">{drafts}</span> {T('draft entries awaiting review')}
-				<span class="ml-auto text-amber-500">&rarr;</span>
-			</button>
-		{/if}
-		{#if unmatched > 0}
-			<button class="w-full flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-lg text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition text-left"
-				on:click={() => goto(`/accounting/company/${companyId}/bank`)}>
-				<span class="text-blue-500">&#9679;</span><span class="font-medium">{unmatched}</span> {T('unmatched bank lines')}
-				<span class="ml-auto text-blue-500">&rarr;</span>
-			</button>
-		{/if}
-		{#if overdue > 0}
-			<button class="w-full flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg text-xs text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30 transition text-left"
-				on:click={() => goto(`/accounting/company/${companyId}/invoices`)}>
-				<span class="text-red-500">&#9888;</span><span class="font-medium">{overdue}</span> {T('overdue invoices')}
-				<span class="ml-auto text-red-500">&rarr;</span>
-			</button>
-		{/if}
+		<ul class="divide-y">
+			{#if drafts > 0}
+				<li class="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0">
+					<TriangleAlert class="size-4 shrink-0 text-warning" aria-hidden="true" />
+					<span class="min-w-0 flex-1 truncate font-medium"
+						><span class="tabular-nums">{drafts}</span> {T('draft entries awaiting review')}</span
+					>
+					<Button variant="outline" size="xs" href="{base}/entries">{T('View')}</Button>
+				</li>
+			{/if}
+			{#if unmatched > 0}
+				<li class="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0">
+					<TriangleAlert class="size-4 shrink-0 text-warning" aria-hidden="true" />
+					<span class="min-w-0 flex-1 truncate font-medium"
+						><span class="tabular-nums">{unmatched}</span> {T('unmatched bank lines')}</span
+					>
+					<Button variant="outline" size="xs" href="{base}/bank">{T('Reconcile')}</Button>
+				</li>
+			{/if}
+			{#if overdue > 0}
+				<li class="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0">
+					<CircleAlert class="size-4 shrink-0 text-destructive" aria-hidden="true" />
+					<span class="min-w-0 flex-1 truncate font-medium"
+						><span class="tabular-nums">{overdue}</span> {T('overdue invoices')}</span
+					>
+					<Button variant="outline" size="xs" href="{base}/invoices">{T('View')}</Button>
+				</li>
+			{/if}
+		</ul>
 	{/if}
 </div>

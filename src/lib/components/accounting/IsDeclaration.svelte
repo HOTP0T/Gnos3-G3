@@ -12,23 +12,47 @@
 		getAccounts,
 		recordProvisionalTaxPayment,
 		getBankFxContext,
+		getTaxAccounts,
 		type CitAdjustment
 	} from '$lib/apis/accounting';
 	import { fiscalYearStart, fiscalYearEnd, fiscalYearLabel } from '$lib/utils/fiscalYear';
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import TaxFilingsList from './TaxFilingsList.svelte';
+	import { citTerm } from '$lib/utils/taxTerms';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import Info from '@lucide/svelte/icons/info';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Minus from '@lucide/svelte/icons/minus';
+	import X from '@lucide/svelte/icons/x';
+	import Download from '@lucide/svelte/icons/download';
+	import Save from '@lucide/svelte/icons/save';
+	import Calculator from '@lucide/svelte/icons/calculator';
+	import Landmark from '@lucide/svelte/icons/landmark';
 
-	const i18n = getContext('i18n');
+	import TaxFilingsList from './TaxFilingsList.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let companyId: number;
 
 	// ── Country shape ──────────────────────────────────────────────────
-	// The country config says how this tax works: its name (IS / 企业所得税 /
-	// Profits Tax), flat or tiered rates, whether the tax office bills a
-	// provisional prepayment, and the company's fiscal year.
+	// The country config says how this tax works: what it is (corporate income
+	// tax / Profits Tax, named in the UI language), flat or tiered rates, whether
+	// the tax office bills a provisional prepayment, and the company's fiscal year.
 	let cfg: any = null;
-	$: citLabel = cfg?.cit_label || 'IS';
+	$: citLabel = citTerm($i18n.t, cfg);
 	$: provisional = !!cfg?.cit_provisional;
 	$: fyStartMonth = Number(cfg?.fiscal_year_start_month ?? 1) || 1;
 
@@ -72,7 +96,10 @@
 			const label = fiscalYearLabel(start, end);
 			out.push({
 				key: start,
-				label: i === 0 ? `${$i18n.t('FY')} ${label} (${$i18n.t('year to date')})` : `${$i18n.t('FY')} ${label}`,
+				label:
+					i === 0
+						? `${$i18n.t('FY')} ${label} (${$i18n.t('year to date')})`
+						: `${$i18n.t('FY')} ${label}`,
 				start,
 				end: i === 0 ? t : end
 			});
@@ -103,11 +130,17 @@
 
 	// A saved filing for the same period carries the adjustments typed last time.
 	const prefillFromFiling = () => {
-		const f = savedFilings.find((x) => x.period_start === periodStart && x.period_end === periodEnd);
+		const f = savedFilings.find(
+			(x) => x.period_start === periodStart && x.period_end === periodEnd
+		);
 		const d = f?.details;
 		if (!d) return;
 		if (Array.isArray(d.adjustments)) {
-			adjustments = d.adjustments.map((a: any) => ({ label: a.label ?? '', amount: Number(a.amount) || 0, kind: a.kind === 'deduct' ? 'deduct' : 'add' }));
+			adjustments = d.adjustments.map((a: any) => ({
+				label: a.label ?? '',
+				amount: Number(a.amount) || 0,
+				kind: a.kind === 'deduct' ? 'deduct' : 'add'
+			}));
 		}
 		if (d.prior_year_losses) priorYearLosses = String(d.prior_year_losses);
 		if (d.provisional_paid_source === 'manual') provisionalPaid = String(d.provisional_paid ?? '');
@@ -118,7 +151,8 @@
 		const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
 		return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	};
-	const pct = (r: any) => (r === null || r === undefined ? '—' : `${(Number(r) * 100).toFixed(2).replace(/\.?0+$/, '')}%`);
+	const pct = (r: any) =>
+		r === null || r === undefined ? '—' : `${(Number(r) * 100).toFixed(2).replace(/\.?0+$/, '')}%`;
 	// A slice with a ceiling means the tax went through the jurisdiction's tiers: show them,
 	// even when the profit only reached the first one (Hong Kong: 8.25% up to HK$2M).
 	const tiered = (tiers: any[] | null | undefined) =>
@@ -127,7 +161,9 @@
 	// ── Bank accounts for the provisional-tax payment ──────────────────
 	let accounts: any[] = [];
 	$: parentIds = new Set(accounts.map((a: any) => a.parent_id).filter(Boolean));
-	$: bankAccounts = accounts.filter((a: any) => !parentIds.has(a.id) && (!a.account_type || a.account_type === 'asset'));
+	$: bankAccounts = accounts.filter(
+		(a: any) => !parentIds.has(a.id) && (!a.account_type || a.account_type === 'asset')
+	);
 	let provAmount: string | number | null = '';
 	let provDate = '';
 	let provBank: number | '' = '';
@@ -176,7 +212,10 @@
 		{
 			const [y, m] = start.split('-').map(Number);
 			const next = `${y + 1}-${String(m).padStart(2, '0')}-01`;
-			out.push({ end: fiscalYearEnd(next, fyStartMonth), label: fiscalYearLabel(next, fiscalYearEnd(next, fyStartMonth)) });
+			out.push({
+				end: fiscalYearEnd(next, fyStartMonth),
+				label: fiscalYearLabel(next, fiscalYearEnd(next, fyStartMonth))
+			});
 		}
 		for (let i = 0; i < 4; i++) {
 			const end = fiscalYearEnd(start, fyStartMonth);
@@ -252,7 +291,9 @@
 		prior_year_losses: num(priorYearLosses) ?? 0,
 		cit_already_paid: num(citAlreadyPaid),
 		provisional_paid: num(provisionalPaid),
-		adjustments: adjustments.filter((a) => Number(a.amount)).map((a) => ({ ...a, amount: Number(a.amount) })),
+		adjustments: adjustments
+			.filter((a) => Number(a.amount))
+			.map((a) => ({ ...a, amount: Number(a.amount) })),
 		two_tier: hasTiers ? twoTier : true
 	});
 
@@ -364,7 +405,12 @@
 				rate: provForeign ? num(provRate) : undefined
 			});
 			toast.success(
-				$i18n.t('Provisional tax payment recorded') + (r?.entry_number ? ` (${r.entry_number})` : r?.entry_status === 'draft' ? ` (${$i18n.t('draft')})` : '')
+				$i18n.t('Provisional tax payment recorded') +
+					(r?.entry_number
+						? ` (${r.entry_number})`
+						: r?.entry_status === 'draft'
+							? ` (${$i18n.t('draft')})`
+							: '')
 			);
 			provAmount = '';
 			provRef = '';
@@ -379,362 +425,715 @@
 		recording = false;
 	};
 
-	const inputCls =
-		'text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden';
-	const lblCls = 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1';
-	const rowCls = 'border-b border-gray-100 dark:border-gray-850';
-	const btnPrimary =
-		'px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition disabled:opacity-50';
-	const btnSecondary =
-		'px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition disabled:opacity-50';
+	// The provisional-payment dialog previews its legs: DR the prepaid-tax account
+	// (from Tax → Accounts, read when the dialog opens) / CR the bank.
+	let prepaidRole: any = undefined; // undefined = not read yet, null = could not read
+	const openProvisional = async () => {
+		showProvisional = true;
+		try {
+			const map = await getTaxAccounts(companyId);
+			prepaidRole = (map.roles ?? []).find((r: any) => r.role === 'cit_prepaid') ?? null;
+		} catch {
+			prepaidRole = null;
+		}
+	};
+	$: prepaidAccount = prepaidRole?.accounts?.[0] ?? null;
+	$: prepaidMissing = !!prepaidRole && !prepaidAccount;
+	$: provBankAccount =
+		provBank === '' ? null : bankAccounts.find((b: any) => b.id === Number(provBank));
+
+	$: hasEntry =
+		!!result &&
+		(result.entry_blockers ?? []).length === 0 &&
+		result.suggested_entry?.lines?.length > 0;
+	const sum = (lines: any[], key: 'debit' | 'credit') =>
+		(lines ?? []).reduce((t, l) => t + (Number(l?.[key]) || 0), 0);
 </script>
 
-<div class="py-2">
-	<div class="flex md:self-center text-lg font-medium px-0.5 gap-2 mb-1">
-		<div class="flex-shrink-0 dark:text-gray-200">{citLabel}</div>
-	</div>
-	<div class="text-xs text-gray-400 dark:text-gray-500 px-0.5 mb-3">
-		{$i18n.t(
-			'Accounting profit comes from the ledger. Type the adjustments of the tax computation below (add-backs and deductions); rates and reductions come from Settings → Countries.'
-		)}
+<div class="flex flex-col gap-4">
+	<div class="flex flex-col gap-1">
+		<h2 class="text-lg font-semibold">{citLabel}</h2>
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				'Accounting profit comes from the ledger. Type the adjustments of the tax computation below (add-backs and deductions); rates and reductions come from Settings → Countries.'
+			)}
+		</p>
 	</div>
 
 	<!-- Period + inputs -->
-	<div class="flex flex-wrap gap-3 items-end mb-3">
-		<div>
-			<label class={lblCls} for="cit-fy">{$i18n.t('Fiscal year')}</label>
-			<select id="cit-fy" bind:value={choice} on:change={onChoice} class={inputCls}>
-				{#each choices as c}<option value={c.key}>{c.label}</option>{/each}
-				<option value="">{$i18n.t('Custom period')}</option>
-			</select>
+	<div class="grid grid-cols-[repeat(auto-fill,minmax(min(11rem,100%),1fr))] items-end gap-4">
+		<div class="grid gap-2">
+			<Label for="cit-fy">{$i18n.t('Fiscal year')}</Label>
+			<NativeSelect.Root id="cit-fy" class="w-full" bind:value={choice} onchange={onChoice}>
+				{#each choices as c}<NativeSelect.Option value={c.key}>{c.label}</NativeSelect.Option
+					>{/each}
+				<NativeSelect.Option value="">{$i18n.t('Custom period')}</NativeSelect.Option>
+			</NativeSelect.Root>
 		</div>
-		<div>
-			<label class={lblCls} for="cit-start">{$i18n.t('Period start')}</label>
-			<input id="cit-start" type="date" bind:value={periodStart} on:change={() => (choice = '')} class={inputCls} />
+		<div class="grid gap-2">
+			<Label for="cit-start">{$i18n.t('Period start')}</Label>
+			<Input id="cit-start" type="date" bind:value={periodStart} onchange={() => (choice = '')} />
 		</div>
-		<div>
-			<label class={lblCls} for="cit-end">{$i18n.t('Period end')}</label>
-			<input id="cit-end" type="date" bind:value={periodEnd} on:change={() => (choice = '')} class={inputCls} />
+		<div class="grid gap-2">
+			<Label for="cit-end">{$i18n.t('Period end')}</Label>
+			<Input id="cit-end" type="date" bind:value={periodEnd} onchange={() => (choice = '')} />
 		</div>
-		<div>
-			<label class={lblCls} for="cit-losses">{$i18n.t('Losses brought forward')}</label>
-			<input id="cit-losses" type="number" step="0.01" bind:value={priorYearLosses} class={inputCls} />
+		<div class="grid gap-2">
+			<Label for="cit-losses">{$i18n.t('Losses brought forward')}</Label>
+			<Input
+				id="cit-losses"
+				type="number"
+				step="0.01"
+				class="text-right tabular-nums"
+				bind:value={priorYearLosses}
+			/>
 		</div>
 		{#if provisional}
-			<div>
-				<label class={lblCls} for="cit-prov">{$i18n.t('Provisional tax paid for this year')}</label>
-				<input
+			<div class="grid gap-2">
+				<Label for="cit-prov">{$i18n.t('Provisional tax paid for this year')}</Label>
+				<Input
 					id="cit-prov"
 					type="number"
 					step="0.01"
+					class="text-right tabular-nums"
 					bind:value={provisionalPaid}
 					placeholder={$i18n.t('from the ledger')}
-					class={inputCls}
 				/>
 			</div>
 		{/if}
-		{#if hasTiers}
-			<label class="flex items-center gap-2 text-sm dark:text-gray-200 pb-1.5">
-				<input type="checkbox" bind:checked={twoTier} />
-				{$i18n.t('Two-tiered rates elected')}
-				<span class="text-xs text-gray-400" title={$i18n.t('Only one entity of a group of connected entities may elect the two-tiered rates; the others pay the top rate on the whole profit.')}>ⓘ</span>
-			</label>
-		{/if}
-		<div>
-			<label class={lblCls} for="cit-paid">{$i18n.t('{{tax}} already paid', { tax: citLabel })}</label>
-			<input
+		<div class="grid gap-2">
+			<Label for="cit-paid">{$i18n.t('{{tax}} already paid', { tax: citLabel })}</Label>
+			<Input
 				id="cit-paid"
 				type="number"
 				step="0.01"
+				class="text-right tabular-nums"
 				bind:value={citAlreadyPaid}
 				placeholder={$i18n.t('from paid filings')}
-				class={inputCls}
 			/>
 		</div>
+		{#if hasTiers}
+			<div class="flex h-9 items-center gap-2">
+				<Checkbox id="cit-two-tier" bind:checked={twoTier} />
+				<Label for="cit-two-tier" class="font-normal">{$i18n.t('Two-tiered rates elected')}</Label>
+				<Tip
+					content={$i18n.t(
+						'Only one entity of a group of connected entities may elect the two-tiered rates; the others pay the top rate on the whole profit.'
+					)}
+				>
+					<Info class="size-4 text-muted-foreground" aria-hidden="true" />
+				</Tip>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Adjustments -->
-	<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-3">
-		<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850 flex flex-wrap items-center justify-between gap-2">
-			<div>
-				<div class="text-sm font-medium dark:text-gray-200">{$i18n.t('Tax computation adjustments')}</div>
-				<div class="text-[11px] text-gray-400 dark:text-gray-500">
-					{$i18n.t('Add back what the tax office refuses (book depreciation, fines…); deduct what it does not tax (bank interest, dividends) and the depreciation allowances.')}
-				</div>
-			</div>
-			<div class="flex items-center gap-2">
-				<select bind:value={preset} on:change={addPreset} class="{inputCls} text-xs">
-					<option value="">{$i18n.t('— add a usual line —')}</option>
-					{#each PRESETS as p}<option value={p.label}>{p.kind === 'add' ? '+' : '−'} {$i18n.t(p.label)}</option>{/each}
-				</select>
-				<button class={btnSecondary} on:click={() => addAdjustment('add')}>+ {$i18n.t('Add-back')}</button>
-				<button class={btnSecondary} on:click={() => addAdjustment('deduct')}>− {$i18n.t('Deduction')}</button>
-			</div>
-		</div>
-		{#if adjustments.length === 0}
-			<div class="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">{$i18n.t('No adjustments — the accounting profit is used as is.')}</div>
-		{:else}
-			<table class="w-full text-sm text-left">
-				<tbody class="text-gray-900 dark:text-gray-100">
-					{#each adjustments as a, i}
-						<tr class={rowCls}>
-							<td class="px-3 py-1.5 w-28">
-								<select bind:value={a.kind} class="{inputCls} text-xs py-1">
-									<option value="add">{$i18n.t('Add back')}</option>
-									<option value="deduct">{$i18n.t('Deduct')}</option>
-								</select>
-							</td>
-							<td class="px-3 py-1.5">
-								<input type="text" bind:value={a.label} placeholder={$i18n.t('Description')} class="{inputCls} w-full py-1" />
-							</td>
-							<td class="px-3 py-1.5 w-44 text-right">
-								<input type="number" step="0.01" bind:value={a.amount} class="{inputCls} w-40 text-right py-1 font-mono" />
-							</td>
-							<td class="px-2 py-1.5 w-10 text-right">
-								<button class="text-gray-400 hover:text-red-500 text-sm" title={$i18n.t('Remove')} on:click={() => removeAdjustment(i)}>✕</button>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{/if}
-	</div>
-
-	<div class="flex flex-wrap gap-2 items-center mb-4">
-		<button
-			class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
-			disabled={calculating}
-			on:click={calc}
-		>
-			{$i18n.t('Calculate')}
-		</button>
-		{#if provisional}
-			<button class={btnSecondary} on:click={() => (showProvisional = !showProvisional)}>
-				{$i18n.t('Record a provisional tax payment')}
-			</button>
-		{/if}
-	</div>
-
-	{#if provisional && showProvisional}
-		<div class="bg-white dark:bg-gray-900 rounded-xl border border-blue-200/50 dark:border-blue-800/30 mb-4 p-4">
-			<div class="text-sm font-medium dark:text-gray-200 mb-1">{$i18n.t('Provisional tax payment')}</div>
-			<div class="text-[11px] text-gray-400 dark:text-gray-500 mb-3">
+	<Card.Root class="gap-4">
+		<Card.Header>
+			<Card.Title>{$i18n.t('Tax computation adjustments')}</Card.Title>
+			<Card.Description>
 				{$i18n.t(
-					"The tax office's demand note asks for a year's tax in advance, usually 75% then 25%. Record each instalment from the note with the year it is for: paid before that year's end it is netted in the year-end accrual; paid after (the second instalment) it is set off when the year's return is settled from the filings list below — never paid twice."
+					'Add back what the tax office refuses (book depreciation, fines…); deduct what it does not tax (bank interest, dividends) and the depreciation allowances.'
 				)}
+			</Card.Description>
+		</Card.Header>
+		<Card.Content class="flex flex-col gap-3">
+			<div class="flex flex-wrap items-center gap-2">
+				<NativeSelect.Root
+					size="sm"
+					class="max-w-full sm:max-w-80"
+					bind:value={preset}
+					onchange={addPreset}
+					aria-label={$i18n.t('— add a usual line —')}
+				>
+					<NativeSelect.Option value="">{$i18n.t('— add a usual line —')}</NativeSelect.Option>
+					{#each PRESETS as p}<NativeSelect.Option value={p.label}
+							>{p.kind === 'add' ? '+' : '−'} {$i18n.t(p.label)}</NativeSelect.Option
+						>{/each}
+				</NativeSelect.Root>
+				<Button variant="outline" size="sm" onclick={() => addAdjustment('add')}>
+					<Plus />{$i18n.t('Add-back')}
+				</Button>
+				<Button variant="outline" size="sm" onclick={() => addAdjustment('deduct')}>
+					<Minus />{$i18n.t('Deduction')}
+				</Button>
 			</div>
-			<div class="flex flex-wrap gap-3 items-end">
-				<div>
-					<label class={lblCls} for="prov-amount">{$i18n.t('Amount')}</label>
-					<input id="prov-amount" type="number" step="0.01" bind:value={provAmount} class={inputCls} />
-				</div>
-				<div>
-					<label class={lblCls} for="prov-date">{$i18n.t('Paid on')}</label>
-					<input id="prov-date" type="date" bind:value={provDate} class={inputCls} />
-				</div>
-				<div>
-					<label class={lblCls} for="prov-fy">{$i18n.t('Provisional tax for')}</label>
-					<select id="prov-fy" bind:value={provPeriodEnd} on:change={() => (provYearPicked = true)} class={inputCls}>
-						{#each provYears as y}<option value={y.end}>{$i18n.t('FY')} {y.label} ({$i18n.t('ends')} {y.end})</option>{/each}
-					</select>
-				</div>
-				<div>
-					<label class={lblCls} for="prov-bank">{$i18n.t('Bank account')}</label>
-					<select id="prov-bank" bind:value={provBank} class={inputCls}>
-						<option value="">{$i18n.t('— select —')}</option>
-						{#each bankAccounts as b}<option value={b.id}>{b.code} - {b.name}</option>{/each}
-					</select>
-				</div>
-				{#if provForeign}
-					<div>
-						<label class={lblCls} for="prov-fc">{$i18n.t('Amount debited')} ({provFx.bank_currency})</label>
-						<input id="prov-fc" type="number" step="0.01" bind:value={provFcAmount}
-							placeholder={provFx.bank_fc_suggested != null ? `${$i18n.t('at the rate')}: ${fmt(provFx.bank_fc_suggested)}` : ''} class={inputCls} />
-					</div>
-					<div>
-						<label class={lblCls} for="prov-rate">{$i18n.t('Rate')} {provFx.bank_currency} → {provFx.base_currency}</label>
-						<input id="prov-rate" type="number" step="0.00000001" bind:value={provRate}
-							placeholder={provFx.rate != null ? `${provFx.rate} (${provFx.rate_source})` : $i18n.t('no rate on file — type it')} class={inputCls} />
-					</div>
-				{/if}
-				<div>
-					<label class={lblCls} for="prov-ref">{$i18n.t('Reference')}</label>
-					<input id="prov-ref" type="text" bind:value={provRef} placeholder={$i18n.t('demand note no.')} class={inputCls} />
-				</div>
-				<button class={btnPrimary} disabled={recording} on:click={recordProvisional}>
-					{recording ? $i18n.t('Recording...') : $i18n.t('Record payment')}
-				</button>
-			</div>
-			{#if provForeign}
-				<div class="text-[11px] mt-2 {provFx.missing?.length ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}">
-					{#if provFx.missing?.length}
-						{$i18n.t('Missing')}: {provFx.missing.join(' · ')}
-					{:else}
-						{$i18n.t('Booked in {{base}} through the exchange clearing account, then moved to the bank in {{ccy}}.', { base: provFx.base_currency, ccy: provFx.bank_currency })}
-						{#if provFx.fx_kind}
-							{$i18n.t(provFx.fx_kind === 'loss' ? 'Exchange loss' : 'Exchange gain')}: {fmt(Math.abs(provFx.fx_base))} {provFx.base_currency} → {provFx.fx_account ? `${provFx.fx_account.code} ${provFx.fx_account.name}` : ''}
-						{/if}
-					{/if}
+			{#if adjustments.length === 0}
+				<p class="text-sm text-muted-foreground">
+					{$i18n.t('No adjustments — the accounting profit is used as is.')}
+				</p>
+			{:else}
+				<div class="overflow-hidden rounded-md border">
+					<Table.Root>
+						<Table.Header class="bg-muted/50">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Head class="w-36">{$i18n.t('Type')}</Table.Head>
+								<Table.Head>{$i18n.t('Description')}</Table.Head>
+								<Table.Head class="w-44 text-right">{$i18n.t('Amount')}</Table.Head>
+								<Table.Head class="w-10"
+									><span class="sr-only">{$i18n.t('Remove')}</span></Table.Head
+								>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each adjustments as a, i}
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="py-1.5">
+										<NativeSelect.Root
+											size="sm"
+											class="w-full min-w-28"
+											bind:value={a.kind}
+											aria-label={$i18n.t('Type')}
+										>
+											<NativeSelect.Option value="add">{$i18n.t('Add back')}</NativeSelect.Option>
+											<NativeSelect.Option value="deduct">{$i18n.t('Deduct')}</NativeSelect.Option>
+										</NativeSelect.Root>
+									</Table.Cell>
+									<Table.Cell class="min-w-48 py-1.5">
+										<Input
+											type="text"
+											class="h-8"
+											bind:value={a.label}
+											placeholder={$i18n.t('Description')}
+											aria-label={$i18n.t('Description')}
+										/>
+									</Table.Cell>
+									<Table.Cell class="py-1.5">
+										<Input
+											type="number"
+											step="0.01"
+											class="h-8 min-w-32 text-right tabular-nums"
+											bind:value={a.amount}
+											aria-label={$i18n.t('Amount')}
+										/>
+									</Table.Cell>
+									<Table.Cell class="py-1.5 text-right">
+										<Tip content={$i18n.t('Remove')}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Remove')}
+												onclick={() => removeAdjustment(i)}
+											>
+												<X />
+											</Button>
+										</Tip>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
 				</div>
 			{/if}
-		</div>
-	{/if}
+		</Card.Content>
+	</Card.Root>
+
+	<div class="flex flex-wrap items-center gap-2">
+		<Button variant={hasEntry ? 'outline' : 'default'} disabled={calculating} onclick={calc}>
+			{#if calculating}<Spinner />{:else}<Calculator />{/if}
+			{$i18n.t('Calculate')}
+		</Button>
+		{#if provisional}
+			<Button variant="outline" onclick={openProvisional}>
+				<Landmark />{$i18n.t('Record a provisional tax payment')}
+			</Button>
+		{/if}
+	</div>
 
 	{#if calculating}
-		<div class="flex items-center gap-3 my-6">
-			<Spinner className="size-5 text-blue-600 dark:text-blue-400" />
-			<span class="text-sm text-blue-700 dark:text-blue-300">{$i18n.t('Calculating...')}</span>
+		<div class="flex flex-col gap-2 rounded-xl border p-4" aria-busy="true">
+			<span class="sr-only">{$i18n.t('Calculating...')}</span>
+			{#each Array(8) as _}<Skeleton class="h-6 w-full" />{/each}
 		</div>
 	{/if}
 
 	{#if result && !calculating}
-		<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-3 overflow-x-auto">
-			<table class="w-full text-sm text-left">
-				<tbody class="text-gray-900 dark:text-gray-100">
-					<tr class={rowCls}><td class="px-4 py-2">{$i18n.t('Total Revenue')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.revenue)}</td></tr>
-					<tr class={rowCls}><td class="px-4 py-2">{$i18n.t('Total Cost')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.cost)}</td></tr>
-					<tr class="{rowCls} font-medium"><td class="px-4 py-2">{$i18n.t('Profit before tax per accounts')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.income_before_tax)}</td></tr>
-					{#if result.booked_tax_added_back}
-						<tr class={rowCls}><td class="px-4 py-2 pl-8">{$i18n.t('Add: income tax charged in the accounts')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.booked_tax_added_back)}</td></tr>
-					{/if}
-					{#each result.adjustments ?? [] as a}
-						<tr class={rowCls}>
-							<td class="px-4 py-2 pl-8">{a.kind === 'add' ? $i18n.t('Add') : $i18n.t('Less')}: {a.label}</td>
-							<td class="px-4 py-2 text-right font-mono">{a.kind === 'add' ? '' : '−'}{fmt(a.amount)}</td>
-						</tr>
-					{/each}
-					<tr class="{rowCls} font-medium"><td class="px-4 py-2">{$i18n.t('Adjusted profit')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.adjusted_profit)}</td></tr>
-					<tr class={rowCls}><td class="px-4 py-2">{$i18n.t('Less: losses brought forward')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.prior_year_losses)}</td></tr>
-					<tr class="{rowCls} font-semibold bg-gray-50 dark:bg-gray-800/40"><td class="px-4 py-2">{$i18n.t('Assessable profit')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.profit_to_declare)}</td></tr>
-
-					{#if tiered(result.cit_tiers)}
-						{#each result.cit_tiers as t}
-							<tr class={rowCls}>
-								<td class="px-4 py-2 pl-8">
-									{citLabel} @ {pct(t.rate)} {$i18n.t('on')} {fmt(t.base)}
-									<span class="text-xs text-gray-400">({t.up_to !== null && t.up_to !== undefined ? $i18n.t('up to {{cap}}', { cap: fmt(t.up_to) }) : $i18n.t('remainder')})</span>
-								</td>
-								<td class="px-4 py-2 text-right font-mono">{fmt(t.tax)}</td>
-							</tr>
+		<Card.Root class="gap-4">
+			<Card.Header>
+				<Card.Title>{citLabel}</Card.Title>
+				<Card.Description class="tabular-nums"
+					>{result.period_start} → {result.period_end}</Card.Description
+				>
+			</Card.Header>
+			<Card.Content>
+				<Table.Root class="text-[13px]">
+					<Table.Body>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell class="whitespace-normal">{$i18n.t('Total Revenue')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">{fmt(result.revenue)}</Table.Cell>
+						</Table.Row>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell class="whitespace-normal">{$i18n.t('Total Cost')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">{fmt(result.cost)}</Table.Cell>
+						</Table.Row>
+						<Table.Row class="font-semibold hover:bg-transparent">
+							<Table.Cell class="whitespace-normal"
+								>{$i18n.t('Profit before tax per accounts')}</Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								>{fmt(result.income_before_tax)}</Table.Cell
+							>
+						</Table.Row>
+						{#if result.booked_tax_added_back}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="pl-6 whitespace-normal"
+									>{$i18n.t('Add: income tax charged in the accounts')}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									>{fmt(result.booked_tax_added_back)}</Table.Cell
+								>
+							</Table.Row>
+						{/if}
+						{#each result.adjustments ?? [] as a}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="pl-6 whitespace-normal"
+									>{a.kind === 'add' ? $i18n.t('Add') : $i18n.t('Less')}: {a.label}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									>{a.kind === 'add' ? '' : '−'}{fmt(a.amount)}</Table.Cell
+								>
+							</Table.Row>
 						{/each}
-						<tr class="{rowCls} font-medium"><td class="px-4 py-2">{citLabel} {$i18n.t('before reductions')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.cit)}</td></tr>
-					{:else}
-						<tr class={rowCls}><td class="px-4 py-2">{citLabel} ({pct(result.cit_tiers?.[0]?.rate ?? result.cit_rate)})</td><td class="px-4 py-2 text-right font-mono">{fmt(result.cit)}</td></tr>
-					{/if}
-					{#if result.preferential}
-						<tr class={rowCls}><td class="px-4 py-2">{$i18n.t('Less: preferential exemption')} ({pct(result.cit_preferential_rate)})</td><td class="px-4 py-2 text-right font-mono">{fmt(result.preferential)}</td></tr>
-					{/if}
-					{#if result.reduction_rate}
-						<tr class={rowCls}>
-							<td class="px-4 py-2">
-								{$i18n.t('Less: tax reduction')} ({pct(result.reduction_rate)}{result.reduction_cap !== null && result.reduction_cap !== undefined ? `, ${$i18n.t('capped at')} ${fmt(result.reduction_cap)}` : ''})
-							</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(result.reduction)}</td>
-						</tr>
-					{/if}
-					<tr class="{rowCls} font-semibold bg-gray-50 dark:bg-gray-800/40"><td class="px-4 py-2">{citLabel} {$i18n.t('for the period')}</td><td class="px-4 py-2 text-right font-mono">{fmt(result.tax_for_period)}</td></tr>
-					{#if result.cit_provisional}
-						<tr class={rowCls}>
-							<td class="px-4 py-2">
-								{$i18n.t('Less: provisional tax paid by the year-end')}
-								<span class="text-xs text-gray-400">
-									({result.provisional_paid_source === 'payments' ? $i18n.t('from the payments recorded') : result.provisional_paid_source === 'manual' ? $i18n.t('typed') : $i18n.t('no prepaid-tax account mapped')})
-								</span>
-							</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(result.provisional_paid)}</td>
-						</tr>
-					{/if}
-					{#if result.cit_already_paid || !blank(citAlreadyPaid)}
-						<tr class={rowCls}>
-							<td class="px-4 py-2">
-								{$i18n.t('Less: {{tax}} already paid', { tax: citLabel })}
-								{#if blank(citAlreadyPaid)}
-									<span class="text-xs text-gray-400">({$i18n.t('paid filings in the period')}: {fmt(result.cit_paid_from_filings)})</span>
-								{/if}
-							</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(result.cit_already_paid)}</td>
-						</tr>
-					{/if}
-					<tr class="font-bold bg-blue-50/50 dark:bg-blue-900/20">
-						<td class="px-4 py-2">{result.cit_due < 0 ? $i18n.t('Refund / carried forward') : $i18n.t('Balance at the year-end (the filing amount)')}</td>
-						<td class="px-4 py-2 text-right font-mono">{fmt(Math.abs(result.cit_due))} {result.currency ?? ''}</td>
-					</tr>
-					{#if result.provisional_paid_after_year_end}
-						<tr class={rowCls}>
-							<td class="px-4 py-2 text-gray-500 dark:text-gray-400">
-								{$i18n.t('Provisional tax for this year paid after the year-end — set off when the return is settled')}
-							</td>
-							<td class="px-4 py-2 text-right font-mono text-gray-500 dark:text-gray-400">{fmt(result.provisional_paid_after_year_end)}</td>
-						</tr>
-						<tr class="font-medium">
-							<td class="px-4 py-2">{$i18n.t('Left to pay from the bank at settlement')}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(Math.max(result.cit_due_after_set_off, 0))} {result.currency ?? ''}</td>
-						</tr>
-					{/if}
-				</tbody>
-			</table>
-		</div>
+						<Table.Row class="font-semibold hover:bg-transparent">
+							<Table.Cell class="whitespace-normal">{$i18n.t('Adjusted profit')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">{fmt(result.adjusted_profit)}</Table.Cell>
+						</Table.Row>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell class="whitespace-normal"
+								>{$i18n.t('Less: losses brought forward')}</Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								>{fmt(result.prior_year_losses)}</Table.Cell
+							>
+						</Table.Row>
+						<Table.Row class="bg-muted/50 font-semibold hover:bg-muted/50">
+							<Table.Cell class="whitespace-normal">{$i18n.t('Assessable profit')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums"
+								>{fmt(result.profit_to_declare)}</Table.Cell
+							>
+						</Table.Row>
+
+						{#if tiered(result.cit_tiers)}
+							{#each result.cit_tiers as t}
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="pl-6 whitespace-normal">
+										{citLabel} @ <span class="tabular-nums">{pct(t.rate)}</span>
+										{$i18n.t('on')} <span class="tabular-nums">{fmt(t.base)}</span>
+										<span class="text-muted-foreground">
+											({t.up_to !== null && t.up_to !== undefined
+												? $i18n.t('up to {{cap}}', { cap: fmt(t.up_to) })
+												: $i18n.t('remainder')})
+										</span>
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(t.tax)}</Table.Cell>
+								</Table.Row>
+							{/each}
+							<Table.Row class="font-semibold hover:bg-transparent">
+								<Table.Cell class="whitespace-normal"
+									>{citLabel} {$i18n.t('before reductions')}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums">{fmt(result.cit)}</Table.Cell>
+							</Table.Row>
+						{:else}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="whitespace-normal">
+									{citLabel} (<span class="tabular-nums"
+										>{pct(result.cit_tiers?.[0]?.rate ?? result.cit_rate)}</span
+									>)
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">{fmt(result.cit)}</Table.Cell>
+							</Table.Row>
+						{/if}
+						{#if result.preferential}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="whitespace-normal">
+									{$i18n.t('Less: preferential exemption')} (<span class="tabular-nums"
+										>{pct(result.cit_preferential_rate)}</span
+									>)
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">{fmt(result.preferential)}</Table.Cell>
+							</Table.Row>
+						{/if}
+						{#if result.reduction_rate}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="whitespace-normal">
+									{$i18n.t('Less: tax reduction')} (<span class="tabular-nums"
+										>{pct(result.reduction_rate)}{result.reduction_cap !== null &&
+										result.reduction_cap !== undefined
+											? `, ${$i18n.t('capped at')} ${fmt(result.reduction_cap)}`
+											: ''}</span
+									>)
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">{fmt(result.reduction)}</Table.Cell>
+							</Table.Row>
+						{/if}
+						<Table.Row class="bg-muted/50 font-semibold hover:bg-muted/50">
+							<Table.Cell class="whitespace-normal"
+								>{citLabel} {$i18n.t('for the period')}</Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums">{fmt(result.tax_for_period)}</Table.Cell>
+						</Table.Row>
+						{#if result.cit_provisional}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="whitespace-normal">
+									{$i18n.t('Less: provisional tax paid by the year-end')}
+									<span class="text-muted-foreground">
+										({result.provisional_paid_source === 'payments'
+											? $i18n.t('from the payments recorded')
+											: result.provisional_paid_source === 'manual'
+												? $i18n.t('typed')
+												: $i18n.t('no prepaid-tax account mapped')})
+									</span>
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									>{fmt(result.provisional_paid)}</Table.Cell
+								>
+							</Table.Row>
+						{/if}
+						{#if result.cit_already_paid || !blank(citAlreadyPaid)}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="whitespace-normal">
+									{$i18n.t('Less: {{tax}} already paid', { tax: citLabel })}
+									{#if blank(citAlreadyPaid)}
+										<span class="text-muted-foreground"
+											>({$i18n.t('paid filings in the period')}:
+											<span class="tabular-nums">{fmt(result.cit_paid_from_filings)}</span>)</span
+										>
+									{/if}
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									>{fmt(result.cit_already_paid)}</Table.Cell
+								>
+							</Table.Row>
+						{/if}
+						<Table.Row
+							class="bg-muted/50 font-semibold hover:bg-muted/50 {result.provisional_paid_after_year_end
+								? ''
+								: 'border-b-0'}"
+						>
+							<Table.Cell class="whitespace-normal">
+								{result.cit_due < 0
+									? $i18n.t('Refund / carried forward')
+									: $i18n.t('Balance at the year-end (the filing amount)')}
+							</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">
+								{result.currency ?? ''}
+								{fmt(Math.abs(result.cit_due))}
+							</Table.Cell>
+						</Table.Row>
+						{#if result.provisional_paid_after_year_end}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell class="whitespace-normal text-muted-foreground">
+									{$i18n.t(
+										'Provisional tax for this year paid after the year-end — set off when the return is settled'
+									)}
+								</Table.Cell>
+								<Table.Cell class="text-right text-muted-foreground tabular-nums"
+									>{fmt(result.provisional_paid_after_year_end)}</Table.Cell
+								>
+							</Table.Row>
+							<Table.Row class="border-b-0 font-medium hover:bg-transparent">
+								<Table.Cell class="whitespace-normal"
+									>{$i18n.t('Left to pay from the bank at settlement')}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums">
+									{result.currency ?? ''}
+									{fmt(Math.max(result.cit_due_after_set_off, 0))}
+								</Table.Cell>
+							</Table.Row>
+						{/if}
+					</Table.Body>
+				</Table.Root>
+			</Card.Content>
+		</Card.Root>
 
 		{#if (result.warnings ?? []).length > 0}
-			<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200/50 dark:border-amber-800/30 rounded-xl p-3 mb-3 text-xs text-amber-800 dark:text-amber-200 space-y-1">
-				{#each result.warnings as w}<div>{w}</div>{/each}
-			</div>
+			<Alert.Root variant="warning">
+				<TriangleAlert />
+				<Alert.Description>
+					{#each result.warnings as w}<p>{$i18n.t(w)}</p>{/each}
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
 
 		{#if (result.entry_blockers ?? []).length > 0}
-			<div class="bg-white dark:bg-gray-900 rounded-xl border border-red-200/50 dark:border-red-800/30 mb-3 p-4">
-				<div class="text-sm font-medium dark:text-gray-200 mb-1">{$i18n.t('Accrual entry not available')}</div>
-				<ul class="text-xs text-red-700 dark:text-red-300 list-disc pl-4 space-y-0.5">
-					{#each result.entry_blockers as b}<li>{b}</li>{/each}
-				</ul>
-				<button class="mt-2 {btnSecondary}" on:click={() => dispatch('gotoAccounts')}>{$i18n.t('Open Tax accounts')}</button>
-			</div>
+			<Alert.Root variant="warning">
+				<TriangleAlert />
+				<Alert.Title>{$i18n.t('Accrual entry not available')}</Alert.Title>
+				<Alert.Description>
+					<ul class="list-disc pl-4">
+						{#each result.entry_blockers as b}<li>{$i18n.t(b)}</li>{/each}
+					</ul>
+					<Button variant="outline" size="sm" class="mt-2" onclick={() => dispatch('gotoAccounts')}>
+						{$i18n.t('Open Tax accounts')}
+					</Button>
+				</Alert.Description>
+			</Alert.Root>
 		{:else if result.suggested_entry?.lines?.length > 0}
-			<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-3">
-				<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850 text-sm font-medium dark:text-gray-200">
-					{$i18n.t('Suggested accrual entry')} <span class="text-xs text-gray-400 font-normal">({result.suggested_entry.date})</span>
+			<div class="flex flex-col gap-2">
+				<h3 class="text-sm font-medium">
+					{$i18n.t('Suggested accrual entry')}
+					<span class="font-normal text-muted-foreground tabular-nums"
+						>({result.suggested_entry.date})</span
+					>
+				</h3>
+				<div class="overflow-hidden rounded-md border">
+					<Table.Root class="text-[13px]">
+						<Table.Header class="bg-muted/50">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Head>{$i18n.t('Account Code')}</Table.Head>
+								<Table.Head>{$i18n.t('Description')}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Debit')}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Credit')}</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each result.suggested_entry.lines as line}
+								<Table.Row>
+									<Table.Cell>
+										<span class="font-mono">{line.account_code}</span>
+										<span class="text-muted-foreground">{line.account_name ?? ''}</span>
+									</Table.Cell>
+									<Table.Cell class="whitespace-normal">{line.description ?? ''}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{line.debit ? fmt(line.debit) : ''}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums"
+										>{line.credit ? fmt(line.credit) : ''}</Table.Cell
+									>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+						<Table.Footer>
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell colspan={2}>{$i18n.t('Total')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									>{fmt(sum(result.suggested_entry.lines, 'debit'))}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									>{fmt(sum(result.suggested_entry.lines, 'credit'))}</Table.Cell
+								>
+							</Table.Row>
+						</Table.Footer>
+					</Table.Root>
 				</div>
-				<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-					<thead class="text-xs font-bold uppercase bg-gray-100 dark:bg-gray-800">
-						<tr class="border-b-[1.5px] border-gray-200 dark:border-gray-700">
-							<th class="px-3 py-2">{$i18n.t('Account Code')}</th>
-							<th class="px-3 py-2">{$i18n.t('Description')}</th>
-							<th class="px-3 py-2 text-right">{$i18n.t('Debit')}</th>
-							<th class="px-3 py-2 text-right">{$i18n.t('Credit')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each result.suggested_entry.lines as line}
-							<tr class="{rowCls} text-xs">
-								<td class="px-3 py-2 font-mono font-medium">{line.account_code} <span class="font-sans text-gray-500">{line.account_name ?? ''}</span></td>
-								<td class="px-3 py-2">{line.description ?? ''}</td>
-								<td class="px-3 py-2 text-right font-mono">{line.debit ? fmt(line.debit) : ''}</td>
-								<td class="px-3 py-2 text-right font-mono">{line.credit ? fmt(line.credit) : ''}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
 			</div>
 		{/if}
 
-		<div class="flex flex-wrap gap-2 mb-2">
-			<button class={btnPrimary} disabled={saving} on:click={save}>
-				{saving ? $i18n.t('Saving...') : $i18n.t('Save as Filing')}
-			</button>
+		<div class="flex flex-wrap gap-2">
 			{#if result.suggested_entry?.lines?.length > 0}
-				<button
-					class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
-					disabled={creating}
-					on:click={createEntry}
-				>
+				<Button disabled={creating} onclick={createEntry}>
+					{#if creating}<Spinner />{/if}
 					{creating ? $i18n.t('Creating...') : $i18n.t('Create Accrual Entry (Draft)')}
-				</button>
+				</Button>
 			{/if}
-			<button class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition" on:click={doExport}>
-				{$i18n.t('Export Excel')}
-			</button>
+			<Button variant="outline" disabled={saving} onclick={save}>
+				{#if saving}<Spinner />{:else}<Save />{/if}
+				{saving ? $i18n.t('Saving...') : $i18n.t('Save as Filing')}
+			</Button>
+			<Button variant="outline" onclick={doExport}>
+				<Download />{$i18n.t('Export Excel')}
+			</Button>
 		</div>
 	{/if}
 
-	<TaxFilingsList {companyId} taxType="cit" bind:this={filingsList} />
+	<TaxFilingsList {companyId} taxType="cit" bind:this={filingsList} on:gotoAccounts />
 </div>
+
+{#if provisional}
+	<Dialog.Root bind:open={showProvisional}>
+		<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t('Provisional tax payment')}</Dialog.Title>
+				<Dialog.Description>
+					{$i18n.t(
+						"The tax office's demand note asks for a year's tax in advance, usually 75% then 25%. Record each instalment from the note with the year it is for: paid before that year's end it is netted in the year-end accrual; paid after (the second instalment) it is set off when the year's return is settled from the filings list below — never paid twice."
+					)}
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid gap-2">
+					<Label for="prov-amount">{$i18n.t('Amount')}</Label>
+					<Input
+						id="prov-amount"
+						type="number"
+						step="0.01"
+						class="text-right tabular-nums"
+						bind:value={provAmount}
+					/>
+				</div>
+				<div class="grid gap-2">
+					<Label for="prov-date">{$i18n.t('Paid on')}</Label>
+					<Input id="prov-date" type="date" bind:value={provDate} />
+				</div>
+				<div class="grid gap-2">
+					<Label for="prov-fy">{$i18n.t('Provisional tax for')}</Label>
+					<NativeSelect.Root
+						id="prov-fy"
+						class="w-full"
+						bind:value={provPeriodEnd}
+						onchange={() => (provYearPicked = true)}
+					>
+						{#each provYears as y}<NativeSelect.Option value={y.end}
+								>{$i18n.t('FY')} {y.label} ({$i18n.t('ends')} {y.end})</NativeSelect.Option
+							>{/each}
+					</NativeSelect.Root>
+				</div>
+				<div class="grid gap-2">
+					<Label for="prov-bank">{$i18n.t('Bank account')}</Label>
+					<NativeSelect.Root id="prov-bank" class="w-full" bind:value={provBank}>
+						<NativeSelect.Option value="">{$i18n.t('— select —')}</NativeSelect.Option>
+						{#each bankAccounts as b}<NativeSelect.Option value={b.id}
+								>{b.code} - {b.name}</NativeSelect.Option
+							>{/each}
+					</NativeSelect.Root>
+				</div>
+				{#if provForeign}
+					<div class="grid gap-2">
+						<Label for="prov-fc">{$i18n.t('Amount debited')} ({provFx.bank_currency})</Label>
+						<Input
+							id="prov-fc"
+							type="number"
+							step="0.01"
+							class="text-right tabular-nums"
+							bind:value={provFcAmount}
+							placeholder={provFx.bank_fc_suggested != null
+								? `${$i18n.t('at the rate')}: ${fmt(provFx.bank_fc_suggested)}`
+								: ''}
+						/>
+					</div>
+					<div class="grid gap-2">
+						<Label for="prov-rate"
+							>{$i18n.t('Rate')} {provFx.bank_currency} → {provFx.base_currency}</Label
+						>
+						<Input
+							id="prov-rate"
+							type="number"
+							step="0.00000001"
+							class="text-right tabular-nums"
+							bind:value={provRate}
+							placeholder={provFx.rate != null
+								? `${provFx.rate} (${provFx.rate_source})`
+								: $i18n.t('no rate on file — type it')}
+						/>
+					</div>
+				{/if}
+				<div class="grid gap-2 sm:col-span-2">
+					<Label for="prov-ref">{$i18n.t('Reference')}</Label>
+					<Input
+						id="prov-ref"
+						type="text"
+						class="sm:max-w-64"
+						bind:value={provRef}
+						placeholder={$i18n.t('demand note no.')}
+					/>
+				</div>
+			</div>
+
+			<!-- What the payment books -->
+			<div class="flex flex-col gap-2">
+				<span class="text-[13px] font-medium">{$i18n.t('This will book:')}</span>
+				{#if prepaidRole === undefined}
+					<div class="flex flex-col gap-2 rounded-md border p-3">
+						{#each Array(2) as _}<Skeleton class="h-6 w-full" />{/each}
+					</div>
+				{:else}
+					<div class="overflow-hidden rounded-md border">
+						<Table.Root class="text-[13px]">
+							<Table.Body>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="w-10 py-1.5 text-muted-foreground">DR</Table.Cell>
+									<Table.Cell class="py-1.5 whitespace-normal">
+										{#if prepaidAccount}
+											<span class="font-mono">{prepaidAccount.code}</span>
+											{prepaidAccount.name}
+										{:else}
+											<span class="inline-flex items-center gap-1 text-destructive">
+												<CircleAlert class="size-3.5" />{$i18n.t('— not mapped —')}
+											</span>
+										{/if}
+										{#if prepaidRole?.label}
+											<span class="block text-xs text-muted-foreground"
+												>{$i18n.t(prepaidRole.label)}</span
+											>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="py-1.5 text-right tabular-nums"
+										>{fmt(num(provAmount) ?? 0)}</Table.Cell
+									>
+								</Table.Row>
+								{#if !provForeign}
+									<Table.Row class="border-b-0 hover:bg-transparent">
+										<Table.Cell class="py-1.5 text-muted-foreground">CR</Table.Cell>
+										<Table.Cell class="py-1.5 whitespace-normal">
+											{#if provBankAccount}
+												<span class="font-mono">{provBankAccount.code}</span>
+												{provBankAccount.name}
+											{:else}
+												<span class="text-muted-foreground">{$i18n.t('Bank account')}</span>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="py-1.5 text-right tabular-nums"
+											>{fmt(num(provAmount) ?? 0)}</Table.Cell
+										>
+									</Table.Row>
+								{/if}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{/if}
+				{#if provForeign}
+					{#if provFx.missing?.length}
+						<Alert.Root variant="warning">
+							<TriangleAlert />
+							<Alert.Title>{$i18n.t('Missing')}: {provFx.missing.join(' · ')}</Alert.Title>
+						</Alert.Root>
+					{:else}
+						<p class="text-[13px] text-muted-foreground">
+							{$i18n.t(
+								'Booked in {{base}} through the exchange clearing account, then moved to the bank in {{ccy}}.',
+								{ base: provFx.base_currency, ccy: provFx.bank_currency }
+							)}
+							{#if provFx.fx_kind}
+								{$i18n.t(provFx.fx_kind === 'loss' ? 'Exchange loss' : 'Exchange gain')}:
+								<span class="tabular-nums"
+									>{fmt(Math.abs(provFx.fx_base))} {provFx.base_currency}</span
+								>
+								→ {provFx.fx_account ? `${provFx.fx_account.code} ${provFx.fx_account.name}` : ''}
+							{/if}
+						</p>
+					{/if}
+				{/if}
+				{#if prepaidMissing}
+					<Alert.Root variant="warning">
+						<TriangleAlert />
+						<Alert.Title
+							>{$i18n.t('Missing')}: {$i18n.t(prepaidRole?.label ?? 'cit_prepaid')}</Alert.Title
+						>
+						<Alert.Description>
+							<Button
+								variant="link"
+								size="sm"
+								onclick={() => {
+									showProvisional = false;
+									dispatch('gotoAccounts');
+								}}>{$i18n.t('Open Tax accounts')}</Button
+							>
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showProvisional = false)}
+					>{$i18n.t('Cancel')}</Button
+				>
+				<Button disabled={recording || prepaidMissing} onclick={recordProvisional}>
+					{#if recording}<Spinner />{/if}
+					{recording ? $i18n.t('Recording...') : $i18n.t('Record payment')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

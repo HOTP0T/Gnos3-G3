@@ -8,6 +8,8 @@
  * assuming the accounting period's start date or December.
  */
 
+import { uiLocale } from '$lib/utils/uiLocale';
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** First day of the fiscal year containing `dateStr` (YYYY-MM-DD). */
@@ -72,7 +74,7 @@ export function buildMonthOptions(periods: any[], startMonth = 1): MonthOption[]
 			const from = `${y}-${pad(m + 1)}-01`;
 			const lastDay = new Date(y, m + 1, 0).getDate();
 			const to = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
-			const label = cursor.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+			const label = cursor.toLocaleDateString(uiLocale(), { year: 'numeric', month: 'long' });
 			const fiscalStart = fiscalYearStart(from, startMonth);
 			const fiscalEnd = fiscalYearEnd(from, startMonth);
 			const value = `${y}-${pad(m + 1)}`;

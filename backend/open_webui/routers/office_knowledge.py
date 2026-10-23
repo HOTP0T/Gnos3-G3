@@ -133,7 +133,7 @@ async def synchronize(request:Request,auto:bool=False,user=Depends(get_verified_
     if lock.locked():raise HTTPException(409,'Your Office files are already being imported')
     async with lock:
         token,_=create_k4mi_exchange_token(user,audience='gnos3-module:office')
-        url=os.environ.get('OFFICE_MODULE_URL','http://office-api:8004').rstrip('/')
+        url=os.environ.get('OFFICE_MODULE_URL','http://assistant:8080').rstrip('/')
         async with httpx.AsyncClient(base_url=url,timeout=120,trust_env=False) as client:
             try:
                 exchange=await client.post('/api/auth/exchange',json={'gnos3_token':token});exchange.raise_for_status()

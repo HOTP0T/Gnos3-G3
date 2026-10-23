@@ -11,8 +11,38 @@
 		downloadExpenseSheetPdf,
 		downloadExpenseSheetExcel
 	} from '$lib/apis/accounting';
+	import dayjs from 'dayjs';
+
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import FileDown from '@lucide/svelte/icons/file-down';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Send from '@lucide/svelte/icons/send';
+	import Check from '@lucide/svelte/icons/check';
+	import X from '@lucide/svelte/icons/x';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Banknote from '@lucide/svelte/icons/banknote';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import CircleX from '@lucide/svelte/icons/circle-x';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import ReceiptText from '@lucide/svelte/icons/receipt-text';
+
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
 	import ExpenseSheetStatusBadge from './ExpenseSheetStatusBadge.svelte';
 
 	const i18n: any = getContext('i18n');
@@ -150,8 +180,12 @@
 		}
 	};
 
-	const handleDelete = async () => {
-		if (!confirm($i18n.t('Delete this draft sheet?'))) return;
+	let showDeleteConfirm = false;
+	const handleDelete = () => {
+		showDeleteConfirm = true;
+	};
+
+	const doDelete = async () => {
 		try {
 			await deleteExpenseSheet(sheetId);
 			toast.success($i18n.t('Sheet deleted'));
@@ -175,8 +209,7 @@
 				target: transitionTarget as any,
 				note: note || undefined,
 				user_info: userInfo || undefined,
-				rejection_reason:
-					transitionTarget === 'reject' ? rejectionReason || undefined : undefined
+				rejection_reason: transitionTarget === 'reject' ? rejectionReason || undefined : undefined
 			});
 			toast.success($i18n.t(`Sheet ${transitionTarget}`));
 			transitionTarget = '';
@@ -186,6 +219,33 @@
 			transitioning = false;
 		}
 	};
+
+	// What each transition dialog says (the title asks, the button repeats the verb).
+	const TRANSITION_COPY: Record<string, { title: string; description: string; confirm: string }> = {
+		submit: {
+			title: 'Submit this sheet?',
+			description: 'It goes to an approver.',
+			confirm: 'Submit'
+		},
+		approve: {
+			title: 'Approve this sheet?',
+			description: 'Approving builds the reimbursement journal entry as a draft.',
+			confirm: 'Approve'
+		},
+		reject: { title: 'Reject this sheet?', description: '', confirm: 'Reject' },
+		mark_paid: {
+			title: 'Mark this sheet paid?',
+			description: 'Marking it paid posts the reimbursement journal entry.',
+			confirm: 'Mark Paid'
+		}
+	};
+	$: transitionCopy = TRANSITION_COPY[transitionTarget] ?? {
+		title: transitionTarget,
+		description: '',
+		confirm: 'Confirm'
+	};
+
+	const fmtTime = (v: string | null | undefined) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '');
 
 	const toggleCandidate = (id: number) => {
 		if (selectedIds.has(id)) selectedIds.delete(id);
@@ -230,593 +290,587 @@
 </script>
 
 {#if loading}
-	<div class="flex justify-center py-10"><Spinner className="size-6" /></div>
+	<div class="flex flex-col gap-4">
+		<Skeleton class="h-8 w-28" />
+		<Skeleton class="h-8 w-64" />
+		<div class="grid gap-4 md:grid-cols-3">
+			{#each Array(3) as _}<Skeleton class="h-20 rounded-xl" />{/each}
+		</div>
+		<Skeleton class="h-64 rounded-xl" />
+	</div>
 {:else if !sheet}
-	<div class="text-sm text-red-500 py-6">{$i18n.t('Sheet not found')}</div>
+	<Alert.Root variant="destructive">
+		<CircleAlert />
+		<Alert.Title>{$i18n.t('Sheet not found')}</Alert.Title>
+		<Alert.Description>
+			<Button
+				variant="outline"
+				size="sm"
+				class="mt-2"
+				href="/accounting/company/{companyId}/expenses"
+			>
+				<ArrowLeft />{$i18n.t('All sheets')}
+			</Button>
+		</Alert.Description>
+	</Alert.Root>
 {:else}
-	<div class="py-2 space-y-4">
-		<!-- Header -->
-		<div class="flex items-start justify-between flex-wrap gap-3">
-			<div>
-				<div class="flex items-center gap-2 flex-wrap">
-					<button
-						class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-						on:click={() => goto(`/accounting/company/${companyId}/expenses`)}
-					>
-						← {$i18n.t('All sheets')}
-					</button>
-				</div>
-				<div class="flex items-center gap-2 mt-1 flex-wrap">
-					<h2 class="text-lg font-semibold dark:text-gray-200 font-mono">
-						{sheet.reference}
-					</h2>
+	<div class="flex flex-col gap-4">
+		<div>
+			<Button
+				variant="ghost"
+				size="sm"
+				class="-ml-2 pl-1.5"
+				href="/accounting/company/{companyId}/expenses"
+			>
+				<ArrowLeft />{$i18n.t('All sheets')}
+			</Button>
+		</div>
+
+		<!-- Title, status and actions -->
+		<div class="flex flex-wrap items-start justify-between gap-3">
+			<div class="min-w-0">
+				<div class="flex flex-wrap items-center gap-2">
+					<h2 class="font-mono text-xl font-semibold">{sheet.reference}</h2>
 					<ExpenseSheetStatusBadge status={sheet.status} />
 				</div>
 				{#if sheet.title}
-					<div class="text-sm text-gray-600 dark:text-gray-400 mt-0.5">{sheet.title}</div>
+					<p class="mt-0.5 text-sm text-muted-foreground">{sheet.title}</p>
 				{/if}
 			</div>
-			<div class="flex items-center gap-2 flex-wrap">
-				<button
-					on:click={() => exportSheet('pdf')}
-					class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-				>
-					{$i18n.t('PDF')}
-				</button>
-				<button
-					on:click={() => exportSheet('excel')}
-					class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-				>
-					{$i18n.t('Excel')}
-				</button>
+			<div class="flex flex-wrap items-center gap-2">
+				<Button variant="outline" size="sm" onclick={() => exportSheet('pdf')}>
+					<FileDown />{$i18n.t('PDF')}
+				</Button>
+				<Button variant="outline" size="sm" onclick={() => exportSheet('excel')}>
+					<FileDown />{$i18n.t('Excel')}
+				</Button>
 
 				{#if sheet.status !== 'paid'}
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-						on:click={openEdit}
-					>
-						{$i18n.t('Edit details')}
-					</button>
+					<Button variant="outline" size="sm" onclick={openEdit}>
+						<Pencil />{$i18n.t('Edit details')}
+					</Button>
 				{/if}
 
 				{#if sheet.status === 'draft'}
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
-						on:click={openPicker}
+					<Button
+						variant="outline"
+						size="sm"
+						class="text-destructive hover:text-destructive"
+						onclick={handleDelete}
 					>
-						+ {$i18n.t('Add Receipts')}
-					</button>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
-						on:click={() => openTransition('submit')}
-					>
-						{$i18n.t('Submit')}
-					</button>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
-						on:click={handleDelete}
-					>
-						{$i18n.t('Delete')}
-					</button>
+						<Trash2 />{$i18n.t('Delete')}
+					</Button>
+					<Button variant="outline" size="sm" onclick={openPicker}>
+						<Plus />{$i18n.t('Add Receipts')}
+					</Button>
+					<Button size="sm" onclick={() => openTransition('submit')}>
+						<Send />{$i18n.t('Submit')}
+					</Button>
 				{:else if sheet.status === 'submitted'}
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
-						on:click={() => openTransition('approve')}
-					>
-						{$i18n.t('Approve')}
-					</button>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
-						on:click={() => openTransition('reject')}
-					>
-						{$i18n.t('Reject')}
-					</button>
+					<Button variant="outline" size="sm" onclick={() => openTransition('reject')}>
+						<X />{$i18n.t('Reject')}
+					</Button>
+					<Button size="sm" onclick={() => openTransition('approve')}>
+						<Check />{$i18n.t('Approve')}
+					</Button>
 				{:else if sheet.status === 'approved'}
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition"
-						on:click={() => openTransition('mark_paid')}
-					>
-						{$i18n.t('Mark Paid')}
-					</button>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
-						on:click={() => openTransition('reject')}
-					>
-						{$i18n.t('Reject')}
-					</button>
+					<Button variant="outline" size="sm" onclick={() => openTransition('reject')}>
+						<X />{$i18n.t('Reject')}
+					</Button>
+					<Button size="sm" onclick={() => openTransition('mark_paid')}>
+						<Banknote />{$i18n.t('Mark Paid')}
+					</Button>
 				{/if}
 			</div>
 		</div>
 
-		<!-- Info blocks -->
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-			<div class="p-3 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-				<div class="text-[10px] uppercase text-gray-500 dark:text-gray-400">{$i18n.t('Employee')}</div>
-				<div class="text-sm font-medium dark:text-gray-200 mt-0.5">
-					{sheet.employee_name ?? `#${sheet.employee_id}`}
-					{#if sheet.employee_code}
-						<span class="text-xs text-gray-400">({sheet.employee_code})</span>
-					{/if}
-				</div>
-			</div>
-			<div class="p-3 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-				<div class="text-[10px] uppercase text-gray-500 dark:text-gray-400">{$i18n.t('Period')}</div>
-				<div class="text-sm font-medium dark:text-gray-200 mt-0.5">
-					{sheet.period_start} → {sheet.period_end}
-				</div>
-			</div>
-			<div class="p-3 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-				<div class="text-[10px] uppercase text-gray-500 dark:text-gray-400">{$i18n.t('Totals')}</div>
-				<div class="text-sm font-medium dark:text-gray-200 mt-0.5">
-					{money(sheet.total_amount, sheet.currency)}
-					<span class="text-xs text-gray-400 font-normal ml-1">
-						({money(sheet.subtotal, sheet.currency)} + {money(sheet.tax_amount, sheet.currency)})
+		<!-- Who, when, how much -->
+		<div class="grid gap-4 md:grid-cols-3">
+			<Card.Root size="sm" class="gap-1">
+				<Card.Content>
+					<div class="text-sm text-muted-foreground">{$i18n.t('Employee')}</div>
+					<div class="mt-1 font-medium">
+						{sheet.employee_name ?? `#${sheet.employee_id}`}
+						{#if sheet.employee_code}
+							<span class="font-normal text-muted-foreground">({sheet.employee_code})</span>
+						{/if}
+					</div>
+				</Card.Content>
+			</Card.Root>
+			<Card.Root size="sm" class="gap-1">
+				<Card.Content>
+					<div class="text-sm text-muted-foreground">{$i18n.t('Period')}</div>
+					<div class="mt-1 font-medium tabular-nums">
+						{sheet.period_start} → {sheet.period_end}
+					</div>
+				</Card.Content>
+			</Card.Root>
+			<Card.Root size="sm" class="gap-1">
+				<Card.Content>
+					<div class="text-sm text-muted-foreground">{$i18n.t('Totals')}</div>
+					<div class="mt-1 font-medium tabular-nums">
+						{money(sheet.total_amount, sheet.currency)}
+						<span class="ml-1 text-sm font-normal text-muted-foreground">
+							({money(sheet.subtotal, sheet.currency)} + {money(sheet.tax_amount, sheet.currency)})
+						</span>
+					</div>
+				</Card.Content>
+			</Card.Root>
+		</div>
+
+		<!-- Status trail -->
+		{#if sheet.submitted_at || sheet.approved_at || sheet.paid_at || sheet.rejected_at || sheet.transaction_entry_number || sheet.transaction_id}
+			<div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
+				{#if sheet.submitted_at}
+					<span
+						>{$i18n.t('Submitted')}:
+						<span class="tabular-nums">{fmtTime(sheet.submitted_at)}</span>
+						{#if sheet.submitted_by}({sheet.submitted_by}){/if}</span
+					>
+				{/if}
+				{#if sheet.approved_at}
+					<span
+						>{$i18n.t('Approved')}:
+						<span class="tabular-nums">{fmtTime(sheet.approved_at)}</span>
+						{#if sheet.approved_by}({sheet.approved_by}){/if}</span
+					>
+				{/if}
+				{#if sheet.paid_at}
+					<span
+						>{$i18n.t('Paid')}: <span class="tabular-nums">{fmtTime(sheet.paid_at)}</span>
+						{#if sheet.paid_by}({sheet.paid_by}){/if}</span
+					>
+				{/if}
+				{#if sheet.rejected_at}
+					<span class="inline-flex items-center gap-1.5 text-destructive">
+						<CircleX class="size-4 shrink-0" />
+						<span
+							>{$i18n.t('Rejected')}:
+							<span class="tabular-nums">{fmtTime(sheet.rejected_at)}</span>
+							{#if sheet.rejection_reason}<span class="text-muted-foreground">
+									— {sheet.rejection_reason}</span
+								>{/if}</span
+						>
 					</span>
-				</div>
+				{/if}
+				{#if sheet.transaction_entry_number}
+					<span
+						>{$i18n.t('Journal Entry')}:
+						<span class="font-mono text-[13px] text-foreground"
+							>{sheet.transaction_entry_number}</span
+						></span
+					>
+				{:else if sheet.transaction_id}
+					<span>{$i18n.t('Journal Entry: draft')}</span>
+				{/if}
 			</div>
-		</div>
+		{/if}
 
-		<!-- Timeline / status trail -->
-		<div
-			class="flex items-center gap-4 flex-wrap text-xs text-gray-500 dark:text-gray-400 px-1"
-		>
-			{#if sheet.submitted_at}
-				<span
-					>{$i18n.t('Submitted')}: {new Date(sheet.submitted_at).toLocaleString()}
-					{#if sheet.submitted_by}<span class="text-gray-400">({sheet.submitted_by})</span>{/if}</span
-				>
-			{/if}
-			{#if sheet.approved_at}
-				<span
-					>{$i18n.t('Approved')}: {new Date(sheet.approved_at).toLocaleString()}
-					{#if sheet.approved_by}<span class="text-gray-400">({sheet.approved_by})</span>{/if}</span
-				>
-			{/if}
-			{#if sheet.paid_at}
-				<span
-					>{$i18n.t('Paid')}: {new Date(sheet.paid_at).toLocaleString()}
-					{#if sheet.paid_by}<span class="text-gray-400">({sheet.paid_by})</span>{/if}</span
-				>
-			{/if}
-			{#if sheet.rejected_at}
-				<span class="text-red-500"
-					>{$i18n.t('Rejected')}: {new Date(sheet.rejected_at).toLocaleString()}
-					{#if sheet.rejection_reason}<span class="text-gray-400 ml-1"
-							>— {sheet.rejection_reason}</span
-						>{/if}</span
-				>
-			{/if}
-			{#if sheet.transaction_entry_number}
-				<span
-					>{$i18n.t('Journal Entry')}:
-					<span class="font-mono text-gray-700 dark:text-gray-300">{sheet.transaction_entry_number}</span></span
-				>
-			{:else if sheet.transaction_id}
-				<span>{$i18n.t('Journal Entry: draft')}</span>
-			{/if}
-		</div>
-
-		<!-- Reimbursement journal entry (collapsible: expand a debit line to its receipts) -->
+		<!-- Reimbursement journal entry (expand a debit line to its receipts) -->
 		{#if sheet.category_totals?.length}
-			<div class="rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-				<div
-					class="px-3 py-2 text-sm font-semibold bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between"
-				>
-					<span>{$i18n.t('Reimbursement journal entry')}</span>
-					<span class="text-xs font-normal text-gray-500">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{$i18n.t('Reimbursement journal entry')}</Card.Title>
+					<Card.Description>
 						{#if sheet.transaction_entry_number}
-							<span class="font-mono">{sheet.transaction_entry_number}</span> · {$i18n.t('posted')}
+							<span class="font-mono text-[13px]">{sheet.transaction_entry_number}</span> · {$i18n.t(
+								'posted'
+							)}
 						{:else if sheet.transaction_id}
 							{$i18n.t('draft — posts when the sheet is paid')}
 						{:else}
 							{$i18n.t('builds when the sheet is approved')}
 						{/if}
-					</span>
-				</div>
-				<table class="w-full text-sm">
-					<thead class="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-850">
-						<tr>
-							<th class="text-left py-2 px-3">{$i18n.t('Account / Category')}</th>
-							<th class="text-center py-2 px-3">{$i18n.t('Items')}</th>
-							<th class="text-right py-2 px-3">{$i18n.t('Debit')}</th>
-							<th class="text-right py-2 px-3">{$i18n.t('Credit')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each sheet.category_totals as g}
-							{@const catId = g.category_id ?? null}
-							{@const open = expandedCats.has(catId)}
-							<tr
-								class="border-t border-gray-100 dark:border-gray-850 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50"
-								on:click={() => toggleCat(catId)}
-							>
-								<td class="py-2 px-3 dark:text-gray-200">
-									<span class="inline-block w-4 text-gray-400">{open ? '▾' : '▸'}</span>
-									{g.category_label}
-									{#if g.tax_amount && Number(g.tax_amount) > 0}
-										<span class="text-xs text-gray-400"
-											>({money(g.subtotal, sheet.currency)} + {money(
-												g.tax_amount,
-												sheet.currency
-											)} tax)</span
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<div class="overflow-hidden rounded-md border">
+						<Table.Root>
+							<Table.Header class="bg-muted/50">
+								<Table.Row class="hover:bg-transparent">
+									<Table.Head>{$i18n.t('Account / Category')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Items')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Debit')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Credit')}</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each sheet.category_totals as g}
+									{@const catId = g.category_id ?? null}
+									{@const open = expandedCats.has(catId)}
+									<Table.Row
+										class="cursor-pointer"
+										tabindex={0}
+										aria-expanded={open}
+										onclick={() => toggleCat(catId)}
+										onkeydown={(e: KeyboardEvent) => {
+											if (e.key === 'Enter' || e.key === ' ') {
+												e.preventDefault();
+												toggleCat(catId);
+											}
+										}}
+									>
+										<Table.Cell class="whitespace-normal">
+											<span class="inline-flex items-center gap-1.5">
+												<ChevronRight
+													class="size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none {open
+														? 'rotate-90'
+														: ''}"
+												/>
+												{g.category_label}
+											</span>
+											{#if g.tax_amount && Number(g.tax_amount) > 0}
+												<span class="text-[13px] text-muted-foreground tabular-nums"
+													>({money(g.subtotal, sheet.currency)} + {money(
+														g.tax_amount,
+														sheet.currency
+													)}
+													{$i18n.t('tax')})</span
+												>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="text-right tabular-nums">{g.count}</Table.Cell>
+										<Table.Cell class="text-right font-medium tabular-nums"
+											>{money(g.total_amount, sheet.currency)}</Table.Cell
 										>
+										<Table.Cell class="text-right text-muted-foreground">—</Table.Cell>
+									</Table.Row>
+									{#if open}
+										{#each linesByCat.get(catId) ?? [] as l}
+											<Table.Row class="bg-muted/30 text-[13px] hover:bg-muted/30">
+												<Table.Cell class="pl-9 whitespace-normal text-muted-foreground">
+													<span class="tabular-nums">{l.invoice_date ?? '—'}</span>
+													· <span class="text-foreground">{l.vendor_name ?? ''}</span>
+													{#if l.description}<span> — {l.description}</span>{/if}
+													{#if l.has_receipt}
+														<Paperclip
+															class="ml-1 inline size-3.5 align-[-2px]"
+															aria-label={$i18n.t('Has receipt')}
+														/>
+													{/if}
+													{#if hasK4miDoc(l.k4mi_document_id)}
+														<K4miDocLink
+															docId={l.k4mi_document_id}
+															extraClass="ml-1 font-mono text-link underline-offset-4 hover:underline"
+															>#{l.k4mi_document_id}</K4miDocLink
+														>
+													{/if}
+												</Table.Cell>
+												<Table.Cell></Table.Cell>
+												<Table.Cell class="text-right text-muted-foreground tabular-nums">
+													{#if l.converted_total != null}
+														{money(l.converted_total, sheet.currency)}
+														<span>({money(l.total_amount, l.currency)})</span>
+													{:else}
+														{money(l.total_amount, l.currency)}
+													{/if}
+												</Table.Cell>
+												<Table.Cell></Table.Cell>
+											</Table.Row>
+										{/each}
 									{/if}
-								</td>
-								<td class="py-2 px-3 text-center text-gray-500">{g.count}</td>
-								<td class="py-2 px-3 text-right font-medium">{money(g.total_amount, sheet.currency)}</td>
-								<td class="py-2 px-3 text-right text-gray-400">—</td>
-							</tr>
-							{#if open}
-								{#each linesByCat.get(catId) ?? [] as l}
-									<tr class="bg-gray-50/60 dark:bg-gray-900/30 text-xs">
-										<td class="py-1.5 pl-10 pr-3 text-gray-600 dark:text-gray-400">
-											<span class="text-gray-400">{l.invoice_date ?? '—'}</span>
-											· {l.vendor_name ?? ''}
-											{#if l.description}<span class="text-gray-400"> — {l.description}</span>{/if}
-											{#if l.has_receipt}<span class="ml-1" title="Has receipt">📎</span>{/if}
-											{#if hasK4miDoc(l.k4mi_document_id)}
-												<K4miDocLink docId={l.k4mi_document_id} extraClass="ml-1 text-blue-600 hover:text-blue-700">#{l.k4mi_document_id}</K4miDocLink>
-											{/if}
-										</td>
-										<td></td>
-										<td class="py-1.5 px-3 text-right text-gray-600 dark:text-gray-400">
-											{#if l.converted_total != null}
-												{money(l.converted_total, sheet.currency)}
-												<span class="text-gray-400">({money(l.total_amount, l.currency)})</span>
-											{:else}
-												{money(l.total_amount, l.currency)}
-											{/if}
-										</td>
-										<td></td>
-									</tr>
 								{/each}
-							{/if}
-						{/each}
-						<!-- Credit line: owed to the employee -->
-						<tr class="border-t border-gray-200 dark:border-gray-800">
-							<td class="py-2 px-3 dark:text-gray-200"
-								>{$i18n.t('Due to')} {sheet.employee_name ?? `#${sheet.employee_id}`}</td
-							>
-							<td></td>
-							<td class="py-2 px-3 text-right text-gray-400">—</td>
-							<td class="py-2 px-3 text-right font-medium">{money(sheet.total_amount, sheet.currency)}</td>
-						</tr>
-					</tbody>
-					<tfoot class="bg-gray-50 dark:bg-gray-850 font-semibold">
-						<tr class="border-t border-gray-200 dark:border-gray-800">
-							<td class="py-2 px-3 dark:text-gray-200">{$i18n.t('Total')}</td>
-							<td></td>
-							<td class="py-2 px-3 text-right">{money(sheet.total_amount, sheet.currency)}</td>
-							<td class="py-2 px-3 text-right">{money(sheet.total_amount, sheet.currency)}</td>
-						</tr>
-					</tfoot>
-				</table>
-			</div>
+								<!-- Credit line: owed to the employee -->
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell
+										>{$i18n.t('Due to')}
+										{sheet.employee_name ?? `#${sheet.employee_id}`}</Table.Cell
+									>
+									<Table.Cell></Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground">—</Table.Cell>
+									<Table.Cell class="text-right font-medium tabular-nums"
+										>{money(sheet.total_amount, sheet.currency)}</Table.Cell
+									>
+								</Table.Row>
+							</Table.Body>
+							<Table.Footer>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="font-semibold">{$i18n.t('Total')}</Table.Cell>
+									<Table.Cell></Table.Cell>
+									<Table.Cell class="text-right font-semibold tabular-nums"
+										>{money(sheet.total_amount, sheet.currency)}</Table.Cell
+									>
+									<Table.Cell class="text-right font-semibold tabular-nums"
+										>{money(sheet.total_amount, sheet.currency)}</Table.Cell
+									>
+								</Table.Row>
+							</Table.Footer>
+						</Table.Root>
+					</div>
+				</Card.Content>
+			</Card.Root>
 		{/if}
 
-		<!-- Lines -->
-		<div class="rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-			<div
-				class="px-3 py-2 text-sm font-semibold bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border-b border-gray-200 dark:border-gray-800"
-			>
-				{$i18n.t('Receipts')} ({sheet.lines?.length ?? 0})
-			</div>
-			{#if !sheet.lines?.length}
-				<div class="px-3 py-6 text-sm text-gray-400 italic text-center">
-					{$i18n.t('No receipts on this sheet yet.')}
-				</div>
-			{:else}
-				<table class="w-full text-sm">
-					<thead class="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-850">
-						<tr>
-							<th class="text-left py-2 px-3">{$i18n.t('Date')}</th>
-							<th class="text-left py-2 px-3">{$i18n.t('Vendor')}</th>
-							<th class="text-left py-2 px-3">{$i18n.t('Category')}</th>
-							<th class="text-left py-2 px-3">{$i18n.t('Description')}</th>
-							<th class="text-right py-2 px-3">{$i18n.t('Subtotal')}</th>
-							<th class="text-right py-2 px-3">{$i18n.t('Tax')}</th>
-							<th class="text-right py-2 px-3">{$i18n.t('Total')}</th>
-							<th class="text-right py-2 px-3">K4mi</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each sheet.lines as l}
-							<tr class="border-t border-gray-100 dark:border-gray-850 hover:bg-gray-50 dark:hover:bg-gray-900/50">
-								<td class="py-2 px-3 text-xs text-gray-600 dark:text-gray-400">
-									{l.invoice_date ?? '—'}
-								</td>
-								<td class="py-2 px-3 dark:text-gray-200">{l.vendor_name ?? ''}</td>
-								<td class="py-2 px-3 text-gray-500">{l.category_label}</td>
-								<td class="py-2 px-3 text-gray-500 max-w-xs truncate"
-									>{l.description ?? ''}</td
-								>
-								<td class="py-2 px-3 text-right">{money(l.subtotal, l.currency)}</td>
-								<td class="py-2 px-3 text-right">{money(l.tax_amount, l.currency)}</td>
-								<td class="py-2 px-3 text-right font-medium"
-									>{money(l.total_amount, l.currency)}</td
-								>
-								<td class="py-2 px-3 text-right">
-									{#if hasK4miDoc(l.k4mi_document_id)}
-										<K4miDocLink docId={l.k4mi_document_id} extraClass="text-xs text-blue-600 hover:text-blue-700">#{l.k4mi_document_id}</K4miDocLink>
-									{/if}
-								</td>
-								<td class="py-2 px-3 text-right">
-									{#if sheet.status === 'draft' && l.invoice_id}
-										<button
-											class="text-xs text-red-500 hover:text-red-700"
-											on:click={() => removeLine(l.invoice_id)}>×</button
+		<!-- Receipts -->
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>{$i18n.t('Receipts')} ({sheet.lines?.length ?? 0})</Card.Title>
+			</Card.Header>
+			<Card.Content>
+				{#if !sheet.lines?.length}
+					<Empty.Root class="border border-dashed p-6">
+						<Empty.Header>
+							<Empty.Media variant="icon"><ReceiptText /></Empty.Media>
+							<Empty.Title>{$i18n.t('No receipts on this sheet yet.')}</Empty.Title>
+						</Empty.Header>
+						{#if sheet.status === 'draft'}
+							<Empty.Content>
+								<Button variant="outline" size="sm" onclick={openPicker}>
+									<Plus />{$i18n.t('Add Receipts')}
+								</Button>
+							</Empty.Content>
+						{/if}
+					</Empty.Root>
+				{:else}
+					<div class="overflow-hidden rounded-md border">
+						<Table.Root>
+							<Table.Header class="bg-muted/50">
+								<Table.Row class="hover:bg-transparent">
+									<Table.Head>{$i18n.t('Date')}</Table.Head>
+									<Table.Head>{$i18n.t('Vendor')}</Table.Head>
+									<Table.Head>{$i18n.t('Category')}</Table.Head>
+									<Table.Head>{$i18n.t('Description')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Subtotal')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Tax')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Total')}</Table.Head>
+									<Table.Head class="text-right">K4mi</Table.Head>
+									{#if sheet.status === 'draft'}
+										<Table.Head class="w-10"
+											><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head
 										>
 									{/if}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</div>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each sheet.lines as l}
+									<Table.Row>
+										<Table.Cell class="tabular-nums">{l.invoice_date ?? '—'}</Table.Cell>
+										<Table.Cell class="font-medium">{l.vendor_name ?? ''}</Table.Cell>
+										<Table.Cell class="text-muted-foreground">{l.category_label}</Table.Cell>
+										<Table.Cell
+											class="max-w-xs truncate text-muted-foreground"
+											title={l.description ?? ''}>{l.description ?? ''}</Table.Cell
+										>
+										<Table.Cell class="text-right tabular-nums"
+											>{money(l.subtotal, l.currency)}</Table.Cell
+										>
+										<Table.Cell class="text-right tabular-nums"
+											>{money(l.tax_amount, l.currency)}</Table.Cell
+										>
+										<Table.Cell class="text-right font-medium tabular-nums"
+											>{money(l.total_amount, l.currency)}</Table.Cell
+										>
+										<Table.Cell class="text-right">
+											{#if hasK4miDoc(l.k4mi_document_id)}
+												<K4miDocLink
+													docId={l.k4mi_document_id}
+													extraClass="font-mono text-[13px] text-link underline-offset-4 hover:underline"
+													>#{l.k4mi_document_id}</K4miDocLink
+												>
+											{/if}
+										</Table.Cell>
+										{#if sheet.status === 'draft'}
+											<Table.Cell class="text-right">
+												{#if l.invoice_id}
+													<Tip content={$i18n.t('Remove from sheet')}>
+														<Button
+															variant="ghost"
+															size="icon-xs"
+															aria-label={$i18n.t('Remove from sheet')}
+															onclick={() => removeLine(l.invoice_id)}
+														>
+															<X />
+														</Button>
+													</Tip>
+												{/if}
+											</Table.Cell>
+										{/if}
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{/if}
+			</Card.Content>
+		</Card.Root>
 	</div>
 
-	<!-- Receipt picker modal -->
-	{#if showPicker}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			on:click={() => (showPicker = false)}
-		>
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<div
-				class="w-full max-w-3xl max-h-[80vh] rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 flex flex-col"
-				on:click|stopPropagation
-			>
-				<div
-					class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between"
-				>
-					<h3 class="text-sm font-semibold dark:text-gray-200">
-						{$i18n.t('Add Receipts')} ({candidates.length})
-					</h3>
-					<button
-						class="text-sm text-gray-500 hover:text-gray-700"
-						on:click={() => (showPicker = false)}>×</button
-					>
-				</div>
-				<div class="flex-1 overflow-y-auto p-4">
-					{#if candidates.length === 0}
-						<div class="text-sm text-gray-400 italic text-center py-8">
+	<!-- Receipt picker -->
+	<Dialog.Root bind:open={showPicker}>
+		<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t('Add Receipts')} ({candidates.length})</Dialog.Title>
+				<Dialog.Description>
+					{$i18n.t('Invoices for this employee in the sheet period that are not on it yet.')}
+				</Dialog.Description>
+			</Dialog.Header>
+			{#if candidates.length === 0}
+				<Empty.Root class="border border-dashed p-6">
+					<Empty.Header>
+						<Empty.Media variant="icon"><ReceiptText /></Empty.Media>
+						<Empty.Description>
 							{$i18n.t(
 								'No eligible invoices for this employee in this period. Assign the employee in K4mi first.'
 							)}
-						</div>
-					{:else}
-						<table class="w-full text-xs">
-							<thead class="text-gray-500 dark:text-gray-400">
-								<tr>
-									<th class="w-6"></th>
-									<th class="text-left py-1 px-2">{$i18n.t('Date')}</th>
-									<th class="text-left py-1 px-2">{$i18n.t('Vendor')}</th>
-									<th class="text-right py-1 px-2">{$i18n.t('Total')}</th>
-									<th class="text-right py-1 px-2">K4mi</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each candidates as inv}
-									<tr
-										class="border-t border-gray-100 dark:border-gray-850 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+						</Empty.Description>
+					</Empty.Header>
+				</Empty.Root>
+			{:else}
+				<div class="max-h-[50vh] overflow-y-auto rounded-md border">
+					<Table.Root>
+						<Table.Header class="bg-muted/50">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Head class="w-10"
+									><span class="sr-only">{$i18n.t('Select')}</span></Table.Head
+								>
+								<Table.Head>{$i18n.t('Date')}</Table.Head>
+								<Table.Head>{$i18n.t('Vendor')}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Total')}</Table.Head>
+								<Table.Head class="text-right">K4mi</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each candidates as inv}
+								<Table.Row data-state={selectedIds.has(inv.id) ? 'selected' : undefined}>
+									<Table.Cell>
+										<Checkbox
+											checked={selectedIds.has(inv.id)}
+											onCheckedChange={() => toggleCandidate(inv.id)}
+											aria-label={inv.vendor_name ?? `#${inv.id}`}
+										/>
+									</Table.Cell>
+									<Table.Cell class="tabular-nums">{inv.invoice_date ?? '—'}</Table.Cell>
+									<Table.Cell>{inv.vendor_name ?? ''}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{money(inv.total_amount, inv.currency)}</Table.Cell
 									>
-										<td class="px-2">
-											<input
-												type="checkbox"
-												checked={selectedIds.has(inv.id)}
-												on:change={() => toggleCandidate(inv.id)}
-												class="rounded"
-											/>
-										</td>
-										<td class="py-1 px-2 text-gray-600 dark:text-gray-400"
-											>{inv.invoice_date ?? '—'}</td
-										>
-										<td class="py-1 px-2 dark:text-gray-200">{inv.vendor_name ?? ''}</td>
-										<td class="py-1 px-2 text-right"
-											>{money(inv.total_amount, inv.currency)}</td
-										>
-										<td class="py-1 px-2 text-right">
-											{#if hasK4miDoc(inv.k4mi_document_id)}
-												<K4miDocLink docId={inv.k4mi_document_id} extraClass="text-blue-600 hover:text-blue-700">#{inv.k4mi_document_id}</K4miDocLink>
-											{/if}
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{/if}
+									<Table.Cell class="text-right">
+										{#if hasK4miDoc(inv.k4mi_document_id)}
+											<K4miDocLink
+												docId={inv.k4mi_document_id}
+												extraClass="font-mono text-[13px] text-link underline-offset-4 hover:underline"
+												>#{inv.k4mi_document_id}</K4miDocLink
+											>
+										{/if}
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
 				</div>
-				<div
-					class="px-4 py-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-2"
-				>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-						on:click={() => (showPicker = false)}>{$i18n.t('Cancel')}</button
-					>
-					<button
-						class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-60"
-						disabled={!selectedIds.size}
-						on:click={addSelected}
-					>
-						{$i18n.t('Add')} ({selectedIds.size})
-					</button>
-				</div>
-			</div>
-		</div>
-	{/if}
+			{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showPicker = false)}>{$i18n.t('Cancel')}</Button>
+				<Button disabled={!selectedIds.size} onclick={addSelected}>
+					<Plus />{$i18n.t('Add')} ({selectedIds.size})
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
-	<!-- Transition modal -->
-	{#if showEdit}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			on:click={() => (showEdit = false)}
-		>
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<div
-				class="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
-				on:click|stopPropagation
-			>
-				<div
-					class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 text-sm font-semibold dark:text-gray-200"
-				>
-					{$i18n.t('Edit sheet details')}
+	<!-- Edit sheet details -->
+	<Dialog.Root bind:open={showEdit}>
+		<Dialog.Content class="sm:max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t('Edit sheet details')}</Dialog.Title>
+				<Dialog.Description class="font-mono text-[13px]">{sheet.reference}</Dialog.Description>
+			</Dialog.Header>
+			<div class="grid gap-4">
+				<div class="grid gap-1.5">
+					<Label for="es-edit-ref">{$i18n.t('Reference')}</Label>
+					<Input id="es-edit-ref" class="font-mono" bind:value={editForm.reference} />
+					<p class="text-[13px] text-muted-foreground">
+						{$i18n.t('Must be unique within this company.')}
+					</p>
 				</div>
-				<div class="p-4 space-y-3">
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-							>{$i18n.t('Reference')}</label
-						>
-						<input
-							type="text"
-							bind:value={editForm.reference}
-							class="w-full text-sm font-mono rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-						/>
-						<p class="mt-1 text-[11px] text-gray-400">
-							{$i18n.t('Must be unique within this company.')}
-						</p>
+				<div class="grid gap-1.5">
+					<Label for="es-edit-title">{$i18n.t('Sheet name')}</Label>
+					<Input id="es-edit-title" bind:value={editForm.title} />
+				</div>
+				<div class="grid grid-cols-2 gap-3">
+					<div class="grid gap-1.5">
+						<Label for="es-edit-start">{$i18n.t('Period start')}</Label>
+						<Input id="es-edit-start" type="date" bind:value={editForm.period_start} />
 					</div>
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-							>{$i18n.t('Sheet name')}</label
-						>
-						<input
-							type="text"
-							bind:value={editForm.title}
-							class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-						/>
+					<div class="grid gap-1.5">
+						<Label for="es-edit-end">{$i18n.t('Period end')}</Label>
+						<Input id="es-edit-end" type="date" bind:value={editForm.period_end} />
 					</div>
-					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-								>{$i18n.t('Period start')}</label
-							>
-							<input
-								type="date"
-								bind:value={editForm.period_start}
-								class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-							/>
-						</div>
-						<div>
-							<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-								>{$i18n.t('Period end')}</label
-							>
-							<input
-								type="date"
-								bind:value={editForm.period_end}
-								class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-							/>
-						</div>
-					</div>
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-							>{$i18n.t('Notes')}</label
-						>
-						<input
-							type="text"
-							bind:value={editForm.notes}
-							class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-						/>
-					</div>
-					{#if sheet && sheet.status !== 'draft'}
-						<p class="rounded-lg bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="es-edit-notes">{$i18n.t('Notes', { context: 'gnos3' })}</Label>
+					<Input id="es-edit-notes" bind:value={editForm.notes} />
+				</div>
+				{#if sheet.status !== 'draft'}
+					<Alert.Root variant="warning">
+						<TriangleAlert />
+						<Alert.Description>
 							{$i18n.t(
 								'This sheet is already past draft — changing its details does not alter the amounts or the journal entry.'
 							)}
-						</p>
-					{/if}
-				</div>
-				<div
-					class="px-4 py-3 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-2"
-				>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-						on:click={() => (showEdit = false)}
-					>
-						{$i18n.t('Cancel')}
-					</button>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
-						disabled={savingEdit}
-						on:click={saveEdit}
-					>
-						{savingEdit ? $i18n.t('Saving...') : $i18n.t('Save')}
-					</button>
-				</div>
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
 			</div>
-		</div>
-	{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showEdit = false)}>{$i18n.t('Cancel')}</Button>
+				<Button disabled={savingEdit} onclick={saveEdit}>
+					{#if savingEdit}<Spinner />{/if}
+					{savingEdit ? $i18n.t('Saving...') : $i18n.t('Save')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
-	{#if transitionTarget}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			on:click={() => (transitionTarget = '')}
-		>
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<div
-				class="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
-				on:click|stopPropagation
-			>
-				<div
-					class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 text-sm font-semibold dark:text-gray-200"
-				>
-					{$i18n.t('Confirm')}: {transitionTarget}
+	<!-- Submit / approve / reject / mark paid -->
+	<Dialog.Root
+		open={!!transitionTarget}
+		onOpenChange={(v) => {
+			if (!v) transitionTarget = '';
+		}}
+	>
+		<Dialog.Content class="sm:max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t(transitionCopy.title)}</Dialog.Title>
+				<Dialog.Description>
+					<span class="font-mono text-[13px]">{sheet.reference}</span>
+					{#if transitionCopy.description}· {$i18n.t(transitionCopy.description)}{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="grid gap-4">
+				<div class="grid gap-1.5">
+					<Label for="es-tr-user">{$i18n.t('Your name (for audit log)')}</Label>
+					<Input id="es-tr-user" bind:value={userInfo} placeholder={$i18n.t('Optional')} />
 				</div>
-				<div class="p-4 space-y-3">
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-							>{$i18n.t('Your name (for audit log)')}</label
-						>
-						<input
-							type="text"
-							bind:value={userInfo}
-							placeholder={$i18n.t('Optional')}
-							class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-						/>
+				{#if transitionTarget === 'reject'}
+					<div class="grid gap-1.5">
+						<Label for="es-tr-reason">{$i18n.t('Rejection reason')}</Label>
+						<Input id="es-tr-reason" bind:value={rejectionReason} />
 					</div>
-					{#if transitionTarget === 'reject'}
-						<div>
-							<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-								>{$i18n.t('Rejection reason')}</label
-							>
-							<input
-								type="text"
-								bind:value={rejectionReason}
-								class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-							/>
-						</div>
-					{/if}
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-							>{$i18n.t('Note (optional)')}</label
-						>
-						<input
-							type="text"
-							bind:value={note}
-							class="w-full text-sm rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-						/>
-					</div>
-				</div>
-				<div
-					class="px-4 py-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-2"
-				>
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-						on:click={() => (transitionTarget = '')}>{$i18n.t('Cancel')}</button
-					>
-					<button
-						class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-60"
-						disabled={transitioning}
-						on:click={confirmTransition}
-					>
-						{transitioning ? $i18n.t('Working...') : $i18n.t('Confirm')}
-					</button>
+				{/if}
+				<div class="grid gap-1.5">
+					<Label for="es-tr-note">{$i18n.t('Note (optional)')}</Label>
+					<Input id="es-tr-note" bind:value={note} />
 				</div>
 			</div>
-		</div>
-	{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (transitionTarget = '')}
+					>{$i18n.t('Cancel')}</Button
+				>
+				<Button disabled={transitioning} onclick={confirmTransition}>
+					{#if transitioning}<Spinner />{/if}
+					{transitioning ? $i18n.t('Working...') : $i18n.t(transitionCopy.confirm)}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<ConfirmDialog
+		bind:open={showDeleteConfirm}
+		title={$i18n.t('Delete this draft sheet?')}
+		description={`${sheet.reference} ${$i18n.t('will be deleted. This cannot be undone.')}`}
+		confirmLabel={$i18n.t('Delete')}
+		destructive
+		onconfirm={doDelete}
+	/>
 {/if}

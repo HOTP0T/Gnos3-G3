@@ -6,6 +6,8 @@
 
 	export let option: any = null;
 	export let height = '100%';
+	/** What the chart shows, for screen readers (the canvas itself is not readable). */
+	export let label = '';
 
 	let el: HTMLDivElement;
 	let chart: any = null;
@@ -16,7 +18,14 @@
 	// Canvas text ignores CSS fonts and is not redrawn when a web font arrives, so
 	// hand ECharts the page's font stack and wait for Geist before the first draw.
 	let fontFamily = 'sans-serif';
-	const withFont = (o: typeof option) => ({ ...o, textStyle: { fontFamily, ...o.textStyle } });
+	const withFont = (o: typeof option) =>
+		o.baseOption
+			? // responsive option ({ baseOption, media }): the font goes on the base
+				{
+					...o,
+					baseOption: { ...o.baseOption, textStyle: { fontFamily, ...o.baseOption.textStyle } }
+				}
+			: { ...o, textStyle: { fontFamily, ...o.textStyle } };
 
 	onMount(async () => {
 		fontFamily = getComputedStyle(el).fontFamily || fontFamily;
@@ -47,4 +56,9 @@
 	});
 </script>
 
-<div bind:this={el} style="width:100%;height:{height};min-height:0;"></div>
+<div
+	bind:this={el}
+	role={label ? 'img' : undefined}
+	aria-label={label || undefined}
+	style="width:100%;height:{height};min-height:0;"
+></div>

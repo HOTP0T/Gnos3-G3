@@ -1,4 +1,5 @@
 import { INVOICE_API_BASE_URL } from '$lib/constants';
+import { langHeader } from '$lib/utils/uiLocale';
 
 export const getInvoices = async (
 	token: string,
@@ -43,6 +44,7 @@ export const getInvoices = async (
 		method: 'GET',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -77,6 +79,7 @@ export const getInvoice = async (token: string, id: number) => {
 		method: 'GET',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -104,6 +107,7 @@ export const updateInvoice = async (token: string, id: number, data: Record<stri
 		method: 'PATCH',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify(data)
@@ -132,6 +136,7 @@ export const deleteInvoice = async (token: string, id: number) => {
 		method: 'DELETE',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -159,6 +164,7 @@ export const getVendors = async (token: string) => {
 		method: 'GET',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -183,6 +189,7 @@ export const getTags = async (token: string): Promise<string[]> => {
 	const res = await fetch(`${INVOICE_API_BASE_URL}/api/invoices/tags`, {
 		method: 'GET',
 		headers: { 'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}` }
 	})
 		.then(async (res) => {
@@ -215,6 +222,7 @@ export const getSpendingSummary = async (
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 			}
 		}
@@ -243,6 +251,7 @@ export const getProcessingInvoices = async (token: string) => {
 		method: 'GET',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -276,6 +285,7 @@ export const getInvoiceStats = async (token: string) => {
 		method: 'GET',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -303,6 +313,7 @@ export const reprocessInvoice = async (token: string, id: number) => {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -330,6 +341,7 @@ export const markInvoiceReviewed = async (token: string, id: number) => {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})
@@ -357,6 +369,7 @@ export const getNeedsReview = async (token: string) => {
 		method: 'GET',
 		headers: {
 			'Content-Type': 'application/json',
+			...langHeader(),
 			Authorization: `Bearer ${token}`
 		}
 	})

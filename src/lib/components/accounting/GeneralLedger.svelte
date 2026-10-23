@@ -1,14 +1,38 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { getGeneralLedger, getFullGeneralLedger, getAccounts, exportGeneralLedger } from '$lib/apis/accounting';
+	import {
+		getGeneralLedger,
+		getFullGeneralLedger,
+		getAccounts,
+		exportGeneralLedger
+	} from '$lib/apis/accounting';
 	import type { Writable } from 'svelte/store';
 	import { convertAmount } from '$lib/utils/currency';
 	import ReportAmount from '$lib/components/accounting/ReportAmount.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
 
-	const i18n = getContext('i18n');
+	import Download from '@lucide/svelte/icons/download';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import BookOpen from '@lucide/svelte/icons/book-open';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+
+	const i18n: any = getContext('i18n');
 	export let companyId: number;
 
 	// Display-currency conversion (company-wide selector). Only the ACCOUNT view is
@@ -19,6 +43,7 @@
 	const companyCurrency = getContext<Writable<string>>('companyCurrency');
 
 	let loading = false;
+	let loadError = '';
 	let loaded = false;
 	let mode: 'journal' | 'account' = 'journal';
 
@@ -43,9 +68,10 @@
 	// Account-view conversion (base → display) as of the period end.
 	$: baseCcy = rawAccountData?.currency || $companyCurrency || 'EUR';
 	$: converting = !!($displayCurrency && baseCcy && $displayCurrency !== baseCcy);
-	$: fx = converting && rawAccountData
-		? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], dateTo || undefined)
-		: null;
+	$: fx =
+		converting && rawAccountData
+			? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], dateTo || undefined)
+			: null;
 	$: factor = converting ? (fx?.hasRate ? fx.rate : null) : 1;
 	$: noRate = converting && !fx?.hasRate;
 	$: displayCcy = converting ? $displayCurrency : baseCcy;
@@ -59,7 +85,13 @@
 	// When the display currency is the company currency, an entry is valued at
 	// the rate it was BOOKED at (exactly as the ledger and every report value it);
 	// any other target goes through the rate table.
-	function jrate(entryCcy: string, date: string, disp: string, rates: any[], booked?: any): number | null {
+	function jrate(
+		entryCcy: string,
+		date: string,
+		disp: string,
+		rates: any[],
+		booked?: any
+	): number | null {
 		const cur = (entryCcy || '').toUpperCase();
 		if (!disp || !cur || disp === cur) return 1;
 		const b = booked != null ? Number(booked) : NaN;
@@ -67,36 +99,86 @@
 		const r = convertAmount(1, cur, disp, rates ?? [], date);
 		return r.hasRate ? r.rate : null;
 	}
-	function jconv(amount: any, entryCcy: string, date: string, disp: string, rates: any[], booked?: any): { v: number; hasRate: boolean } {
+	function jconv(
+		amount: any,
+		entryCcy: string,
+		date: string,
+		disp: string,
+		rates: any[],
+		booked?: any
+	): { v: number; hasRate: boolean } {
 		const n = typeof amount === 'string' ? parseFloat(amount) : (amount ?? 0);
 		const v = isNaN(n) ? 0 : n;
 		const f = jrate(entryCcy, date, disp, rates, booked);
 		return f === null ? { v, hasRate: false } : { v: Math.round(v * f * 100) / 100, hasRate: true };
 	}
 	// Per-line entry-currency→display factor for a journal entry (feeds <ReportAmount>).
-	function jfactor(entryCcy: string, date: string, disp: string, rates: any[], booked?: any): number | null {
+	function jfactor(
+		entryCcy: string,
+		date: string,
+		disp: string,
+		rates: any[],
+		booked?: any
+	): number | null {
 		return jrate(entryCcy, date, disp, rates, booked);
 	}
 	// Journal totals in the display currency = sum of per-line converted amounts.
 	$: journalDispDebit = journalEntries.reduce(
-		(s, e) => s + e.lines.reduce((ls: number, l: any) => ls + jconv(l.debit, e.currency, e.transaction_date, $displayCurrency, $exchangeRates ?? [], e.exchange_rate).v, 0),
+		(s, e) =>
+			s +
+			e.lines.reduce(
+				(ls: number, l: any) =>
+					ls +
+					jconv(
+						l.debit,
+						e.currency,
+						e.transaction_date,
+						$displayCurrency,
+						$exchangeRates ?? [],
+						e.exchange_rate
+					).v,
+				0
+			),
 		0
 	);
 	$: journalDispCredit = journalEntries.reduce(
-		(s, e) => s + e.lines.reduce((ls: number, l: any) => ls + jconv(l.credit, e.currency, e.transaction_date, $displayCurrency, $exchangeRates ?? [], e.exchange_rate).v, 0),
+		(s, e) =>
+			s +
+			e.lines.reduce(
+				(ls: number, l: any) =>
+					ls +
+					jconv(
+						l.credit,
+						e.currency,
+						e.transaction_date,
+						$displayCurrency,
+						$exchangeRates ?? [],
+						e.exchange_rate
+					).v,
+				0
+			),
 		0
 	);
-	$: journalConverting = !!$displayCurrency && journalEntries.some((e) => (e.currency || '').toUpperCase() !== $displayCurrency.toUpperCase());
+	$: journalConverting =
+		!!$displayCurrency &&
+		journalEntries.some((e) => (e.currency || '').toUpperCase() !== $displayCurrency.toUpperCase());
 
 	const loadAccounts = async () => {
 		try {
 			const res = await getAccounts({ company_id: companyId, active: true });
-			accounts = (Array.isArray(res) ? res : []).map((a: any) => ({ id: a.id, code: a.code, name: a.name }));
-		} catch (err) { console.error(err); }
+			accounts = (Array.isArray(res) ? res : []).map((a: any) => ({
+				id: a.id,
+				code: a.code,
+				name: a.name
+			}));
+		} catch (err) {
+			console.error(err);
+		}
 	};
 
 	const load = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			if (mode === 'journal') {
 				const res = await getFullGeneralLedger({
@@ -111,7 +193,10 @@
 				journalTotalDebit = parseFloat(res.total_debit ?? 0);
 				journalTotalCredit = parseFloat(res.total_credit ?? 0);
 			} else {
-				if (!selectedAccountId) { loading = false; return; }
+				if (!selectedAccountId) {
+					loading = false;
+					return;
+				}
 				rawAccountData = await getGeneralLedger({
 					company_id: companyId,
 					account_id: selectedAccountId as number,
@@ -121,7 +206,10 @@
 					offset: accountPage * accountPerPage
 				});
 			}
-		} catch (err) { toast.error(`${err}`); }
+		} catch (err) {
+			loadError = `${err}`;
+			toast.error(`${err}`);
+		}
 		loading = false;
 		loaded = true;
 	};
@@ -146,167 +234,384 @@
 	};
 
 	$: if (mode === 'account' && accounts.length === 0) loadAccounts();
+
+	// Dense report table: 13px, 6px row padding, 12px at the outer edges (design system → Reports).
+	const TABLE =
+		'text-[13px] [&_td]:py-1.5 [&_td:first-child]:pl-3 [&_th:first-child]:pl-3 [&_td:last-child]:pr-3 [&_th:last-child]:pr-3';
 </script>
 
-<div class="space-y-3">
+{#snippet voidedBadge(tip: string)}
+	<Tip content={tip}>
+		<StatusBadge kind="entry" status="voided" label={$i18n.t('voided')} />
+	</Tip>
+{/snippet}
+
+{#snippet pager(pageIdx: number, total: number, perPage: number, go: (p: number) => void)}
+	<div class="flex flex-wrap items-center justify-end gap-2 text-sm">
+		<span class="text-muted-foreground tabular-nums"
+			>{$i18n.t('Page', { context: 'gnos3' })} {pageIdx + 1} / {Math.ceil(total / perPage)}</span
+		>
+		<Button variant="outline" size="sm" disabled={pageIdx === 0} onclick={() => go(pageIdx - 1)}>
+			<ChevronLeft />{$i18n.t('Previous')}
+		</Button>
+		<Button
+			variant="outline"
+			size="sm"
+			disabled={(pageIdx + 1) * perPage >= total}
+			onclick={() => go(pageIdx + 1)}
+		>
+			{$i18n.t('Next')}<ChevronRight />
+		</Button>
+	</div>
+{/snippet}
+
+<div class="flex min-w-0 flex-col gap-4">
 	<!-- Filters -->
-	<div class="flex flex-wrap gap-3 items-end">
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('View')}</label>
-			<select bind:value={mode} class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden">
-				<option value="journal">{$i18n.t('Journal View')}</option>
-				<option value="account">{$i18n.t('Account View')}</option>
-			</select>
+	<div class="flex flex-wrap items-end gap-2">
+		<div class="grid gap-1.5">
+			<Label for="gl-mode">{$i18n.t('View')}</Label>
+			<NativeSelect.Root id="gl-mode" size="sm" bind:value={mode}>
+				<NativeSelect.Option value="journal">{$i18n.t('Journal View')}</NativeSelect.Option>
+				<NativeSelect.Option value="account">{$i18n.t('Account View')}</NativeSelect.Option>
+			</NativeSelect.Root>
 		</div>
 		{#if mode === 'account'}
-			<div>
-				<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Account')}</label>
-				<select bind:value={selectedAccountId} class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden max-w-[250px]">
-					<option value="">{$i18n.t('Select account...')}</option>
-					{#each accounts as acct}<option value={acct.id}>{acct.code} — {acct.name}</option>{/each}
-				</select>
+			<div class="grid min-w-0 gap-1.5">
+				<Label for="gl-account">{$i18n.t('Account', { context: 'gnos3' })}</Label>
+				<NativeSelect.Root
+					id="gl-account"
+					size="sm"
+					class="w-64 max-w-full"
+					bind:value={selectedAccountId}
+				>
+					<NativeSelect.Option value="">{$i18n.t('Select account...')}</NativeSelect.Option>
+					{#each accounts as acct}<NativeSelect.Option value={acct.id}
+							>{acct.code} — {acct.name}</NativeSelect.Option
+						>{/each}
+				</NativeSelect.Root>
 			</div>
 		{/if}
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('From')}</label>
-			<input type="date" bind:value={dateFrom} class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden" />
+		<div class="grid gap-1.5">
+			<Label for="gl-from">{$i18n.t('From')}</Label>
+			<Input id="gl-from" type="date" class="h-8 w-40" bind:value={dateFrom} />
 		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('To')}</label>
-			<input type="date" bind:value={dateTo} class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden" />
+		<div class="grid gap-1.5">
+			<Label for="gl-to">{$i18n.t('To')}</Label>
+			<Input id="gl-to" type="date" class="h-8 w-40" bind:value={dateTo} />
 		</div>
-		<button class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition" on:click={() => { journalPage = 0; accountPage = 0; load(); }}>{$i18n.t('Load')}</button>
+		<Button
+			size="sm"
+			disabled={loading}
+			onclick={() => {
+				journalPage = 0;
+				accountPage = 0;
+				load();
+			}}
+		>
+			{#if loading}<Spinner />{/if}
+			{$i18n.t('Load')}
+		</Button>
 		{#if (mode === 'journal' && journalEntries.length > 0) || (mode === 'account' && accountData)}
-			<button
-				class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1.5"
-				on:click={() => exportGeneralLedger({ company_id: companyId, date_from: dateFrom || undefined, date_to: dateTo || undefined })}
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() =>
+					exportGeneralLedger({
+						company_id: companyId,
+						date_from: dateFrom || undefined,
+						date_to: dateTo || undefined
+					})}
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+				<Download />
 				{$i18n.t('Export Excel')}
-			</button>
+			</Button>
 		{/if}
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(10) as _}
+				<Skeleton class="h-6 w-full" />
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the report.')}</Alert.Title>
+			<Alert.Description>{loadError}</Alert.Description>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
 	{:else if mode === 'journal' && loaded}
 		<!-- Journal View matching sample: Period | Reference | Description | Account Code | Account Name | Currency | Exch Rate | Orig Amount | Debit | Credit -->
-		<div class="overflow-x-auto bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30">
-			<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300 whitespace-nowrap">
-				<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-					<tr>
-						<th class="px-2 py-2">{$i18n.t('#')}</th>
-						<th class="px-2 py-2">{$i18n.t('Period')}</th>
-						<th class="px-2 py-2">{$i18n.t('Reference')}</th>
-						<th class="px-2 py-2">{$i18n.t('Description')}</th>
-						<th class="px-2 py-2">{$i18n.t('Account Code')}</th>
-						<th class="px-2 py-2">{$i18n.t('Account Name')}</th>
-						<th class="px-2 py-2">{$i18n.t('Currency')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Exch. Rate')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Orig. Amount')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Debit')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Credit')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#if journalEntries.length === 0}
-						<tr>
-							<td colspan="11" class="px-4 py-8 text-center text-sm text-gray-400 italic">{$i18n.t('No journal entries found.')}</td>
-						</tr>
-					{:else}
-						{#each journalEntries as entry, entryIdx}
+		{#if journalEntries.length === 0}
+			<Empty.Root class="border border-dashed">
+				<Empty.Header>
+					<Empty.Media variant="icon"><BookOpen /></Empty.Media>
+					<Empty.Title>{$i18n.t('No journal entries found.')}</Empty.Title>
+					<Empty.Description>{$i18n.t('Widen the dates, then Load.')}</Empty.Description>
+				</Empty.Header>
+			</Empty.Root>
+		{:else}
+			<div class="overflow-hidden rounded-md border">
+				<Table.Root class={TABLE}>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head>{$i18n.t('#')}</Table.Head>
+							<Table.Head>{$i18n.t('Period')}</Table.Head>
+							<Table.Head>{$i18n.t('Reference')}</Table.Head>
+							<Table.Head>{$i18n.t('Description')}</Table.Head>
+							<Table.Head>{$i18n.t('Account Code')}</Table.Head>
+							<Table.Head>{$i18n.t('Account Name')}</Table.Head>
+							<Table.Head>{$i18n.t('Currency')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Exch. Rate')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Orig. Amount')}</Table.Head>
+							<Table.Head class="min-w-28 text-right">{$i18n.t('Debit')}</Table.Head>
+							<Table.Head class="min-w-28 text-right">{$i18n.t('Credit')}</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each journalEntries as entry}
 							{#each entry.lines as line, lineIdx}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50/50 dark:hover:bg-gray-850/30 {lineIdx === 0 && entryIdx > 0 ? 'border-t-2 border-gray-200 dark:border-gray-700' : ''} {entry.status === 'voided' ? 'text-gray-400 dark:text-gray-500' : ''}">
-									<td class="px-2 py-1.5 font-mono text-[10px]" title="ID: {entry.transaction_id}">{lineIdx === 0 ? (entry.entry_number || entry.transaction_id || '') : ''}{#if lineIdx === 0 && entry.status === 'voided'}<span class="ml-1 px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[9px] uppercase tracking-wide" title={$i18n.t('This entry was voided; its reversal below cancels it. Both are kept for the audit trail and net to zero.')}>{$i18n.t('voided')}</span>{/if}</td>
-								<td class="px-2 py-1.5 font-mono">{lineIdx === 0 ? entry.period : ''}</td>
-									<td class="px-2 py-1.5">{#if lineIdx === 0 && entry.k4mi_document_id}<K4miDocLink docId={entry.k4mi_document_id} title={$i18n.t('Open in K4mi')}>{entry.reference ?? ''} <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline mb-0.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg></K4miDocLink>{:else if lineIdx === 0}{entry.reference ?? ''}{/if}</td>
-									<td class="px-2 py-1.5 max-w-[200px] truncate">{lineIdx === 0 ? (entry.description ?? '') : ''}</td>
-									<td class="px-2 py-1.5 font-mono">{line.account_code}</td>
-									<td class="px-2 py-1.5">{line.account_name}</td>
-									<td class="px-2 py-1.5">{lineIdx === 0 ? entry.currency : ''}</td>
-									<td class="px-2 py-1.5 text-right font-mono">{lineIdx === 0 ? fmtRate(entry.exchange_rate) : ''}</td>
-									<td class="px-2 py-1.5 text-right font-mono">{origAmount(line)}</td>
-									<td class="px-2 py-1.5 text-right font-mono">{#key $displayCurrency}<ReportAmount value={line.debit} factor={jfactor(entry.currency, entry.transaction_date, $displayCurrency, $exchangeRates ?? [], entry.exchange_rate)} converting={!!$displayCurrency && (entry.currency || '').toUpperCase() !== $displayCurrency.toUpperCase()} displayCcy={$displayCurrency} baseCcy={entry.currency} />{/key}</td>
-									<td class="px-2 py-1.5 text-right font-mono">{#key $displayCurrency}<ReportAmount value={line.credit} factor={jfactor(entry.currency, entry.transaction_date, $displayCurrency, $exchangeRates ?? [], entry.exchange_rate)} converting={!!$displayCurrency && (entry.currency || '').toUpperCase() !== $displayCurrency.toUpperCase()} displayCcy={$displayCurrency} baseCcy={entry.currency} />{/key}</td>
-								</tr>
+								<!-- One block per entry: a rule between entries, none between its lines -->
+								<Table.Row
+									class="{lineIdx < entry.lines.length - 1 ? 'border-b-0' : ''} {entry.status ===
+									'voided'
+										? 'text-muted-foreground'
+										: ''}"
+								>
+									<Table.Cell class="font-mono text-[13px]" title="ID: {entry.transaction_id}">
+										{#if lineIdx === 0}
+											<span class="inline-flex items-center gap-1.5">
+												{entry.entry_number || entry.transaction_id || ''}
+												{#if entry.status === 'voided'}
+													{@render voidedBadge(
+														$i18n.t(
+															'This entry was voided; its reversal below cancels it. Both are kept for the audit trail and net to zero.'
+														)
+													)}
+												{/if}
+											</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="font-mono text-[13px]"
+										>{lineIdx === 0 ? entry.period : ''}</Table.Cell
+									>
+									<Table.Cell class="font-mono text-[13px]">
+										{#if lineIdx === 0 && entry.k4mi_document_id}
+											<K4miDocLink
+												docId={entry.k4mi_document_id}
+												title={$i18n.t('Open in K4mi')}
+												extraClass="inline-flex items-center gap-1 text-link underline-offset-4 hover:underline"
+												>{entry.reference ?? ''}<ExternalLink
+													class="size-3"
+													aria-hidden="true"
+												/></K4miDocLink
+											>
+										{:else if lineIdx === 0}{entry.reference ?? ''}{/if}
+									</Table.Cell>
+									<Table.Cell class="max-w-[200px] truncate"
+										>{lineIdx === 0 ? (entry.description ?? '') : ''}</Table.Cell
+									>
+									<Table.Cell class="font-mono text-[13px]">{line.account_code}</Table.Cell>
+									<Table.Cell>{line.account_name}</Table.Cell>
+									<Table.Cell>{lineIdx === 0 ? entry.currency : ''}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{lineIdx === 0 ? fmtRate(entry.exchange_rate) : ''}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums">{origAmount(line)}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{#key $displayCurrency}<ReportAmount
+												value={line.debit}
+												factor={jfactor(
+													entry.currency,
+													entry.transaction_date,
+													$displayCurrency,
+													$exchangeRates ?? [],
+													entry.exchange_rate
+												)}
+												converting={!!$displayCurrency &&
+													(entry.currency || '').toUpperCase() !== $displayCurrency.toUpperCase()}
+												displayCcy={$displayCurrency}
+												baseCcy={entry.currency}
+											/>{/key}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums"
+										>{#key $displayCurrency}<ReportAmount
+												value={line.credit}
+												factor={jfactor(
+													entry.currency,
+													entry.transaction_date,
+													$displayCurrency,
+													$exchangeRates ?? [],
+													entry.exchange_rate
+												)}
+												converting={!!$displayCurrency &&
+													(entry.currency || '').toUpperCase() !== $displayCurrency.toUpperCase()}
+												displayCcy={$displayCurrency}
+												baseCcy={entry.currency}
+											/>{/key}</Table.Cell
+									>
+								</Table.Row>
 							{/each}
 						{/each}
-					{/if}
-				</tbody>
-				<tfoot class="font-medium bg-gray-50 dark:bg-gray-850/50 text-gray-800 dark:text-gray-200">
-					<tr class="border-t-2 border-gray-200 dark:border-gray-700">
-						<td class="px-2 py-2" colspan="8">{$i18n.t('Total')}</td>
-						<td class="px-2 py-2 text-right font-mono">{#key $displayCurrency}{#if journalConverting}{fmt(journalDispDebit)} <span class="text-[9px] text-gray-400">{$displayCurrency}</span>{:else}{fmt(journalTotalDebit)}{/if}{/key}</td>
-						<td class="px-2 py-2 text-right font-mono">{#key $displayCurrency}{#if journalConverting}{fmt(journalDispCredit)} <span class="text-[9px] text-gray-400">{$displayCurrency}</span>{:else}{fmt(journalTotalCredit)}{/if}{/key}</td>
-					</tr>
-				</tfoot>
-			</table>
-		</div>
-
-		{#if journalTotal > journalPerPage}
-			<div class="flex justify-between items-center text-xs text-gray-500">
-				<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={journalPage === 0} on:click={() => { journalPage--; load(); }}>{$i18n.t('Previous')}</button>
-				<span>{$i18n.t('Page')} {journalPage + 1} / {Math.ceil(journalTotal / journalPerPage)}</span>
-				<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={(journalPage + 1) * journalPerPage >= journalTotal} on:click={() => { journalPage++; load(); }}>{$i18n.t('Next')}</button>
+					</Table.Body>
+					<Table.Footer>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell colspan={9}>{$i18n.t('Total')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums"
+								>{#key $displayCurrency}{#if journalConverting}{fmt(journalDispDebit)}
+										<span class="text-[10px] font-normal text-muted-foreground"
+											>{$displayCurrency}</span
+										>{:else}{fmt(journalTotalDebit)}{/if}{/key}</Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								>{#key $displayCurrency}{#if journalConverting}{fmt(journalDispCredit)}
+										<span class="text-[10px] font-normal text-muted-foreground"
+											>{$displayCurrency}</span
+										>{:else}{fmt(journalTotalCredit)}{/if}{/key}</Table.Cell
+							>
+						</Table.Row>
+					</Table.Footer>
+				</Table.Root>
 			</div>
 		{/if}
 
+		{#if journalTotal > journalPerPage}
+			{@render pager(journalPage, journalTotal, journalPerPage, (p) => {
+				journalPage = p;
+				load();
+			})}
+		{/if}
 	{:else if mode === 'account' && accountData}
-		{@const hasSubAccounts = accountData.entries.some((e) => e.account_code)}
-		<div class="text-sm font-medium dark:text-gray-200">
-			{accountData.account_code} — {accountData.account_name}
-			{#if hasSubAccounts}<span class="text-[10px] text-gray-400 ml-1">({$i18n.t('incl. sub-accounts')})</span>{/if}
-			<span class="text-xs text-gray-500 ml-2">{$i18n.t('Opening')}: <ReportAmount value={accountData.opening_balance} {...fxProps} /></span>{#if accountData.opening_balance_date}<span class="text-[10px] text-gray-400 ml-1">({$i18n.t('as of')} {accountData.opening_balance_date})</span>{/if}{#if displayCcy}<span class="text-[10px] text-gray-400 ml-1">· {displayCcy}</span>{/if}{#if noRate}<span class="text-[10px] text-amber-600 dark:text-amber-400 ml-1">({$i18n.t('no rate for')} {$displayCurrency})</span>{/if}
+		{@const hasSubAccounts = accountData.entries.some((e: any) => e.account_code)}
+		<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+			<span class="font-medium">
+				<span class="font-mono text-[13px]">{accountData.account_code}</span> — {accountData.account_name}
+			</span>
+			{#if hasSubAccounts}<span class="text-muted-foreground"
+					>({$i18n.t('incl. sub-accounts')})</span
+				>{/if}
+			<span class="text-muted-foreground"
+				>{$i18n.t('Opening')}:
+				<span class="text-foreground tabular-nums"
+					><ReportAmount value={accountData.opening_balance} {...fxProps} zeroText={null} /></span
+				></span
+			>
+			{#if accountData.opening_balance_date}<span class="text-muted-foreground tabular-nums"
+					>({$i18n.t('as of')} {accountData.opening_balance_date})</span
+				>{/if}
+			{#if displayCcy}<span class="text-muted-foreground">· {displayCcy}</span>{/if}
+			{#if noRate}
+				<span class="inline-flex items-center gap-1">
+					<TriangleAlert class="size-4 text-warning" />
+					({$i18n.t('no rate for')}
+					{$displayCurrency})
+				</span>
+			{/if}
 		</div>
 
-		<div class="overflow-x-auto bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30">
-			<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-				<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-					<tr>
-						<th class="px-2 py-2">{$i18n.t('Date')}</th>
-						{#if hasSubAccounts}<th class="px-2 py-2">{$i18n.t('Account')}</th>{/if}
-						<th class="px-2 py-2">{$i18n.t('Reference')}</th>
-						<th class="px-2 py-2">{$i18n.t('Description')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Debit')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Credit')}</th>
-						<th class="px-2 py-2 text-right">{$i18n.t('Running Balance')}</th>
-					</tr>
-				</thead>
-				<tbody>
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root class={TABLE}>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Date')}</Table.Head>
+						{#if hasSubAccounts}<Table.Head>{$i18n.t('Account', { context: 'gnos3' })}</Table.Head>{/if}
+						<Table.Head>{$i18n.t('Reference')}</Table.Head>
+						<Table.Head>{$i18n.t('Description')}</Table.Head>
+						<Table.Head class="min-w-28 text-right">{$i18n.t('Debit')}</Table.Head>
+						<Table.Head class="min-w-28 text-right">{$i18n.t('Credit')}</Table.Head>
+						<Table.Head class="min-w-28 text-right">{$i18n.t('Running Balance')}</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each accountData.entries as entry}
-						<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50/50 dark:hover:bg-gray-850/30 {entry.status === 'voided' ? 'text-gray-400 dark:text-gray-500' : ''}">
-							<td class="px-2 py-1.5">{entry.transaction_date}{#if entry.status === 'voided'}<span class="ml-1 px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[9px] uppercase tracking-wide" title={$i18n.t('This entry was voided; its reversal cancels it. Both are kept for the audit trail and net to zero.')}>{$i18n.t('voided')}</span>{/if}</td>
-							{#if hasSubAccounts}
-								<td class="px-2 py-1.5">
-									{#if entry.account_code}
-										<span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{entry.account_code}</span>
-										<span class="text-[10px] text-gray-400 ml-0.5">{entry.account_name ?? ''}</span>
+						<Table.Row class={entry.status === 'voided' ? 'text-muted-foreground' : ''}>
+							<Table.Cell class="tabular-nums">
+								<span class="inline-flex items-center gap-1.5">
+									{entry.transaction_date}
+									{#if entry.status === 'voided'}
+										{@render voidedBadge(
+											$i18n.t(
+												'This entry was voided; its reversal cancels it. Both are kept for the audit trail and net to zero.'
+											)
+										)}
 									{/if}
-								</td>
+								</span>
+							</Table.Cell>
+							{#if hasSubAccounts}
+								<Table.Cell>
+									{#if entry.account_code}
+										<span class="font-mono text-[13px]">{entry.account_code}</span>
+										<span class="ml-1 text-xs text-muted-foreground"
+											>{entry.account_name ?? ''}</span
+										>
+									{/if}
+								</Table.Cell>
 							{/if}
-							<td class="px-2 py-1.5">{#if entry.k4mi_document_id}<K4miDocLink docId={entry.k4mi_document_id} title={$i18n.t('Open in K4mi')}>{entry.reference ?? ''} <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline mb-0.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg></K4miDocLink>{:else}{entry.reference ?? ''}{/if}</td>
-							<td class="px-2 py-1.5">{entry.description ?? ''}</td>
-							<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={entry.debit} {...fxProps} /></td>
-							<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={entry.credit} {...fxProps} /></td>
-							<td class="px-2 py-1.5 text-right font-mono font-medium"><ReportAmount value={entry.running_balance} {...fxProps} /></td>
-						</tr>
+							<Table.Cell class="font-mono text-[13px]">
+								{#if entry.k4mi_document_id}
+									<K4miDocLink
+										docId={entry.k4mi_document_id}
+										title={$i18n.t('Open in K4mi')}
+										extraClass="inline-flex items-center gap-1 text-link underline-offset-4 hover:underline"
+										>{entry.reference ?? ''}<ExternalLink
+											class="size-3"
+											aria-hidden="true"
+										/></K4miDocLink
+									>
+								{:else}{entry.reference ?? ''}{/if}
+							</Table.Cell>
+							<Table.Cell class="max-w-[28rem] truncate">{entry.description ?? ''}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={entry.debit} {...fxProps} /></Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={entry.credit} {...fxProps} /></Table.Cell
+							>
+							<Table.Cell class="text-right font-medium tabular-nums"
+								><ReportAmount value={entry.running_balance} {...fxProps} /></Table.Cell
+							>
+						</Table.Row>
+					{:else}
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell
+								colspan={hasSubAccounts ? 7 : 6}
+								class="py-6 text-center text-muted-foreground"
+								>{$i18n.t('No journal entries found.')}</Table.Cell
+							>
+						</Table.Row>
 					{/each}
-				</tbody>
-				<tfoot class="font-medium bg-gray-50 dark:bg-gray-850/50 text-gray-800 dark:text-gray-200">
-					<tr class="border-t-2 border-gray-200 dark:border-gray-700">
-						<td class="px-2 py-2" colspan="{hasSubAccounts ? 6 : 5}">{$i18n.t('Closing Balance')}</td>
-						<td class="px-2 py-2 text-right font-mono"><ReportAmount value={accountData.closing_balance} {...fxProps} /></td>
-					</tr>
-				</tfoot>
-			</table>
+				</Table.Body>
+				<Table.Footer>
+					<Table.Row class="hover:bg-transparent">
+						<Table.Cell colspan={hasSubAccounts ? 6 : 5}>{$i18n.t('Closing Balance')}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums"
+							><ReportAmount value={accountData.closing_balance} {...fxProps} /></Table.Cell
+						>
+					</Table.Row>
+				</Table.Footer>
+			</Table.Root>
 		</div>
 
 		{#if accountData.total > accountPerPage}
-			<div class="flex justify-between items-center text-xs text-gray-500">
-				<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={accountPage === 0} on:click={() => { accountPage--; load(); }}>{$i18n.t('Previous')}</button>
-				<span>{$i18n.t('Page')} {accountPage + 1} / {Math.ceil(accountData.total / accountPerPage)}</span>
-				<button class="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-50" disabled={(accountPage + 1) * accountPerPage >= accountData.total} on:click={() => { accountPage++; load(); }}>{$i18n.t('Next')}</button>
-			</div>
+			{@render pager(accountPage, accountData.total, accountPerPage, (p) => {
+				accountPage = p;
+				load();
+			})}
 		{/if}
+	{:else}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><BookOpen /></Empty.Media>
+				<Empty.Title>{$i18n.t('General Ledger')}</Empty.Title>
+				<Empty.Description>
+					{mode === 'account'
+						? $i18n.t('Select an account, then Load.')
+						: $i18n.t('Choose dates, then Load.')}
+				</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{/if}
 </div>

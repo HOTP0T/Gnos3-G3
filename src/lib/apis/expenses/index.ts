@@ -1,4 +1,5 @@
 import { INVOICE_API_BASE_URL } from '$lib/constants';
+import { langHeader } from '$lib/utils/uiLocale';
 
 // Employee expense portal — self-service API (backed by invoice-processor).
 const BASE = `${INVOICE_API_BASE_URL}/api/expenses`;
@@ -90,6 +91,7 @@ function authHeaders(): Record<string, string> {
 	const token = getAuthToken();
 	return {
 		'Content-Type': 'application/json',
+		...langHeader(),
 		...(token ? { Authorization: `Bearer ${token}` } : {})
 	};
 }
@@ -171,7 +173,7 @@ export async function uploadReceipt(id: number, file: File): Promise<ExpenseItem
 	form.append('file', file);
 	const res = await fetch(`${BASE}/${id}/receipt`, {
 		method: 'POST',
-		headers: token ? { Authorization: `Bearer ${token}` } : {},
+		headers: { ...langHeader(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
 		body: form
 	});
 	if (!res.ok) throw await parseError(res);

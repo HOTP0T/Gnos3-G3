@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 export const getDataConnectors = async (token: string = '') => {
@@ -16,7 +17,7 @@ export const getDataConnectors = async (token: string = '') => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -44,7 +45,7 @@ export const getConnectorTypes = async (token: string = '') => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -72,7 +73,7 @@ export const getConnectorById = async (token: string = '', id: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -111,7 +112,7 @@ export const createDataConnector = async (
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -150,7 +151,7 @@ export const updateDataConnector = async (
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -178,7 +179,7 @@ export const deleteDataConnector = async (token: string = '', id: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -206,7 +207,7 @@ export const syncDataConnector = async (token: string = '', id: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});
@@ -234,7 +235,7 @@ export const getConnectorDocuments = async (token: string = '', id: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err.detail;
+			error = typeof err.detail === 'string' ? i18next.t(err.detail) : err.detail;
 			console.error(err);
 			return null;
 		});

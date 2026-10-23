@@ -42,12 +42,7 @@ export interface WidgetDef {
 	linkLabel?: string;
 }
 
-const kpi = (
-	type: string,
-	title: string,
-	description: string,
-	metric: string
-): WidgetDef => ({
+const kpi = (type: string, title: string, description: string, metric: string): WidgetDef => ({
 	type,
 	title,
 	category: 'KPI',
@@ -58,21 +53,38 @@ const kpi = (
 	h: 2,
 	minW: 2,
 	minH: 2,
-	bare: true
+	bare: true,
+	// the tile pads itself, so a linked tile is clickable edge to edge
+	flush: true
 });
 
 export const WIDGETS: WidgetDef[] = [
 	// ── KPI tiles ──
 	kpi('kpi_assets', 'Total Assets', 'Total assets from the balance sheet.', 'assets'),
-	kpi('kpi_liabilities', 'Total Liabilities', 'Total liabilities from the balance sheet.', 'liabilities'),
+	kpi(
+		'kpi_liabilities',
+		'Total Liabilities',
+		'Total liabilities from the balance sheet.',
+		'liabilities'
+	),
 	kpi('kpi_net_income', 'Net Income (MTD)', 'Net income for the current month.', 'net_income'),
 	kpi('kpi_cash', 'Cash Position', 'Balance across all bank-linked accounts.', 'cash'),
 	kpi('kpi_ar', 'Accounts Receivable', 'Outstanding money owed to you.', 'ar'),
 	kpi('kpi_ap', 'Accounts Payable', 'Outstanding money you owe.', 'ap'),
 	kpi('kpi_overdue', 'Overdue Invoices', 'Count and amount of past-due invoices.', 'overdue'),
 	kpi('kpi_drafts', 'Draft Entries', 'Unposted journal entries awaiting review.', 'drafts'),
-	kpi('kpi_unmatched', 'Unmatched Bank Lines', 'Bank statement lines not yet reconciled.', 'unmatched'),
-	kpi('kpi_current_ratio', 'Assets / Liabilities', 'Ratio of total assets to total liabilities.', 'current_ratio'),
+	kpi(
+		'kpi_unmatched',
+		'Unmatched Bank Lines',
+		'Bank statement lines not yet reconciled.',
+		'unmatched'
+	),
+	kpi(
+		'kpi_current_ratio',
+		'Assets / Liabilities',
+		'Ratio of total assets to total liabilities.',
+		'current_ratio'
+	),
 
 	// ── Charts ──
 	{
@@ -82,7 +94,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Monthly revenue and expenses over the last year.',
 		component: TrendChartWidget,
 		options: { mode: 'revenue_expenses', months: 12 },
-		w: 8, h: 5, minW: 4, minH: 4
+		w: 8,
+		h: 5,
+		minW: 4,
+		minH: 4
 	},
 	{
 		type: 'chart_net_income',
@@ -91,7 +106,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Monthly net income (revenue − expenses) over time.',
 		component: TrendChartWidget,
 		options: { mode: 'net_income', months: 12 },
-		w: 6, h: 5, minW: 4, minH: 4
+		w: 6,
+		h: 5,
+		minW: 4,
+		minH: 4
 	},
 	{
 		type: 'chart_expense_breakdown',
@@ -100,7 +118,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Year-to-date expenses by account (donut).',
 		component: BreakdownChartWidget,
 		options: { kind: 'expenses', range: 'ytd' },
-		w: 4, h: 5, minW: 3, minH: 4
+		w: 4,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 	{
 		type: 'chart_revenue_breakdown',
@@ -109,7 +130,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Year-to-date revenue by account (donut).',
 		component: BreakdownChartWidget,
 		options: { kind: 'revenue', range: 'ytd' },
-		w: 4, h: 5, minW: 3, minH: 4
+		w: 4,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 	{
 		type: 'chart_ar_aging',
@@ -118,7 +142,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Receivables by age bucket (current → 90d+).',
 		component: AgingChartWidget,
 		options: { kind: 'ar' },
-		w: 4, h: 5, minW: 3, minH: 4
+		w: 4,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 	{
 		type: 'chart_ap_aging',
@@ -127,7 +154,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Payables by age bucket (current → 90d+).',
 		component: AgingChartWidget,
 		options: { kind: 'ap' },
-		w: 4, h: 5, minW: 3, minH: 4
+		w: 4,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 	{
 		type: 'chart_balance_composition',
@@ -135,7 +165,10 @@ export const WIDGETS: WidgetDef[] = [
 		category: 'Charts',
 		description: 'Assets vs Liabilities + Equity.',
 		component: BalanceCompositionWidget,
-		w: 4, h: 5, minW: 3, minH: 4
+		w: 4,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 	{
 		type: 'chart_cash_flow',
@@ -144,7 +177,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'YTD operating / investing / financing cash movement.',
 		component: CashFlowWidget,
 		options: { range: 'ytd' },
-		w: 6, h: 5, minW: 4, minH: 4
+		w: 6,
+		h: 5,
+		minW: 4,
+		minH: 4
 	},
 	{
 		type: 'chart_top_vendors',
@@ -153,7 +189,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Vendors ranked by total billed.',
 		component: TopPartiesWidget,
 		options: { direction: 'vendors', limit: 8 },
-		w: 6, h: 5, minW: 3, minH: 4
+		w: 6,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 	{
 		type: 'chart_top_customers',
@@ -162,7 +201,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Customers ranked by total invoiced.',
 		component: TopPartiesWidget,
 		options: { direction: 'customers', limit: 8 },
-		w: 6, h: 5, minW: 3, minH: 4
+		w: 6,
+		h: 5,
+		minW: 3,
+		minH: 4
 	},
 
 	// ── Lists ──
@@ -173,7 +215,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'The latest journal entries.',
 		component: TransactionsListWidget,
 		options: { status: 'all', limit: 25 },
-		w: 6, h: 6, minW: 4, minH: 4,
+		w: 6,
+		h: 6,
+		minW: 4,
+		minH: 4,
 		flush: true,
 		link: (id) => `/accounting/company/${id}/entries`
 	},
@@ -184,7 +229,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Unposted entries awaiting review.',
 		component: TransactionsListWidget,
 		options: { status: 'draft', limit: 25 },
-		w: 6, h: 6, minW: 4, minH: 4,
+		w: 6,
+		h: 6,
+		minW: 4,
+		minH: 4,
 		flush: true,
 		link: (id) => `/accounting/company/${id}/entries`
 	},
@@ -195,7 +243,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Audit trail of posted / voided / edited entries.',
 		component: AuditListWidget,
 		options: { limit: 15 },
-		w: 6, h: 6, minW: 4, minH: 4,
+		w: 6,
+		h: 6,
+		minW: 4,
+		minH: 4,
 		flush: true
 	},
 	{
@@ -205,7 +256,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Bank lines awaiting reconciliation.',
 		component: UnmatchedListWidget,
 		options: { limit: 25 },
-		w: 4, h: 6, minW: 3, minH: 4,
+		w: 4,
+		h: 6,
+		minW: 3,
+		minH: 4,
 		flush: true,
 		link: (id) => `/accounting/company/${id}/bank`,
 		linkLabel: 'Reconcile'
@@ -217,7 +271,10 @@ export const WIDGETS: WidgetDef[] = [
 		description: 'Recurring entries by next run date.',
 		component: RecurringListWidget,
 		options: { limit: 15 },
-		w: 4, h: 6, minW: 3, minH: 4,
+		w: 4,
+		h: 6,
+		minW: 3,
+		minH: 4,
 		flush: true,
 		link: (id) => `/accounting/company/${id}/recurring`
 	},
@@ -229,7 +286,10 @@ export const WIDGETS: WidgetDef[] = [
 		category: 'Panels',
 		description: 'Actionable items: drafts, unmatched lines, overdue invoices.',
 		component: AlertsWidget,
-		w: 6, h: 3, minW: 3, minH: 2
+		w: 6,
+		h: 3,
+		minW: 3,
+		minH: 2
 	},
 	{
 		type: 'panel_quick_actions',
@@ -237,7 +297,10 @@ export const WIDGETS: WidgetDef[] = [
 		category: 'Panels',
 		description: 'Shortcuts to create entries, payments, reports.',
 		component: QuickActionsWidget,
-		w: 6, h: 2, minW: 3, minH: 2
+		w: 6,
+		h: 3,
+		minW: 3,
+		minH: 2
 	},
 	{
 		type: 'panel_period',
@@ -245,7 +308,10 @@ export const WIDGETS: WidgetDef[] = [
 		category: 'Panels',
 		description: 'The open accounting period at a glance.',
 		component: PeriodSummaryWidget,
-		w: 4, h: 2, minW: 3, minH: 2
+		w: 4,
+		h: 2,
+		minW: 3,
+		minH: 2
 	}
 ];
 
@@ -265,7 +331,8 @@ export interface LayoutItem {
 
 // Default layout — reproduces the classic dashboard (two KPI rows, alerts,
 // quick actions, the revenue/expense trend, breakdown, and the two lists) so
-// nothing is lost for users who never customize.
+// nothing is lost for users who never customize. Quick actions is as tall as
+// Alerts beside it (3 rows), so the row has no hole.
 export const DEFAULT_LAYOUT: LayoutItem[] = [
 	{ id: 'd1', type: 'kpi_assets', x: 0, y: 0, w: 3, h: 2 },
 	{ id: 'd2', type: 'kpi_liabilities', x: 3, y: 0, w: 3, h: 2 },
@@ -276,7 +343,7 @@ export const DEFAULT_LAYOUT: LayoutItem[] = [
 	{ id: 'd7', type: 'kpi_ap', x: 6, y: 2, w: 3, h: 2 },
 	{ id: 'd8', type: 'kpi_overdue', x: 9, y: 2, w: 3, h: 2 },
 	{ id: 'd9', type: 'panel_alerts', x: 0, y: 4, w: 6, h: 3 },
-	{ id: 'd10', type: 'panel_quick_actions', x: 6, y: 4, w: 6, h: 2 },
+	{ id: 'd10', type: 'panel_quick_actions', x: 6, y: 4, w: 6, h: 3 },
 	{ id: 'd11', type: 'chart_revenue_expenses', x: 0, y: 7, w: 8, h: 5 },
 	{ id: 'd12', type: 'chart_expense_breakdown', x: 8, y: 7, w: 4, h: 5 },
 	{ id: 'd13', type: 'list_transactions', x: 0, y: 12, w: 6, h: 6 },

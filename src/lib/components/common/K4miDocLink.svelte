@@ -23,7 +23,7 @@
 	export let title = '';
 	/** Extra classes appended to the link element. Defaults to the standard
 	 * blue underline-on-hover used across invoice / BC tables. */
-	export let extraClass = 'text-blue-600 dark:text-blue-400 hover:underline';
+	export let extraClass = 'text-link underline-offset-4 hover:underline';
 	/** When true, the click also stops propagation — needed for table rows where
 	 * the row itself binds an onclick (e.g., InvoiceAssignment). Navigation is
 	 * NOT prevented; the link still follows its href. */

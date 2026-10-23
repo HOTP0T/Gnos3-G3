@@ -1,5 +1,6 @@
 import { toast } from 'svelte-sonner';
 import { INVOICE_API_BASE_URL } from '$lib/constants';
+import { langHeader } from '$lib/utils/uiLocale';
 
 const BASE = `${INVOICE_API_BASE_URL}/api/accounting`;
 
@@ -14,6 +15,7 @@ function authHeaders(): Record<string, string> {
 	const token = getAuthToken();
 	return {
 		'Content-Type': 'application/json',
+		...langHeader(),
 		...(token ? { Authorization: `Bearer ${token}` } : {})
 	};
 }
@@ -21,7 +23,7 @@ function authHeaders(): Record<string, string> {
 function uploadAuthHeaders(): Record<string, string> {
 	// FormData sets its own multipart Content-Type — never override it here.
 	const token = getAuthToken();
-	return token ? { Authorization: `Bearer ${token}` } : {};
+	return { ...langHeader(), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
 async function parseErrorResponse(res: Response): Promise<any> {
@@ -135,6 +137,20 @@ export const deleteCompany = async (id: number) =>
 
 export const duplicateCompany = async (id: number, data: Record<string, any>) =>
 	apiPost(`/companies/${id}/duplicate`, data);
+
+// Logo: the server stores any upload as a PNG of at most 256 px a side.
+export const uploadCompanyLogo = async (id: number, image: Blob) => {
+	const formData = new FormData();
+	formData.append('file', image, 'logo.png');
+	return apiUpload(`/companies/${id}/logo`, formData);
+};
+
+export const deleteCompanyLogo = async (id: number) => apiDelete(`/companies/${id}/logo`);
+
+// Auth-gated, so load it with fetchAsBlobUrl (see components/accounting/companyLogo.ts).
+// `v` changes with every new logo, which lets the browser cache each one.
+export const companyLogoUrl = (company: { id: number; logo_updated_at?: string | null }) =>
+	`${BASE}/companies/${company.id}/logo?v=${encodeURIComponent(company.logo_updated_at ?? '')}`;
 
 // ─── Invoice Assignment ─────────────────────────────────────────────────────
 
@@ -474,6 +490,8 @@ export type StatementLayout = {
 	country: string | null;
 	layout: string | null;
 	label: string | null;
+	/** Screen title, an i18n key (`label` is the official, bilingual one used by the export). */
+	label_en?: string | null;
 	presentation?: 'side_by_side' | 'vertical' | null;
 	fiscal_year_start_month?: number;
 	statements: string[];

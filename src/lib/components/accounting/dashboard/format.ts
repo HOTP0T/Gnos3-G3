@@ -1,8 +1,12 @@
 import { convertAmount, convertRowAmount } from '$lib/utils/currency';
 
 export function fmtNumber(v: number | string, opts?: Intl.NumberFormatOptions): string {
-	const num = typeof v === 'string' ? parseFloat(v) : v ?? 0;
-	return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2, ...opts });
+	const num = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
+	return num.toLocaleString(undefined, {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+		...opts
+	});
 }
 
 export function fmtNative(v: number | string, currency: string): string {
@@ -35,7 +39,7 @@ export function money(
 	rates: any[],
 	date?: string
 ): MoneyView {
-	const num = typeof amount === 'string' ? parseFloat(amount) : amount ?? 0;
+	const num = typeof amount === 'string' ? parseFloat(amount) : (amount ?? 0);
 	const converting = !!displayCurrency && displayCurrency !== nativeCurrency;
 	if (!converting) {
 		return { converting: false, hasRate: true, display: fmtNumber(num), original: fmtNumber(num) };
@@ -61,6 +65,21 @@ export function rowMoney(
 	date?: string,
 	bookedRate?: number | string | null
 ): MoneyView & { from: string; to: string } {
-	const r = convertRowAmount(amount, rowCurrency, displayCurrency, nativeCurrency, rates ?? [], date, bookedRate);
-	return { converting: r.converting, hasRate: r.hasRate, display: r.display, original: r.original, from: r.from, to: r.to };
+	const r = convertRowAmount(
+		amount,
+		rowCurrency,
+		displayCurrency,
+		nativeCurrency,
+		rates ?? [],
+		date,
+		bookedRate
+	);
+	return {
+		converting: r.converting,
+		hasRate: r.hasRate,
+		display: r.display,
+		original: r.original,
+		from: r.from,
+		to: r.to
+	};
 }

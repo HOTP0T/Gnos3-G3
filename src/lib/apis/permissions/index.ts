@@ -1,4 +1,5 @@
 import { INVOICE_API_BASE_URL } from '$lib/constants';
+import { langHeader } from '$lib/utils/uiLocale';
 
 // Per-company role assignments (Phase 3 RBAC). The invoice-processor module
 // hosts the `company_membership` table and exposes admin CRUD at
@@ -19,15 +20,18 @@ function authHeaders(): Record<string, string> {
 	const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
 	return {
 		'Content-Type': 'application/json',
+		...langHeader(),
 		...(token ? { Authorization: `Bearer ${token}` } : {})
 	};
 }
 
 async function parseError(res: Response): Promise<any> {
+	// `status` travels with the error so callers branch on it, never on the
+	// (translated) detail text.
 	try {
-		return await res.json();
+		return { ...(await res.json()), status: res.status };
 	} catch {
-		return { detail: `HTTP ${res.status}` };
+		return { detail: `HTTP ${res.status}`, status: res.status };
 	}
 }
 

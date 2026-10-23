@@ -1,6 +1,20 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
+	import { uiLocale } from '$lib/utils/uiLocale';
 	import { toast } from 'svelte-sonner';
+	import { page } from '$app/stores';
+	import { replaceState } from '$app/navigation';
+
+	import Plus from '@lucide/svelte/icons/plus';
+	import Upload from '@lucide/svelte/icons/upload';
+	import Download from '@lucide/svelte/icons/download';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import X from '@lucide/svelte/icons/x';
+	import BookOpen from '@lucide/svelte/icons/book-open';
+	import CalendarRange from '@lucide/svelte/icons/calendar-range';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 
 	import {
 		getChartTemplates,
@@ -12,21 +26,49 @@
 		downloadPeriodImportTemplate
 	} from '$lib/apis/accounting';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
 	import ExcelImportModal from '$lib/components/accounting/ExcelImportModal.svelte';
 	import CountryConfigManager from '$lib/components/accounting/CountryConfigManager.svelte';
 	import GlobalExchangeRates from '$lib/components/accounting/GlobalExchangeRates.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
-	// Tab state
-	let activeTab: 'chart' | 'period' | 'countries' | 'rates' = 'chart';
+	// Tab state (kept in ?tab= so a section can be linked to)
+	type Tab = 'chart' | 'period' | 'countries' | 'rates';
+	const TABS: Tab[] = ['chart', 'period', 'countries', 'rates'];
+	let activeTab: Tab = 'chart';
+
+	const setTab = (value: string) => {
+		if (!TABS.includes(value as Tab)) return;
+		activeTab = value as Tab;
+		try {
+			const url = new URL($page.url);
+			if (activeTab === 'chart') url.searchParams.delete('tab');
+			else url.searchParams.set('tab', activeTab);
+			replaceState(url, $page.state);
+		} catch {}
+	};
 
 	// Data
 	let chartTemplates: any[] = [];
 	let periodTemplates: any[] = [];
 	let loadingCharts = true;
 	let loadingPeriods = true;
+	let chartError = '';
+	let periodError = '';
 
 	// Expanded template (by id)
 	let expandedChartId: number | null = null;
@@ -41,11 +83,11 @@
 	};
 
 	const ACCOUNT_TYPES = [
-		{ key: 'asset', label: 'Assets', badge: 'bg-blue-500/20 text-blue-700 dark:text-blue-200', header: 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' },
-		{ key: 'liability', label: 'Liabilities', badge: 'bg-red-500/20 text-red-700 dark:text-red-200', header: 'bg-red-50/50 dark:bg-red-900/20 border-red-200 dark:border-red-800' },
-		{ key: 'equity', label: 'Equity', badge: 'bg-purple-500/20 text-purple-700 dark:text-purple-200', header: 'bg-purple-50/50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800' },
-		{ key: 'revenue', label: 'Revenue', badge: 'bg-green-500/20 text-green-700 dark:text-green-200', header: 'bg-green-50/50 dark:bg-green-900/20 border-green-200 dark:border-green-800' },
-		{ key: 'expense', label: 'Expenses', badge: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-200', header: 'bg-yellow-50/50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' },
+		{ key: 'asset', label: 'Assets' },
+		{ key: 'liability', label: 'Liabilities' },
+		{ key: 'equity', label: 'Equity' },
+		{ key: 'revenue', label: 'Revenue' },
+		{ key: 'expense', label: 'Expenses' }
 	];
 
 	const groupTemplateAccounts = (accounts: any[]) => {
@@ -58,18 +100,18 @@
 	};
 
 	const getIndentLevel = (acct: any): number => {
-		if (acct.parent_code) return (acct.parent_code.split('.').length);
+		if (acct.parent_code) return acct.parent_code.split('.').length;
 		const dots = (acct.code ?? '').split('.').length - 1;
 		return dots;
 	};
 
-	// Create template inline form
+	// Create chart template dialog
 	let showCreateForm = false;
 	let newTemplateName = '';
 	let newTemplateCountry = '';
 	let creatingTemplate = false;
 
-	// Period template create form
+	// Period template create dialog
 	let showPeriodCreateForm = false;
 	let newPeriodTemplateName = '';
 	let newPeriodTemplateDesc = '';
@@ -80,14 +122,31 @@
 	let showImportModal = false;
 	let importType: 'chart' | 'period' = 'chart';
 
+	// Delete confirmation
+	let showDeleteConfirm = false;
+	let deleteTarget: { kind: 'chart' | 'period'; id: number; name: string } | null = null;
+
+	const askDelete = (kind: 'chart' | 'period', template: any) => {
+		deleteTarget = { kind, id: template.id, name: template.name ?? '' };
+		showDeleteConfirm = true;
+	};
+
+	const confirmDelete = async () => {
+		if (!deleteTarget) return;
+		if (deleteTarget.kind === 'chart') await handleDeleteChart(deleteTarget.id);
+		else await handleDeletePeriod(deleteTarget.id);
+	};
+
 	// ─── Chart Templates ───────────────────────────────────────────────────────
 
 	const loadChartTemplates = async () => {
 		loadingCharts = true;
+		chartError = '';
 		try {
 			const res = await getChartTemplates();
-			chartTemplates = Array.isArray(res) ? res : res?.templates ?? [];
+			chartTemplates = Array.isArray(res) ? res : (res?.templates ?? []);
 		} catch (err) {
+			chartError = `${err}`;
 			toast.error(`${$i18n.t('Failed to load chart templates')}: ${err}`);
 		}
 		loadingCharts = false;
@@ -108,14 +167,22 @@
 		expandedChartId = expandedChartId === id ? null : id;
 	};
 
+	const resetChartForm = () => {
+		showCreateForm = false;
+		newTemplateName = '';
+		newTemplateCountry = '';
+	};
+
 	// ─── Period Templates ──────────────────────────────────────────────────────
 
 	const loadPeriodTemplates = async () => {
 		loadingPeriods = true;
+		periodError = '';
 		try {
 			const res = await getPeriodTemplates();
-			periodTemplates = Array.isArray(res) ? res : res?.templates ?? [];
+			periodTemplates = Array.isArray(res) ? res : (res?.templates ?? []);
 		} catch (err) {
+			periodError = `${err}`;
 			toast.error(`${$i18n.t('Failed to load period templates')}: ${err}`);
 		}
 		loadingPeriods = false;
@@ -150,7 +217,7 @@
 		const entry = periodEntries[index];
 		if (entry.start_date && !entry.name) {
 			const d = new Date(entry.start_date);
-			const monthName = d.toLocaleString('en', { month: 'long' });
+			const monthName = d.toLocaleString(uiLocale(), { month: 'long' });
 			periodEntries[index].name = `${monthName} ${d.getFullYear()}`;
 			periodEntries = [...periodEntries];
 		}
@@ -158,9 +225,7 @@
 
 	const handleCreatePeriodTemplate = async () => {
 		if (!newPeriodTemplateName.trim()) return;
-		const validEntries = periodEntries.filter(
-			(e) => e.name && e.start_date && e.end_date
-		);
+		const validEntries = periodEntries.filter((e) => e.name && e.start_date && e.end_date);
 		if (validEntries.length === 0) {
 			toast.error($i18n.t('Add at least one period entry'));
 			return;
@@ -198,6 +263,11 @@
 		periodEntries = [];
 	};
 
+	const openPeriodCreate = () => {
+		if (periodEntries.length === 0) addPeriodEntry();
+		showPeriodCreateForm = true;
+	};
+
 	// ─── Import ────────────────────────────────────────────────────────────────
 
 	const openImportModal = (type: 'chart' | 'period') => {
@@ -216,585 +286,536 @@
 	// ─── Lifecycle ─────────────────────────────────────────────────────────────
 
 	onMount(async () => {
+		const tab = $page.url.searchParams.get('tab');
+		if (tab && TABS.includes(tab as Tab)) activeTab = tab as Tab;
 		await Promise.all([loadChartTemplates(), loadPeriodTemplates()]);
 	});
 </script>
 
-<ExcelImportModal
-	bind:show={showImportModal}
-	type={importType}
-	on:imported={handleImported}
-/>
+<ExcelImportModal bind:show={showImportModal} type={importType} on:imported={handleImported} />
 
-<div class="py-2">
-	<!-- Header -->
-	<div class="pt-0.5 pb-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900">
-		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
-			<div class="flex-shrink-0 dark:text-gray-200">{$i18n.t('Accounting Settings')}</div>
-		</div>
+<div class="flex flex-col gap-6">
+	<div class="flex flex-col gap-1">
+		<h1 class="text-2xl font-semibold tracking-tight">{$i18n.t('Accounting Settings')}</h1>
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t('Templates, tax rules and exchange rates shared by every company.')}
+		</p>
 	</div>
 
-	<!-- Tabs -->
-	<div class="flex border-b border-gray-200 dark:border-gray-800 mt-2 mb-4">
-		<button
-			class="px-4 py-2 text-sm font-medium transition border-b-2 {activeTab === 'chart'
-				? 'border-blue-500 text-blue-600 dark:text-blue-400'
-				: 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-			on:click={() => (activeTab = 'chart')}
-		>
-			{$i18n.t('Chart Templates')}
-		</button>
-		<button
-			class="px-4 py-2 text-sm font-medium transition border-b-2 {activeTab === 'period'
-				? 'border-blue-500 text-blue-600 dark:text-blue-400'
-				: 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-			on:click={() => (activeTab = 'period')}
-		>
-			{$i18n.t('Period Templates')}
-		</button>
-		<button
-			class="px-4 py-2 text-sm font-medium transition border-b-2 {activeTab === 'countries'
-				? 'border-blue-500 text-blue-600 dark:text-blue-400'
-				: 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-			on:click={() => (activeTab = 'countries')}
-		>
-			{$i18n.t('Countries')}
-		</button>
-		<button
-			class="px-4 py-2 text-sm font-medium transition border-b-2 {activeTab === 'rates'
-				? 'border-blue-500 text-blue-600 dark:text-blue-400'
-				: 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-			on:click={() => (activeTab = 'rates')}
-		>
-			{$i18n.t('Exchange Rates')}
-		</button>
-	</div>
+	<Tabs.Root value={activeTab} onValueChange={setTab} class="flex-col gap-6">
+		<Tabs.List class="h-9 max-w-full justify-start overflow-x-auto [scrollbar-width:none]">
+			<Tabs.Trigger value="chart" class="flex-none px-2.5"
+				>{$i18n.t('Chart Templates')}</Tabs.Trigger
+			>
+			<Tabs.Trigger value="period" class="flex-none px-2.5"
+				>{$i18n.t('Period Templates')}</Tabs.Trigger
+			>
+			<Tabs.Trigger value="countries" class="flex-none px-2.5">{$i18n.t('Countries')}</Tabs.Trigger>
+			<Tabs.Trigger value="rates" class="flex-none px-2.5">{$i18n.t('Exchange Rates')}</Tabs.Trigger
+			>
+		</Tabs.List>
 
-	<!-- Chart Templates Tab -->
-	{#if activeTab === 'chart'}
-		<div class="flex gap-2 mb-3">
-			<button
-				class="px-3.5 py-1.5 text-sm rounded-xl bg-gray-900 hover:bg-gray-850 text-white dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium transition flex items-center gap-1.5"
-				on:click={() => (showCreateForm = !showCreateForm)}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-				</svg>
-				{$i18n.t('Create Template')}
-			</button>
-			<button
-				class="px-3.5 py-1.5 text-sm rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 font-medium transition flex items-center gap-1.5"
-				on:click={() => openImportModal('chart')}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"
-					/>
-				</svg>
-				{$i18n.t('Import from Excel')}
-			</button>
-			<button
-				class="px-3.5 py-1.5 text-sm rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 font-medium transition flex items-center gap-1.5"
-				on:click={downloadChartImportTemplate}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
-					/>
-				</svg>
-				{$i18n.t('Download Template')}
-			</button>
-		</div>
-
-		<!-- Inline Create Form -->
-		{#if showCreateForm}
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-blue-200/50 dark:border-blue-800/30 mb-3">
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">
-					{$i18n.t('Create New Chart Template')}
-				</div>
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-					<div>
-						<label
-							for="template-name"
-							class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-						>
-							{$i18n.t('Name')} *
-						</label>
-						<input
-							id="template-name"
-							type="text"
-							bind:value={newTemplateName}
-							placeholder={$i18n.t('e.g. French PCG')}
-							class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-						/>
+		<!-- Chart Templates -->
+		<Tabs.Content value="chart" class="flex flex-col gap-4">
+			{#if activeTab === 'chart'}
+				<div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+					<div class="min-w-0 max-w-2xl space-y-1">
+						<h2 class="text-lg font-semibold">{$i18n.t('Chart Templates')}</h2>
+						<p class="text-sm text-muted-foreground">
+							{$i18n.t(
+								'Charts of accounts a new company can start from. The company gets its own copy, so later edits never change the template.'
+							)}
+						</p>
 					</div>
-					<div>
-						<label
-							for="template-country"
-							class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-						>
-							{$i18n.t('Country')}
-						</label>
-						<input
-							id="template-country"
-							type="text"
-							bind:value={newTemplateCountry}
-							placeholder={$i18n.t('e.g. FR')}
-							class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-						/>
-					</div>
-					<div class="flex gap-2">
-						<button
-							class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition"
-							on:click={() => {
-								showCreateForm = false;
-								newTemplateName = '';
-								newTemplateCountry = '';
-							}}
-						>
-							{$i18n.t('Cancel')}
-						</button>
-						<button
-							class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
-							disabled={!newTemplateName || creatingTemplate}
-							on:click={() => openImportModal('chart')}
-						>
-							{$i18n.t('Import Excel')}
-						</button>
+					<div class="flex flex-wrap items-center gap-2">
+						<Button variant="ghost" size="sm" onclick={() => downloadChartImportTemplate()}>
+							<Download />{$i18n.t('Download Template')}
+						</Button>
+						<Button variant="outline" size="sm" onclick={() => (showCreateForm = true)}>
+							<Plus />{$i18n.t('Create Template')}
+						</Button>
+						<Button size="sm" onclick={() => openImportModal('chart')}>
+							<Upload />{$i18n.t('Import from Excel')}
+						</Button>
 					</div>
 				</div>
-			</div>
-		{/if}
 
-		<!-- Chart Templates List -->
-		{#if loadingCharts}
-			<div class="flex justify-center my-10">
-				<Spinner className="size-5" />
-			</div>
-		{:else if chartTemplates.length === 0}
-			<div class="flex justify-center my-10 text-sm text-gray-500 dark:text-gray-400">
-				{$i18n.t('No chart templates found. Import one from Excel to get started.')}
-			</div>
-		{:else}
-			<div class="space-y-2">
-				{#each chartTemplates as template (template.id)}
-					<div class="rounded-xl border border-gray-100 dark:border-gray-850 overflow-hidden">
-						<!-- Template Header -->
-						<!-- svelte-ignore a11y-click-events-have-key-events -->
-						<!-- svelte-ignore a11y-no-static-element-interactions -->
-						<div
-							class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-							on:click={() => toggleChartExpand(template.id)}
-						>
-							<div class="flex items-center gap-3">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke-width="2"
-									stroke="currentColor"
-									class="size-3.5 transition-transform {expandedChartId === template.id ? '' : '-rotate-90'}"
-								>
-									<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-								</svg>
-								<div>
-									<span class="text-sm font-semibold dark:text-gray-200">
-										{template.name}
-									</span>
-									{#if template.country}
-										<span class="text-xs text-gray-400 ml-2">
-											({template.country})
+				{#if loadingCharts}
+					<Card.Root class="gap-0 py-0">
+						{#each Array(5) as _}
+							<div class="flex items-center gap-3 border-b px-4 py-3.5 last:border-b-0">
+								<Skeleton class="size-4" />
+								<Skeleton class="h-4 w-56" />
+								<Skeleton class="ml-auto h-4 w-20" />
+							</div>
+						{/each}
+					</Card.Root>
+				{:else if chartError}
+					<Alert.Root variant="destructive">
+						<CircleAlert />
+						<Alert.Title>{$i18n.t('Failed to load chart templates')}</Alert.Title>
+						<Alert.Description>
+							<p>{chartError}</p>
+							<Button variant="outline" size="sm" class="mt-2" onclick={loadChartTemplates}>
+								<RotateCcw />{$i18n.t('Retry')}
+							</Button>
+						</Alert.Description>
+					</Alert.Root>
+				{:else if chartTemplates.length === 0}
+					<Empty.Root class="border">
+						<Empty.Header>
+							<Empty.Media variant="icon"><BookOpen /></Empty.Media>
+							<Empty.Title
+								>{$i18n.t(
+									'No chart templates found. Import one from Excel to get started.'
+								)}</Empty.Title
+							>
+						</Empty.Header>
+						<Empty.Content>
+							<Button variant="outline" size="sm" onclick={() => openImportModal('chart')}>
+								<Upload />{$i18n.t('Import from Excel')}
+							</Button>
+						</Empty.Content>
+					</Empty.Root>
+				{:else}
+					<Card.Root class="gap-0 overflow-hidden py-0">
+						{#each chartTemplates as template (template.id)}
+							{@const open = expandedChartId === template.id}
+							<div class="border-b last:border-b-0">
+								<div class="flex items-center gap-1 pr-2 transition-colors hover:bg-muted/50">
+									<button
+										type="button"
+										class="flex min-w-0 flex-1 items-center gap-3 rounded-md py-3 pl-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+										aria-expanded={open}
+										onclick={() => toggleChartExpand(template.id)}
+									>
+										<ChevronRight
+											class="size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none {open
+												? 'rotate-90'
+												: ''}"
+										/>
+										<span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+											<span class="truncate font-medium">{template.name}</span>
+											{#if template.country}
+												<span class="text-sm text-muted-foreground">{template.country}</span>
+											{/if}
+											{#if template.is_builtin}
+												<Badge variant="secondary">{$i18n.t('Built-in')}</Badge>
+											{/if}
 										</span>
+										<span class="shrink-0 pr-1 text-sm text-muted-foreground tabular-nums">
+											{template.accounts?.length ?? template.account_count ?? 0}
+											{$i18n.t('accounts')}
+										</span>
+									</button>
+									{#if template.is_builtin}
+										<span class="size-8 shrink-0" aria-hidden="true"></span>
+									{:else}
+										<Tip content={$i18n.t('Delete')}>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												class="text-muted-foreground hover:text-destructive"
+												aria-label={$i18n.t('Delete')}
+												onclick={() => askDelete('chart', template)}
+											>
+												<Trash2 />
+											</Button>
+										</Tip>
 									{/if}
 								</div>
-								<span class="text-xs text-gray-400">
-									{template.accounts?.length ?? template.account_count ?? 0} {$i18n.t('accounts')}
-								</span>
-								{#if template.is_builtin}
-									<span class="text-xs font-medium px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-700 dark:text-purple-200">
-										{$i18n.t('Built-in')}
-									</span>
-								{/if}
-							</div>
-							<div class="flex items-center gap-2">
-								{#if !template.is_builtin}
-									<button
-										class="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition text-red-500"
-										on:click|stopPropagation={() => handleDeleteChart(template.id)}
-										title={$i18n.t('Delete')}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke-width="2"
-											stroke="currentColor"
-											class="size-4"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-											/>
-										</svg>
-									</button>
-								{/if}
-							</div>
-						</div>
 
-						<!-- Expanded Accounts List — grouped by type with colors -->
-						{#if expandedChartId === template.id && template.accounts?.length > 0}
-							<div class="divide-y divide-gray-100 dark:divide-gray-850/50">
-								{#each groupTemplateAccounts(template.accounts) as group}
-									<!-- Type Section Header -->
-									<!-- svelte-ignore a11y-click-events-have-key-events -->
-									<!-- svelte-ignore a11y-no-static-element-interactions -->
-									<div
-										class="flex items-center justify-between px-4 py-2 cursor-pointer select-none {group.header}"
-										on:click={() => toggleTypeSection(template.id + '-' + group.key)}
-									>
-										<div class="flex items-center gap-2">
-											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3 transition-transform {collapsedTypes.has(template.id + '-' + group.key) ? '-rotate-90' : ''}">
-												<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-											</svg>
-											<span class="text-xs font-semibold dark:text-gray-200">{$i18n.t(group.label)}</span>
-											<span class="text-xs font-medium px-1.5 py-0.5 rounded-lg {group.badge}">{group.accounts.length}</span>
-										</div>
-									</div>
-
-									{#if !collapsedTypes.has(template.id + '-' + group.key)}
-										<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300 table-fixed">
-											<colgroup>
-												<col class="w-[90px]" />
-												<col />
-												<col class="w-[80px]" />
-												<col class="w-[80px]" />
-											</colgroup>
-											<thead class="text-[10px] uppercase bg-gray-50/30 dark:bg-gray-850/20 text-gray-500 dark:text-gray-400">
-												<tr>
-													<th class="px-3 py-1.5">{$i18n.t('Code')}</th>
-													<th class="px-3 py-1.5">{$i18n.t('Name')}</th>
-													<th class="px-3 py-1.5 whitespace-nowrap">{$i18n.t('Balance')}</th>
-													<th class="px-3 py-1.5 whitespace-nowrap">{$i18n.t('Parent')}</th>
-												</tr>
-											</thead>
-											<tbody>
-												{#each group.accounts as acct}
-													<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50/50 dark:hover:bg-gray-850/30 transition">
-														<td class="px-3 py-1.5 font-mono whitespace-nowrap">{acct.code}</td>
-														<td class="px-3 py-1.5 truncate" style="padding-left: {12 + getIndentLevel(acct) * 14}px" title={acct.description ? `${acct.name} — ${acct.description}` : acct.name}>
-															<span class="dark:text-gray-200">{acct.name}</span>
-															{#if acct.description}
-																<span class="text-[10px] text-gray-400 dark:text-gray-500 ml-1">— {acct.description}</span>
-															{/if}
-														</td>
-														<td class="px-3 py-1.5 whitespace-nowrap">
-															<span class="text-[10px] font-medium uppercase {group.badge} px-1.5 py-0.5 rounded">{acct.normal_balance ?? ''}</span>
-														</td>
-														<td class="px-3 py-1.5 font-mono text-gray-400 whitespace-nowrap">{acct.parent_code ?? ''}</td>
-													</tr>
+								<!-- Expanded: the template's accounts, grouped by type -->
+								{#if open}
+									<div class="border-t bg-muted/30 px-4 py-3">
+										{#if template.accounts?.length > 0}
+											<div class="flex flex-col gap-3">
+												{#each groupTemplateAccounts(template.accounts) as group}
+													{@const groupKey = template.id + '-' + group.key}
+													{@const groupOpen = !collapsedTypes.has(groupKey)}
+													<div class="overflow-hidden rounded-md border bg-card">
+														<button
+															type="button"
+															class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium outline-none hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
+															aria-expanded={groupOpen}
+															onclick={() => toggleTypeSection(groupKey)}
+														>
+															<ChevronRight
+																class="size-3.5 text-muted-foreground transition-transform motion-reduce:transition-none {groupOpen
+																	? 'rotate-90'
+																	: ''}"
+															/>
+															{$i18n.t(group.label)}
+															<Badge variant="count">{group.accounts.length}</Badge>
+														</button>
+														{#if groupOpen}
+															<div class="border-t">
+																<Table.Root class="min-w-[34rem] table-fixed">
+																	<colgroup>
+																		<col class="w-28" />
+																		<col />
+																		<col class="w-24" />
+																		<col class="w-28" />
+																	</colgroup>
+																	<Table.Header class="bg-muted/50">
+																		<Table.Row class="hover:bg-transparent">
+																			<Table.Head class="h-9">{$i18n.t('Code')}</Table.Head>
+																			<Table.Head class="h-9">{$i18n.t('Name', { context: 'gnos3' })}</Table.Head>
+																			<Table.Head class="h-9">{$i18n.t('Balance')}</Table.Head>
+																			<Table.Head class="h-9">{$i18n.t('Parent')}</Table.Head>
+																		</Table.Row>
+																	</Table.Header>
+																	<Table.Body>
+																		{#each group.accounts as acct}
+																			<Table.Row>
+																				<Table.Cell class="py-1.5 font-mono text-[13px]"
+																					>{acct.code}</Table.Cell
+																				>
+																				<Table.Cell
+																					class="truncate py-1.5"
+																					style="padding-left: {8 + getIndentLevel(acct) * 14}px"
+																					title={acct.description
+																						? `${acct.name} — ${acct.description}`
+																						: acct.name}
+																				>
+																					{acct.name}
+																					{#if acct.description}
+																						<span class="ml-1 text-xs text-muted-foreground"
+																							>— {acct.description}</span
+																						>
+																					{/if}
+																				</Table.Cell>
+																				<Table.Cell class="py-1.5 text-muted-foreground capitalize">
+																					{acct.normal_balance ?? '—'}
+																				</Table.Cell>
+																				<Table.Cell
+																					class="py-1.5 font-mono text-[13px] text-muted-foreground"
+																				>
+																					{acct.parent_code ?? '—'}
+																				</Table.Cell>
+																			</Table.Row>
+																		{/each}
+																	</Table.Body>
+																</Table.Root>
+															</div>
+														{/if}
+													</div>
 												{/each}
-											</tbody>
-										</table>
-									{/if}
-								{/each}
+											</div>
+										{:else}
+											<p class="text-sm text-muted-foreground">
+												{$i18n.t('No accounts in this template.')}
+											</p>
+										{/if}
+									</div>
+								{/if}
 							</div>
-						{:else if expandedChartId === template.id}
-							<div class="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">
-								{$i18n.t('No accounts in this template.')}
-							</div>
-						{/if}
-					</div>
-				{/each}
-			</div>
-		{/if}
-	{/if}
+						{/each}
+					</Card.Root>
+				{/if}
+			{/if}
+		</Tabs.Content>
 
-	<!-- Period Templates Tab -->
-	{#if activeTab === 'period'}
-		<div class="flex gap-2 mb-3">
-			<button
-				class="px-3.5 py-1.5 text-sm rounded-xl bg-gray-900 hover:bg-gray-850 text-white dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium transition flex items-center gap-1.5"
-				on:click={() => {
-					showPeriodCreateForm = !showPeriodCreateForm;
-					if (showPeriodCreateForm && periodEntries.length === 0) addPeriodEntry();
+		<!-- Period Templates -->
+		<Tabs.Content value="period" class="flex flex-col gap-4">
+			{#if activeTab === 'period'}
+				<div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+					<div class="min-w-0 max-w-2xl space-y-1">
+						<h2 class="text-lg font-semibold">{$i18n.t('Period Templates')}</h2>
+						<p class="text-sm text-muted-foreground">
+							{$i18n.t(
+								'Accounting period calendars a new company can start from, such as the twelve months of a fiscal year.'
+							)}
+						</p>
+					</div>
+					<div class="flex flex-wrap items-center gap-2">
+						<Button variant="ghost" size="sm" onclick={() => downloadPeriodImportTemplate()}>
+							<Download />{$i18n.t('Download Template')}
+						</Button>
+						<Button variant="outline" size="sm" onclick={() => openImportModal('period')}>
+							<Upload />{$i18n.t('Import from Excel')}
+						</Button>
+						<Button size="sm" onclick={openPeriodCreate}>
+							<Plus />{$i18n.t('Create Template')}
+						</Button>
+					</div>
+				</div>
+
+				{#if loadingPeriods}
+					<Card.Root class="gap-0 py-0">
+						{#each Array(4) as _}
+							<div class="flex items-center gap-3 border-b px-4 py-3.5 last:border-b-0">
+								<Skeleton class="size-4" />
+								<Skeleton class="h-4 w-56" />
+								<Skeleton class="ml-auto h-4 w-20" />
+							</div>
+						{/each}
+					</Card.Root>
+				{:else if periodError}
+					<Alert.Root variant="destructive">
+						<CircleAlert />
+						<Alert.Title>{$i18n.t('Failed to load period templates')}</Alert.Title>
+						<Alert.Description>
+							<p>{periodError}</p>
+							<Button variant="outline" size="sm" class="mt-2" onclick={loadPeriodTemplates}>
+								<RotateCcw />{$i18n.t('Retry')}
+							</Button>
+						</Alert.Description>
+					</Alert.Root>
+				{:else if periodTemplates.length === 0}
+					<Empty.Root class="border">
+						<Empty.Header>
+							<Empty.Media variant="icon"><CalendarRange /></Empty.Media>
+							<Empty.Title
+								>{$i18n.t(
+									'No period templates found. Create one manually or import from Excel.'
+								)}</Empty.Title
+							>
+						</Empty.Header>
+						<Empty.Content>
+							<Button variant="outline" size="sm" onclick={openPeriodCreate}>
+								<Plus />{$i18n.t('Create Template')}
+							</Button>
+						</Empty.Content>
+					</Empty.Root>
+				{:else}
+					<Card.Root class="gap-0 overflow-hidden py-0">
+						{#each periodTemplates as template (template.id)}
+							{@const open = expandedPeriodId === template.id}
+							<div class="border-b last:border-b-0">
+								<div class="flex items-center gap-1 pr-2 transition-colors hover:bg-muted/50">
+									<button
+										type="button"
+										class="flex min-w-0 flex-1 items-center gap-3 rounded-md py-3 pl-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+										aria-expanded={open}
+										onclick={() => togglePeriodExpand(template.id)}
+									>
+										<ChevronRight
+											class="size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none {open
+												? 'rotate-90'
+												: ''}"
+										/>
+										<span class="min-w-0 flex-1 truncate font-medium">{template.name}</span>
+										<span class="shrink-0 pr-1 text-sm text-muted-foreground tabular-nums">
+											{template.entries?.length ?? template.entry_count ?? 0}
+											{$i18n.t('entries')}
+										</span>
+									</button>
+									<Tip content={$i18n.t('Delete')}>
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											class="text-muted-foreground hover:text-destructive"
+											aria-label={$i18n.t('Delete')}
+											onclick={() => askDelete('period', template)}
+										>
+											<Trash2 />
+										</Button>
+									</Tip>
+								</div>
+
+								{#if open}
+									<div class="border-t bg-muted/30 px-4 py-3">
+										{#if template.entries?.length > 0}
+											<div class="overflow-hidden rounded-md border bg-card">
+												<Table.Root>
+													<Table.Header class="bg-muted/50">
+														<Table.Row class="hover:bg-transparent">
+															<Table.Head class="h-9">{$i18n.t('Name', { context: 'gnos3' })}</Table.Head>
+															<Table.Head class="h-9 w-36">{$i18n.t('Start Date')}</Table.Head>
+															<Table.Head class="h-9 w-36">{$i18n.t('End Date')}</Table.Head>
+														</Table.Row>
+													</Table.Header>
+													<Table.Body>
+														{#each template.entries as entry}
+															<Table.Row>
+																<Table.Cell class="py-1.5">{entry.name}</Table.Cell>
+																<Table.Cell class="py-1.5 tabular-nums"
+																	>{entry.start_date}</Table.Cell
+																>
+																<Table.Cell class="py-1.5 tabular-nums">{entry.end_date}</Table.Cell
+																>
+															</Table.Row>
+														{/each}
+													</Table.Body>
+												</Table.Root>
+											</div>
+										{:else}
+											<p class="text-sm text-muted-foreground">
+												{$i18n.t('No entries in this template.')}
+											</p>
+										{/if}
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</Card.Root>
+				{/if}
+			{/if}
+		</Tabs.Content>
+
+		<!-- Countries -->
+		<Tabs.Content value="countries">
+			{#if activeTab === 'countries'}
+				<CountryConfigManager />
+			{/if}
+		</Tabs.Content>
+
+		<!-- Exchange Rates -->
+		<Tabs.Content value="rates">
+			{#if activeTab === 'rates'}
+				<GlobalExchangeRates />
+			{/if}
+		</Tabs.Content>
+	</Tabs.Root>
+</div>
+
+<!-- Create chart template: the accounts come from an Excel file -->
+<Dialog.Root bind:open={showCreateForm}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Create New Chart Template')}</Dialog.Title>
+			<Dialog.Description>
+				{$i18n.t('Chart templates are imported from an Excel file.')}
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid gap-2">
+				<Label for="template-name">{$i18n.t('Name', { context: 'gnos3' })} *</Label>
+				<Input
+					id="template-name"
+					bind:value={newTemplateName}
+					placeholder={$i18n.t('e.g. French PCG')}
+				/>
+			</div>
+			<div class="grid gap-2">
+				<Label for="template-country">{$i18n.t('Country')}</Label>
+				<Input
+					id="template-country"
+					bind:value={newTemplateCountry}
+					placeholder={$i18n.t('e.g. FR')}
+				/>
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={resetChartForm}>{$i18n.t('Cancel')}</Button>
+			<Button
+				disabled={!newTemplateName || creatingTemplate}
+				onclick={() => {
+					showCreateForm = false;
+					openImportModal('chart');
 				}}
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-				</svg>
-				{$i18n.t('Create Template')}
-			</button>
-			<button
-				class="px-3.5 py-1.5 text-sm rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 font-medium transition flex items-center gap-1.5"
-				on:click={() => openImportModal('period')}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"
-					/>
-				</svg>
-				{$i18n.t('Import from Excel')}
-			</button>
-			<button
-				class="px-3.5 py-1.5 text-sm rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 font-medium transition flex items-center gap-1.5"
-				on:click={downloadPeriodImportTemplate}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
-					/>
-				</svg>
-				{$i18n.t('Download Template')}
-			</button>
+				<Upload />{$i18n.t('Import Excel')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Create period template by hand -->
+<Dialog.Root bind:open={showPeriodCreateForm}>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Create New Period Template')}</Dialog.Title>
+			<Dialog.Description>
+				{$i18n.t('Add one line per accounting period. Choosing a start date names an empty line.')}
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid gap-2">
+				<Label for="period-template-name">{$i18n.t('Template Name')} *</Label>
+				<Input
+					id="period-template-name"
+					bind:value={newPeriodTemplateName}
+					placeholder={$i18n.t('e.g. Calendar Year 2025 Monthly')}
+				/>
+			</div>
+			<div class="grid gap-2">
+				<Label for="period-template-desc">{$i18n.t('Description')}</Label>
+				<Input
+					id="period-template-desc"
+					bind:value={newPeriodTemplateDesc}
+					placeholder={$i18n.t('Optional description')}
+				/>
+			</div>
 		</div>
 
-		<!-- Inline Period Create Form -->
-		{#if showPeriodCreateForm}
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-blue-200/50 dark:border-blue-800/30 mb-3">
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">
-					{$i18n.t('Create New Period Template')}
-				</div>
-
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-							{$i18n.t('Template Name')} *
-						</label>
-						<input
-							type="text"
-							bind:value={newPeriodTemplateName}
-							placeholder={$i18n.t('e.g. Calendar Year 2025 Monthly')}
-							class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-						/>
-					</div>
-					<div>
-						<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-							{$i18n.t('Description')}
-						</label>
-						<input
-							type="text"
-							bind:value={newPeriodTemplateDesc}
-							placeholder={$i18n.t('Optional description')}
-							class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-						/>
-					</div>
-				</div>
-
-				<!-- Period Entries -->
-				<div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-					{$i18n.t('Period Entries')}
-				</div>
-
-				<div class="space-y-2 mb-3">
-					{#each periodEntries as entry, idx}
-						<div class="flex items-center gap-2">
-							<input
-								type="text"
-								bind:value={entry.name}
-								placeholder={$i18n.t('Period name')}
-								class="flex-1 text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-							/>
-							<input
-								type="date"
-								bind:value={entry.start_date}
-								on:change={() => autoSuggestPeriodName(idx)}
-								class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-							/>
-							<input
-								type="date"
-								bind:value={entry.end_date}
-								class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-							/>
-							<button
-								class="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition text-red-500"
-								on:click={() => removePeriodEntry(idx)}
-								title={$i18n.t('Remove')}
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4">
-									<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-								</svg>
-							</button>
-						</div>
-					{/each}
-				</div>
-
-				<button
-					class="text-xs text-blue-600 dark:text-blue-400 hover:underline mb-4"
-					on:click={addPeriodEntry}
+		<div class="grid gap-2">
+			<span class="text-sm font-medium">{$i18n.t('Period Entries')}</span>
+			<div
+				class="hidden grid-cols-[1fr_9.5rem_9.5rem_2rem] gap-2 text-sm text-muted-foreground sm:grid"
+			>
+				<span>{$i18n.t('Period name')}</span>
+				<span>{$i18n.t('Start Date')}</span>
+				<span>{$i18n.t('End Date')}</span>
+			</div>
+			{#each periodEntries as entry, idx}
+				<div
+					class="grid grid-cols-[1fr_1fr_2rem] items-center gap-2 border-b pb-2 last:border-b-0 sm:grid-cols-[1fr_9.5rem_9.5rem_2rem] sm:border-b-0 sm:pb-0"
 				>
-					+ {$i18n.t('Add Period')}
-				</button>
-
-				<div class="flex gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-					<button
-						class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition"
-						on:click={resetPeriodForm}
-					>
-						{$i18n.t('Cancel')}
-					</button>
-					<button
-						class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
-						disabled={!newPeriodTemplateName.trim() || periodEntries.length === 0 || creatingPeriodTemplate}
-						on:click={handleCreatePeriodTemplate}
-					>
-						{creatingPeriodTemplate ? $i18n.t('Creating...') : $i18n.t('Create Template')}
-					</button>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Period Templates List -->
-		{#if loadingPeriods}
-			<div class="flex justify-center my-10">
-				<Spinner className="size-5" />
-			</div>
-		{:else if periodTemplates.length === 0}
-			<div class="flex justify-center my-10 text-sm text-gray-500 dark:text-gray-400">
-				{$i18n.t('No period templates found. Create one manually or import from Excel.')}
-			</div>
-		{:else}
-			<div class="space-y-2">
-				{#each periodTemplates as template (template.id)}
-					<div class="rounded-xl border border-gray-100 dark:border-gray-850 overflow-hidden">
-						<!-- Template Header -->
-						<!-- svelte-ignore a11y-click-events-have-key-events -->
-						<!-- svelte-ignore a11y-no-static-element-interactions -->
-						<div
-							class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-							on:click={() => togglePeriodExpand(template.id)}
+					<Input
+						class="col-span-2 sm:col-span-1"
+						bind:value={entry.name}
+						placeholder={$i18n.t('Period name')}
+						aria-label={$i18n.t('Period name')}
+					/>
+					<Input
+						type="date"
+						class="order-3 tabular-nums sm:order-none"
+						bind:value={entry.start_date}
+						onchange={() => autoSuggestPeriodName(idx)}
+						aria-label={$i18n.t('Start Date')}
+					/>
+					<Input
+						type="date"
+						class="order-4 tabular-nums sm:order-none"
+						bind:value={entry.end_date}
+						aria-label={$i18n.t('End Date')}
+					/>
+					<Tip content={$i18n.t('Remove')}>
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-label={$i18n.t('Remove')}
+							onclick={() => removePeriodEntry(idx)}
 						>
-							<div class="flex items-center gap-3">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke-width="2"
-									stroke="currentColor"
-									class="size-3.5 transition-transform {expandedPeriodId === template.id ? '' : '-rotate-90'}"
-								>
-									<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-								</svg>
-								<span class="text-sm font-semibold dark:text-gray-200">
-									{template.name}
-								</span>
-								<span class="text-xs text-gray-400">
-									{template.entries?.length ?? template.entry_count ?? 0} {$i18n.t('entries')}
-								</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<button
-									class="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition text-red-500"
-									on:click|stopPropagation={() => handleDeletePeriod(template.id)}
-									title={$i18n.t('Delete')}
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="2"
-										stroke="currentColor"
-										class="size-4"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-										/>
-									</svg>
-								</button>
-							</div>
-						</div>
-
-						<!-- Expanded Entries List -->
-						{#if expandedPeriodId === template.id && template.entries?.length > 0}
-							<div class="overflow-x-auto">
-								<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-									<thead class="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50/50 dark:bg-gray-850/30">
-										<tr class="border-b border-gray-100 dark:border-gray-850">
-											<th scope="col" class="px-4 py-2">{$i18n.t('Name')}</th>
-											<th scope="col" class="px-4 py-2 w-36">{$i18n.t('Start Date')}</th>
-											<th scope="col" class="px-4 py-2 w-36">{$i18n.t('End Date')}</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each template.entries as entry}
-											<tr class="border-b border-gray-50 dark:border-gray-850/50 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition">
-												<td class="px-4 py-1.5 dark:text-gray-200">{entry.name}</td>
-												<td class="px-4 py-1.5">{entry.start_date}</td>
-												<td class="px-4 py-1.5">{entry.end_date}</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-						{:else if expandedPeriodId === template.id}
-							<div class="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">
-								{$i18n.t('No entries in this template.')}
-							</div>
-						{/if}
-					</div>
-				{/each}
+							<X />
+						</Button>
+					</Tip>
+				</div>
+			{/each}
+			<div>
+				<Button variant="outline" size="sm" onclick={addPeriodEntry}>
+					<Plus />{$i18n.t('Add Period')}
+				</Button>
 			</div>
-		{/if}
-	{/if}
+		</div>
 
-	<!-- Countries Tab -->
-	{#if activeTab === 'countries'}
-		<CountryConfigManager />
-	{/if}
+		<Dialog.Footer>
+			<Button variant="outline" onclick={resetPeriodForm}>{$i18n.t('Cancel')}</Button>
+			<Button
+				disabled={!newPeriodTemplateName.trim() ||
+					periodEntries.length === 0 ||
+					creatingPeriodTemplate}
+				onclick={handleCreatePeriodTemplate}
+			>
+				{#if creatingPeriodTemplate}<Spinner />{/if}
+				{creatingPeriodTemplate ? $i18n.t('Creating...') : $i18n.t('Create Template')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
-	{#if activeTab === 'rates'}
-		<GlobalExchangeRates />
-	{/if}
-</div>
+<ConfirmDialog
+	bind:open={showDeleteConfirm}
+	title={deleteTarget?.kind === 'period'
+		? $i18n.t('Delete period template?')
+		: $i18n.t('Delete chart template?')}
+	description={$i18n.t('"{{name}}" will be removed. This cannot be undone.', {
+		name: deleteTarget?.name ?? ''
+	})}
+	confirmLabel={$i18n.t('Delete')}
+	destructive
+	onconfirm={confirmDelete}
+/>

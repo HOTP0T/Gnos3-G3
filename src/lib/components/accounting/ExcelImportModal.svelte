@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onDestroy, getContext, createEventDispatcher } from 'svelte';
-	import { fade } from 'svelte/transition';
-	import { flyAndScale } from '$lib/utils/transitions';
+	import { getContext, createEventDispatcher } from 'svelte';
 	import { toast } from 'svelte-sonner';
+
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 
 	import {
 		importChartTemplateFromExcel,
@@ -12,9 +13,14 @@
 		importCompanyAssetsFromExcel
 	} from '$lib/apis/accounting';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let show = false;
@@ -26,17 +32,25 @@
 	let name = '';
 	let country = '';
 	let file: File | null = null;
-	let fileInput: HTMLInputElement;
+	let fileInput: HTMLInputElement | null = null;
 	let submitting = false;
 
 	// Result state
 	let result: { imported_count?: number; skipped_count?: number; errors?: string[] } | null = null;
 
-	let modalElement: HTMLElement | null = null;
-
 	$: if (show) {
 		resetForm();
 	}
+
+	$: title = companyId
+		? type === 'chart'
+			? $i18n.t('Import Accounts from Excel')
+			: type === 'asset'
+				? $i18n.t('Import Fixed Assets from Excel')
+				: $i18n.t('Import Periods from Excel')
+		: type === 'chart'
+			? $i18n.t('Import Chart Template from Excel')
+			: $i18n.t('Import Period Template from Excel');
 
 	const resetForm = () => {
 		name = '';
@@ -49,12 +63,6 @@
 		}
 	};
 
-	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') {
-			show = false;
-		}
-	};
-
 	const handleFileChange = (event: Event) => {
 		const target = event.target as HTMLInputElement;
 		if (target.files && target.files.length > 0) {
@@ -62,7 +70,8 @@
 		}
 	};
 
-	const handleSubmit = async () => {
+	const handleSubmit = async (e?: Event) => {
+		e?.preventDefault();
 		if (!file) {
 			toast.error($i18n.t('Please select a file'));
 			return;
@@ -89,11 +98,7 @@
 			} else {
 				// Import as template (chart/period only — assets have no template)
 				if (type === 'chart') {
-					res = await importChartTemplateFromExcel(
-						name.trim(),
-						file,
-						country.trim() || undefined
-					);
+					res = await importChartTemplateFromExcel(name.trim(), file, country.trim() || undefined);
 				} else {
 					res = await importPeriodTemplateFromExcel(name.trim(), file);
 				}
@@ -116,188 +121,108 @@
 		}
 		submitting = false;
 	};
-
-	$: if (show && modalElement) {
-		window.addEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'hidden';
-	}
-
-	$: if (!show) {
-		window.removeEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'unset';
-	}
-
-	onDestroy(() => {
-		window.removeEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'unset';
-	});
 </script>
 
-{#if show}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
-		bind:this={modalElement}
-		class="fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-99999999 overflow-hidden overscroll-contain"
-		in:fade={{ duration: 10 }}
-		on:mousedown={() => {
-			show = false;
-		}}
-	>
-		<div
-			class="m-auto max-w-full w-[32rem] mx-2 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm rounded-4xl max-h-[100dvh] shadow-3xl border border-white dark:border-gray-900"
-			in:flyAndScale
-			on:mousedown={(e) => {
-				e.stopPropagation();
-			}}
-		>
-			<div class="px-[1.75rem] py-6 flex flex-col">
-				<div class="text-lg font-medium dark:text-gray-200 mb-4">
-					{#if companyId}
-						{type === 'chart'
-							? $i18n.t('Import Accounts from Excel')
-							: type === 'asset'
-								? $i18n.t('Import Fixed Assets from Excel')
-								: $i18n.t('Import Periods from Excel')}
-					{:else}
-						{type === 'chart'
-							? $i18n.t('Import Chart Template from Excel')
-							: $i18n.t('Import Period Template from Excel')}
-					{/if}
-				</div>
+<Dialog.Root bind:open={show}>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>{title}</Dialog.Title>
+			{#if !result}
+				<Dialog.Description>{$i18n.t('An .xlsx or .xls file.')}</Dialog.Description>
+			{/if}
+		</Dialog.Header>
 
-				{#if result}
-					<!-- Result View -->
-					<div class="flex flex-col gap-3">
-						<div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border border-green-200/50 dark:border-green-800/30">
-							<div class="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
-								{$i18n.t('Import Complete')}
-							</div>
-							<div class="text-xs text-green-700 dark:text-green-300 space-y-1">
-								<div>{$i18n.t('Imported')}: {result.imported_count ?? 0}</div>
-								{#if result.skipped_count}
-									<div>{$i18n.t('Skipped')}: {result.skipped_count}</div>
-								{/if}
-							</div>
-						</div>
-
-						{#if result.errors && result.errors.length > 0}
-							<div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200/50 dark:border-red-800/30">
-								<div class="text-sm font-medium text-red-800 dark:text-red-200 mb-2">
-									{$i18n.t('Errors')}
-								</div>
-								<ul class="text-xs text-red-700 dark:text-red-300 space-y-0.5 list-disc list-inside max-h-32 overflow-y-auto">
-									{#each result.errors as error}
-										<li>{error}</li>
-									{/each}
-								</ul>
-							</div>
+		{#if result}
+			<!-- Result View -->
+			<div class="grid gap-3">
+				<Alert.Root>
+					<CircleCheck class="text-success" />
+					<Alert.Title>{$i18n.t('Import Complete')}</Alert.Title>
+					<Alert.Description class="tabular-nums">
+						<div>{$i18n.t('Imported')}: {result.imported_count ?? 0}</div>
+						{#if result.skipped_count}
+							<div>{$i18n.t('Skipped')}: {result.skipped_count}</div>
 						{/if}
+					</Alert.Description>
+				</Alert.Root>
 
-						<div class="mt-3 flex justify-end">
-							<button
-								type="button"
-								class="text-sm bg-gray-900 hover:bg-gray-850 text-gray-100 dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium px-6 py-2 rounded-3xl transition"
-								on:click={() => {
-									show = false;
-								}}
-							>
-								{$i18n.t('Done')}
-							</button>
-						</div>
-					</div>
-				{:else}
-					<!-- Upload Form -->
-					<form
-						class="flex flex-col gap-3"
-						on:submit|preventDefault={handleSubmit}
-					>
-						<!-- File Input -->
-						<div>
-							<label
-								for="import-file"
-								class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-							>
-								{$i18n.t('Excel File')} *
-							</label>
-							<input
-								id="import-file"
-								type="file"
-								accept=".xlsx,.xls"
-								bind:this={fileInput}
-								on:change={handleFileChange}
-								class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-blue-700 dark:file:bg-blue-900/20 dark:file:text-blue-300"
-							/>
-						</div>
-
-						<!-- Name (only for template import, not company import) -->
-						{#if !companyId}
-							<div>
-								<label
-									for="import-name"
-									class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-								>
-									{$i18n.t('Template Name')} *
-								</label>
-								<input
-									id="import-name"
-									type="text"
-									bind:value={name}
-									placeholder={type === 'chart'
-										? $i18n.t('e.g. French PCG')
-										: $i18n.t('e.g. Calendar Year 2026')}
-									class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-									required
-								/>
-							</div>
-						{/if}
-
-						<!-- Country (only for chart template import) -->
-						{#if type === 'chart' && !companyId}
-							<div>
-								<label
-									for="import-country"
-									class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-								>
-									{$i18n.t('Country')}
-								</label>
-								<input
-									id="import-country"
-									type="text"
-									bind:value={country}
-									placeholder={$i18n.t('e.g. FR (optional)')}
-									class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-								/>
-							</div>
-						{/if}
-
-						<!-- Actions -->
-						<div class="mt-3 flex justify-between gap-1.5">
-							<button
-								type="button"
-								class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white font-medium w-full py-2 rounded-3xl transition"
-								on:click={() => {
-									show = false;
-								}}
-							>
-								{$i18n.t('Cancel')}
-							</button>
-							<button
-								type="submit"
-								class="text-sm bg-gray-900 hover:bg-gray-850 text-gray-100 dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium w-full py-2 rounded-3xl transition disabled:opacity-50 flex items-center justify-center gap-2"
-								disabled={submitting || !file || (!companyId && !name.trim())}
-							>
-								{#if submitting}
-									<Spinner className="size-4" />
-									{$i18n.t('Importing...')}
-								{:else}
-									{$i18n.t('Import')}
-								{/if}
-							</button>
-						</div>
-					</form>
+				{#if result.errors && result.errors.length > 0}
+					<Alert.Root variant="destructive">
+						<CircleAlert />
+						<Alert.Title>{$i18n.t('Errors')}</Alert.Title>
+						<Alert.Description>
+							<ul class="max-h-32 list-inside list-disc space-y-0.5 overflow-y-auto">
+								{#each result.errors as error}
+									<li>{error}</li>
+								{/each}
+							</ul>
+						</Alert.Description>
+					</Alert.Root>
 				{/if}
 			</div>
-		</div>
-	</div>
-{/if}
+
+			<Dialog.Footer>
+				<Button onclick={() => (show = false)}>{$i18n.t('Done')}</Button>
+			</Dialog.Footer>
+		{:else}
+			<!-- Upload Form -->
+			<form id="excel-import-form" class="grid gap-4" onsubmit={handleSubmit}>
+				<div class="grid gap-2">
+					<Label for="import-file">{$i18n.t('Excel File')} *</Label>
+					<Input
+						id="import-file"
+						type="file"
+						accept=".xlsx,.xls"
+						bind:ref={fileInput}
+						onchange={handleFileChange}
+					/>
+				</div>
+
+				<!-- Name (only for template import, not company import) -->
+				{#if !companyId}
+					<div class="grid gap-2">
+						<Label for="import-name">{$i18n.t('Template Name')} *</Label>
+						<Input
+							id="import-name"
+							type="text"
+							bind:value={name}
+							placeholder={type === 'chart'
+								? $i18n.t('e.g. French PCG')
+								: $i18n.t('e.g. Calendar Year 2026')}
+							required
+						/>
+					</div>
+				{/if}
+
+				<!-- Country (only for chart template import) -->
+				{#if type === 'chart' && !companyId}
+					<div class="grid gap-2">
+						<Label for="import-country">{$i18n.t('Country')}</Label>
+						<Input
+							id="import-country"
+							type="text"
+							bind:value={country}
+							placeholder={$i18n.t('e.g. FR (optional)')}
+						/>
+					</div>
+				{/if}
+			</form>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (show = false)}>{$i18n.t('Cancel')}</Button>
+				<Button
+					type="submit"
+					form="excel-import-form"
+					disabled={submitting || !file || (!companyId && !name.trim())}
+				>
+					{#if submitting}
+						<Spinner />
+						{$i18n.t('Importing...')}
+					{:else}
+						{$i18n.t('Import')}
+					{/if}
+				</Button>
+			</Dialog.Footer>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>

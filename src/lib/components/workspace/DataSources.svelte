@@ -116,19 +116,24 @@
 
 	const syncHandler = async (item: any) => {
 		try {
-			toast.info($i18n.t('Sync started for') + ` ${item.name}...`);
+			toast.info($i18n.t('Sync started for {{name}}…', { name: item.name }));
 			const result = await syncDataConnector(localStorage.token, item.id);
 			if (result?.stats) {
 				const s = result.stats;
 				toast.success(
-					`${item.name}: +${s.added} added, ${s.updated} updated, ${s.deleted} deleted`
+					$i18n.t('{{name}}: {{added}} added, {{updated}} updated, {{deleted}} deleted', {
+						name: item.name,
+						added: s.added,
+						updated: s.updated,
+						deleted: s.deleted
+					})
 				);
 			} else {
 				toast.success($i18n.t('Sync completed'));
 			}
 			await init();
 		} catch (e) {
-			toast.error(`Sync failed: ${e}`);
+			toast.error(`${$i18n.t('Sync failed')}: ${e}`);
 			await init();
 		}
 	};
@@ -200,7 +205,7 @@
 						<input
 							bind:value={formData.name}
 							class="w-full mt-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm"
-							placeholder="My K4mi Documents"
+							placeholder={$i18n.t('My K4mi Documents')}
 						/>
 					</div>
 
@@ -211,7 +216,7 @@
 						<input
 							bind:value={formData.description}
 							class="w-full mt-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm"
-							placeholder="Documents from the company archive"
+							placeholder={$i18n.t('Documents from the company archive')}
 						/>
 					</div>
 
@@ -263,7 +268,7 @@
 												.filter(Boolean)
 												.map((s) => (isNaN(Number(s)) ? s : Number(s))))}
 										class="w-full mt-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm"
-										placeholder="Comma-separated values"
+										placeholder={$i18n.t('Comma-separated values')}
 									/>
 								{:else}
 									<input
@@ -287,12 +292,12 @@
 								bind:value={formData.sync_interval}
 								class="w-full mt-1 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm"
 							>
-								<option value={300}>5 minutes</option>
-								<option value={900}>15 minutes</option>
-								<option value={1800}>30 minutes</option>
-								<option value={3600}>1 hour</option>
-								<option value={21600}>6 hours</option>
-								<option value={86400}>24 hours</option>
+								<option value={300}>{$i18n.t('{{count}} minutes', { count: 5 })}</option>
+								<option value={900}>{$i18n.t('{{count}} minutes', { count: 15 })}</option>
+								<option value={1800}>{$i18n.t('{{count}} minutes', { count: 30 })}</option>
+								<option value={3600}>{$i18n.t('1 hour')}</option>
+								<option value={21600}>{$i18n.t('{{count}} hours', { count: 6 })}</option>
+								<option value={86400}>{$i18n.t('{{count}} hours', { count: 24 })}</option>
 							</select>
 						</div>
 						<div class="flex items-end">

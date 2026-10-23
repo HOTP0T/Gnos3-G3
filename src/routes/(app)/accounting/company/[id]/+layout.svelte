@@ -1,24 +1,37 @@
 <script lang="ts">
 	import { onMount, getContext, setContext } from 'svelte';
 	import { writable } from 'svelte/store';
-	import { WEBUI_NAME, mobile, showSidebar } from '$lib/stores';
-	import { page } from '$app/stores';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import { page } from '$app/state';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import X from '@lucide/svelte/icons/x';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import Clock from '@lucide/svelte/icons/clock';
+	import { WEBUI_NAME } from '$lib/stores';
 	import { getCompany, getExchangeRates, getGlobalExchangeRates } from '$lib/apis/accounting';
 
-	const i18n = getContext('i18n');
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import ModuleShell from '$lib/components/gnos3-ui/ModuleShell.svelte';
+	import NavTabs from '$lib/components/gnos3-ui/NavTabs.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import { cn } from '$lib/utils/shadcn.js';
 
-	let loaded = false;
-	let companyName = '';
-	let companyCurrency = 'EUR';
+	let { children } = $props();
+
+	const i18n: any = getContext('i18n');
+
+	let loaded = $state(false);
+	let companyName = $state('');
+	let companyCurrency = $state('EUR');
 
 	// Global display currency — shared via context to all child components
 	const displayCurrency = writable('');
 	const exchangeRates = writable<any[]>([]);
 	const ratesLoaded = writable(false);
 	const companyCurrencyStore = writable('EUR');
-
 	const companyNameStore = writable('');
 	setContext('displayCurrency', displayCurrency);
 	setContext('exchangeRates', exchangeRates);
@@ -26,8 +39,9 @@
 	setContext('companyCurrency', companyCurrencyStore);
 	setContext('companyName', companyNameStore);
 
-	$: companyId = parseInt($page.params.id, 10);
-	$: basePath = `/accounting/company/${$page.params.id}`;
+	// $app/state, not the store: the store still holds the previous page during this layout's first render.
+	const companyId = $derived(parseInt(page.params.id ?? '', 10));
+	const basePath = $derived(`/accounting/company/${page.params.id}`);
 
 	setContext('companyId', {
 		get id() {
@@ -51,96 +65,64 @@
 		{ key: 'settings', label: 'Settings' }
 	];
 
-	// Load saved tab order from localStorage, fallback to default
-	const TAB_ORDER_KEY = `accounting-tab-order-${companyId}`;
-	let tabs = defaultTabs;
+	// Tab order is per company and survives reloads. Until 2026-10 one order was saved for every
+	// company under "…-undefined" (the key was built before the id was known); read it as a fallback.
+	const tabOrderKey = () => `accounting-tab-order-${companyId}`;
+	const LEGACY_TAB_ORDER_KEY = 'accounting-tab-order-undefined';
+	let tabs = $state(defaultTabs);
 
 	function loadTabOrder() {
 		try {
-			const saved = localStorage.getItem(TAB_ORDER_KEY);
-			if (saved) {
-				const savedKeys: string[] = JSON.parse(saved);
-				// Rebuild tabs in saved order, adding any new tabs not in saved order
-				const tabMap = new Map(defaultTabs.map(t => [t.key, t]));
-				const ordered: typeof defaultTabs = [];
-				for (const key of savedKeys) {
-					const tab = tabMap.get(key);
-					if (tab) {
-						ordered.push(tab);
-						tabMap.delete(key);
-					}
-				}
-				// Append any new tabs not in saved order
-				for (const tab of tabMap.values()) {
+			const saved = localStorage.getItem(tabOrderKey()) ?? localStorage.getItem(LEGACY_TAB_ORDER_KEY);
+			if (!saved) return;
+			const savedKeys: string[] = JSON.parse(saved);
+			const tabMap = new Map(defaultTabs.map((t) => [t.key, t]));
+			const ordered: typeof defaultTabs = [];
+			for (const key of savedKeys) {
+				const tab = tabMap.get(key);
+				if (tab) {
 					ordered.push(tab);
+					tabMap.delete(key);
 				}
-				tabs = ordered;
 			}
+			// Tabs added since the order was saved go at the end
+			tabs = [...ordered, ...tabMap.values()];
 		} catch {}
 	}
 
-	function saveTabOrder() {
+	function reorderTabs(from: number, to: number) {
+		const next = [...tabs];
+		const [moved] = next.splice(from, 1);
+		next.splice(to, 0, moved);
+		tabs = next;
 		try {
-			localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(tabs.map(t => t.key)));
+			localStorage.setItem(tabOrderKey(), JSON.stringify(tabs.map((t) => t.key)));
 		} catch {}
 	}
 
-	// Drag and drop state
-	let dragIdx: number | null = null;
-	let dragOverIdx: number | null = null;
-
-	function handleDragStart(e: DragEvent, idx: number) {
-		dragIdx = idx;
-		if (e.dataTransfer) {
-			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/plain', String(idx));
-		}
-	}
-
-	function handleDragOver(e: DragEvent, idx: number) {
-		e.preventDefault();
-		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-		dragOverIdx = idx;
-	}
-
-	function handleDrop(e: DragEvent, idx: number) {
-		e.preventDefault();
-		if (dragIdx === null || dragIdx === idx) {
-			dragIdx = null;
-			dragOverIdx = null;
-			return;
-		}
-		// Reorder
-		const newTabs = [...tabs];
-		const [moved] = newTabs.splice(dragIdx, 1);
-		newTabs.splice(idx, 0, moved);
-		tabs = newTabs;
-		saveTabOrder();
-		dragIdx = null;
-		dragOverIdx = null;
-	}
-
-	function handleDragEnd() {
-		dragIdx = null;
-		dragOverIdx = null;
-	}
-
-	// Check if we have rates for a given currency pair
-	// Check if we have any rate for the selected currency pair
-	$: hasRatesForDisplay = $displayCurrency && $displayCurrency !== companyCurrency && $exchangeRates.length > 0
-		? $exchangeRates.some(r =>
-			(r.from_currency === companyCurrency && r.to_currency === $displayCurrency) ||
-			(r.from_currency === $displayCurrency && r.to_currency === companyCurrency)
-		)
-		: true;
-
-	// Check if we have a rate for the CURRENT month specifically
-	$: currentMonthKey = new Date().toISOString().slice(0, 7); // "2026-03"
-	$: hasCurrentMonthRate = !($displayCurrency && $displayCurrency !== companyCurrency) || $exchangeRates.some(r =>
-		r.effective_date?.startsWith(currentMonthKey) &&
-		((r.from_currency === companyCurrency && r.to_currency === $displayCurrency) ||
-		 (r.from_currency === $displayCurrency && r.to_currency === companyCurrency))
+	// Any rate for the selected pair
+	const hasRatesForDisplay = $derived(
+		$displayCurrency && $displayCurrency !== companyCurrency && $exchangeRates.length > 0
+			? $exchangeRates.some(
+					(r) =>
+						(r.from_currency === companyCurrency && r.to_currency === $displayCurrency) ||
+						(r.from_currency === $displayCurrency && r.to_currency === companyCurrency)
+				)
+			: true
 	);
+
+	// A rate for the current month specifically
+	const currentMonthKey = new Date().toISOString().slice(0, 7); // "2026-03"
+	const hasCurrentMonthRate = $derived(
+		!($displayCurrency && $displayCurrency !== companyCurrency) ||
+			$exchangeRates.some(
+				(r) =>
+					r.effective_date?.startsWith(currentMonthKey) &&
+					((r.from_currency === companyCurrency && r.to_currency === $displayCurrency) ||
+						(r.from_currency === $displayCurrency && r.to_currency === companyCurrency))
+			)
+	);
+	const converted = $derived(!!$displayCurrency && $displayCurrency !== companyCurrency);
 
 	async function loadCompanyData() {
 		try {
@@ -151,11 +133,11 @@
 			companyCurrencyStore.set(companyCurrency);
 			displayCurrency.set(companyCurrency);
 
-			// Load exchange rates: the full shared global set plus any company-specific
-			// overrides. Overrides go first so they win on ties in convertAmount's
-			// nearest-date search. The full set (not just this company's base) is loaded
-			// so consumers that convert from a non-base currency — e.g. bank
-			// reconciliation, whose amounts are in the bank account's currency — resolve.
+			// Exchange rates: the full shared global set plus any company-specific overrides.
+			// Overrides go first so they win on ties in convertAmount's nearest-date search. The
+			// full set (not just this company's base) is loaded so consumers that convert from a
+			// non-base currency — e.g. bank reconciliation, whose amounts are in the bank
+			// account's currency — resolve.
 			try {
 				const [companyRates, globalRates] = await Promise.all([
 					getExchangeRates({ company_id: companyId }).catch(() => []),
@@ -180,11 +162,6 @@
 		await loadCompanyData();
 		loaded = true;
 	});
-
-	function handleCurrencyChange(e: Event) {
-		const val = (e.target as HTMLSelectElement).value;
-		displayCurrency.set(val);
-	}
 </script>
 
 <svelte:head>
@@ -194,150 +171,105 @@
 </svelte:head>
 
 {#if loaded}
-	<div class="flex flex-col h-screen max-h-[100dvh] flex-1 transition-width duration-200 ease-in-out {$showSidebar ? 'md:max-w-[calc(100%-var(--sidebar-width))]' : 'md:max-w-[calc(100%-49px)]'} w-full max-w-full">
-		<nav class="px-2.5 pt-1.5 backdrop-blur-xl drag-region">
-			<div class="flex items-center gap-1">
-				{#if $mobile}
-					<div
-						class="{$showSidebar
-							? 'md:hidden'
-							: ''} self-center flex flex-none items-center"
-					>
-						<Tooltip
-							content={$showSidebar
-								? $i18n.t('Close Sidebar')
-								: $i18n.t('Open Sidebar')}
-							interactive={true}
-						>
-							<button
-								id="sidebar-toggle-button"
-								class="cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-								on:click={() => {
-									showSidebar.set(!$showSidebar);
-								}}
-							>
-								<div class="self-center p-1.5">
-									<Sidebar />
-								</div>
-							</button>
-						</Tooltip>
-					</div>
-				{/if}
-
-				<div class="flex items-center gap-1.5 flex-1 min-w-0">
-					<a
-						class="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white transition whitespace-nowrap"
-						href="/accounting/companies"
-					>
-						&larr; {$i18n.t('Companies')}
-					</a>
-
+	<ModuleShell containerId="accounting-container">
+		{#snippet nav()}
+			<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-1">
+				<div class="flex min-w-0 items-center gap-2.5">
+					<Button variant="ghost" size="sm" href="/accounting/companies" class="-ml-2 pl-1.5">
+						<ArrowLeft />{$i18n.t('Companies')}
+					</Button>
+					<Separator orientation="vertical" class="h-4!" />
 					{#if companyName}
-						<span class="text-gray-300 dark:text-gray-600 text-sm">/</span>
-						<span class="text-base font-semibold truncate">{companyName}</span>
+						<h1 class="truncate text-xl leading-7 font-semibold">{companyName}</h1>
 					{/if}
-
-					<!-- Global Currency Switcher -->
-					<div class="flex items-center gap-1 ml-2 flex-shrink-0">
-						<select
-							class="text-[11px] rounded-lg px-1.5 py-0.5 border
-								{$displayCurrency !== companyCurrency
-									? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium'
-									: 'border-gray-200 dark:border-gray-700 bg-transparent text-gray-500 dark:text-gray-400'}
-								outline-none transition"
-							value={$displayCurrency}
-							on:change={handleCurrencyChange}
-							title={$i18n.t('View amounts in a different currency')}
-						>
-							{#each CURRENCIES as cur}
-								<option value={cur}>{cur}{cur === companyCurrency ? ' ●' : ''}</option>
-							{/each}
-						</select>
-
-						{#if $displayCurrency !== companyCurrency}
-							{#if !hasRatesForDisplay}
-								<!-- No rates warning -->
-								<Tooltip content={$i18n.t('No exchange rates found for') + ` ${companyCurrency}→${$displayCurrency}. ` + $i18n.t('Import rates in Settings → Exchange Rates.')}>
-									<span class="text-amber-500 dark:text-amber-400 text-xs cursor-help" title="">
-										<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-										</svg>
-									</span>
-								</Tooltip>
-							{:else}
-								<!-- Converted indicator -->
-								<span class="text-[10px] text-blue-500 dark:text-blue-400 whitespace-nowrap">
-									{companyCurrency}→{$displayCurrency}
-								</span>
-							{/if}
-
-							<button
-								class="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
-								on:click={() => displayCurrency.set(companyCurrency)}
-								title={$i18n.t('Reset to company currency')}
-							>
-								✕
-							</button>
-						{/if}
-					</div>
+					<Badge variant="outline">{companyCurrency}</Badge>
 				</div>
 
-				<div class="">
-					<div
-						class="flex gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent py-1"
+				<!-- Display currency: every amount below converts when it differs from the company's -->
+				<div class="flex items-center gap-1.5">
+					<label for="display-currency" class="text-sm text-muted-foreground"
+						>{$i18n.t('Display')}</label
 					>
-						{#each tabs as tab, idx (tab.key)}
-							<!-- svelte-ignore a11y-no-static-element-interactions -->
-							<a
-								class="min-w-fit p-1.5 select-none cursor-grab active:cursor-grabbing rounded-md transition
-									{$page.url.pathname.includes(`${basePath}/${tab.key}`)
-										? 'font-semibold'
-										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}
-									{dragOverIdx === idx && dragIdx !== idx ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
-									{dragIdx === idx ? 'opacity-40' : ''}"
-								href="{basePath}/{tab.key}"
-								draggable="true"
-								on:dragstart={(e) => handleDragStart(e, idx)}
-								on:dragover={(e) => handleDragOver(e, idx)}
-								on:drop={(e) => handleDrop(e, idx)}
-								on:dragend={handleDragEnd}
-							>{$i18n.t(tab.label)}</a>
+					<NativeSelect.Root
+						id="display-currency"
+						size="sm"
+						class={cn('w-24', converted && 'border-ring text-link font-medium')}
+						value={$displayCurrency}
+						title={$i18n.t('View amounts in a different currency')}
+						onchange={(e: Event) => displayCurrency.set((e.currentTarget as HTMLSelectElement).value)}
+					>
+						{#each CURRENCIES as cur}
+							<NativeSelect.Option value={cur}
+								>{cur}{cur === companyCurrency ? ' ●' : ''}</NativeSelect.Option
+							>
 						{/each}
-					</div>
+					</NativeSelect.Root>
+					{#if converted}
+						{#if !hasRatesForDisplay}
+							<Tip
+								content={$i18n.t('No exchange rates found for') +
+									` ${companyCurrency}→${$displayCurrency}. ` +
+									$i18n.t('Import rates in Settings → Exchange Rates.')}
+							>
+								<TriangleAlert class="size-4 text-warning" aria-label={$i18n.t('No exchange rates')} />
+							</Tip>
+						{:else}
+							<Badge variant="info" class="tabular-nums">{companyCurrency}→{$displayCurrency}</Badge>
+						{/if}
+						<Tip content={$i18n.t('Reset to company currency')}>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label={$i18n.t('Reset to company currency')}
+								onclick={() => displayCurrency.set(companyCurrency)}
+							>
+								<X />
+							</Button>
+						</Tip>
+					{/if}
 				</div>
 			</div>
-		</nav>
+			<NavTabs
+				label={companyName || $i18n.t('Company')}
+				onreorder={reorderTabs}
+				items={tabs.map((t) => ({
+					href: `${basePath}/${t.key}`,
+					// "Tax" here is the tax section; elsewhere it is a tax amount
+					label: $i18n.t(t.label, { context: 'tab' }),
+					active: page.url.pathname.includes(`${basePath}/${t.key}`)
+				}))}
+			/>
+		{/snippet}
 
-		<!-- Current month rate warning -->
-		{#if $displayCurrency !== companyCurrency && hasRatesForDisplay && !hasCurrentMonthRate}
-			<div class="mx-3 mt-1 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 flex-shrink-0">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-				</svg>
-				<span>
-					{$i18n.t('No exchange rate for the current month')} ({currentMonthKey}).
+		{#if converted && hasRatesForDisplay && !hasCurrentMonthRate}
+			<Alert.Root variant="info" class="mb-4">
+				<Clock />
+				<Alert.Title>{$i18n.t('No exchange rate for the current month')} ({currentMonthKey})</Alert.Title>
+				<Alert.Description>
 					{$i18n.t('Conversion uses the most recent available rate.')}
-					<a href="{basePath}/settings" class="underline font-medium">{$i18n.t('Update rates')}</a>
-				</span>
-			</div>
+					<a href="{basePath}/settings?section=exchange" class="font-medium text-link underline-offset-4 hover:underline"
+						>{$i18n.t('Update rates')}</a
+					>
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
 
-		<!-- No rates banner (shown once, below nav) -->
-		{#if $displayCurrency !== companyCurrency && !hasRatesForDisplay}
-			<div class="mx-3 mt-1 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 flex-shrink-0">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-				</svg>
-				<span>
-					{$i18n.t('No exchange rates found for')} <strong>{companyCurrency}→{$displayCurrency}</strong>.
+		{#if converted && !hasRatesForDisplay}
+			<Alert.Root variant="warning" class="mb-4">
+				<TriangleAlert />
+				<Alert.Title>
+					{$i18n.t('No exchange rates found for')}
+					{companyCurrency}→{$displayCurrency}
+				</Alert.Title>
+				<Alert.Description>
 					{$i18n.t('Amounts cannot be converted.')}
-					<a href="{basePath}/settings" class="underline font-medium hover:text-amber-900 dark:hover:text-amber-100">{$i18n.t('Import rates in Settings → Exchange Rates')}</a>
-				</span>
-			</div>
+					<a href="{basePath}/settings?section=exchange" class="font-medium text-link underline-offset-4 hover:underline"
+						>{$i18n.t('Import rates in Settings → Exchange Rates')}</a
+					>
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
 
-		<div class="pb-1 px-3 md:px-[18px] flex-1 max-h-full overflow-y-auto" id="accounting-container">
-			<slot />
-		</div>
-	</div>
+		{@render children?.()}
+	</ModuleShell>
 {/if}

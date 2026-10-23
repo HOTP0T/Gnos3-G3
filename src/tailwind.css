@@ -1,20 +1,44 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 
 @config '../tailwind.config.js';
 
 @theme {
-	--color-gray-50: oklch(0.98 0 0);
-	--color-gray-100: oklch(0.94 0 0);
-	--color-gray-200: oklch(0.92 0 0);
-	--color-gray-300: oklch(0.85 0 0);
-	--color-gray-400: oklch(0.77 0 0);
-	--color-gray-500: oklch(0.69 0 0);
-	--color-gray-600: oklch(0.51 0 0);
-	--color-gray-700: oklch(0.42 0 0);
-	--color-gray-800: oklch(0.32 0 0);
-	--color-gray-850: oklch(0.27 0 0);
-	--color-gray-900: oklch(0.2 0 0);
-	--color-gray-950: oklch(0.16 0 0);
+	/* Gnos3 brand palette (Gnos3-Kit/Gnos3-Brand-Kit/README.md, brand-tokens.css).
+	   Grays are the brand kit's UI neutrals, a slight navy tint; each step keeps the
+	   lightness of the neutral gray it replaces, so contrast across the app is unchanged.
+	   Light: page #F4F6FA, chip #E9EEF6, line #DCE2EC, muted #56637A.
+	   Dark: page #0A1019, surface #121A28, chip #1A2436, line #233047, muted #93A0B6. */
+	--color-gray-50: #f4f6fa;
+	--color-gray-100: #e9eef6;
+	--color-gray-200: #dce2ec;
+	--color-gray-300: #c6cedb;
+	--color-gray-400: #aab5c7;
+	--color-gray-500: #93a0b6;
+	--color-gray-600: #56637a;
+	--color-gray-700: #404e64;
+	--color-gray-800: #233047;
+	--color-gray-850: #1a2436;
+	--color-gray-900: #121a28;
+	--color-gray-950: #0a1019;
+
+	/* Accent = Gnos3 Blue. 600 is the signature #12489A (links, buttons, selection on
+	   light), 400 the kit's dark-mode accent #6E9CEB, 800 Navy #17396A; the steps
+	   between share the mark's hue. Every blue-* utility in the app picks these up. */
+	--color-blue-50: #f0f6ff;
+	--color-blue-100: #ddeaff;
+	--color-blue-200: #c3dbff;
+	--color-blue-300: #9ec2fd;
+	--color-blue-400: #6e9ceb;
+	--color-blue-500: #3471d8;
+	--color-blue-600: #12489a;
+	--color-blue-700: #103a7f;
+	--color-blue-800: #17396a;
+	--color-blue-900: #0f2750;
+	--color-blue-950: #081831;
+
+	/* Ink, the darkest brand colour, instead of pure black (text, primary buttons). */
+	--color-black: #0c1422;
 
 	/* Gnos3 fonts: Geist for the UI, Geist Mono for code, amounts and account codes.
 	   Faces in app.css, files and licences in static/assets/fonts/NOTICES.md.
@@ -57,6 +81,173 @@
 }
 
 /*
+  Design-system tokens (Gnos3-Kit/design-system-shadcn.html → Tokens): shadcn's names with
+  Gnos3's values. The shadcn-svelte components in $lib/components/ui and the module screens
+  (accounting, invoices, business cards) use them: bg-background, text-muted-foreground,
+  border-input, bg-primary, ring-ring/50, text-success, bg-chart-3…
+  Most values are steps of the gray / blue ramps above. Dark ones point at the ramp on
+  purpose: the OLED theme overrides gray-800…950 inline, and these follow.
+*/
+:root {
+	--radius: 0.625rem;
+	--background: #ffffff;
+	--foreground: var(--color-black); /* Ink #0C1422 */
+	--card: #ffffff;
+	--card-foreground: var(--color-black);
+	--popover: #ffffff;
+	--popover-foreground: var(--color-black);
+	--primary: var(--color-blue-600); /* Gnos3 Blue #12489A, white text 8.7:1 */
+	--primary-foreground: #ffffff;
+	--secondary: var(--color-gray-50);
+	--secondary-foreground: var(--color-gray-900);
+	--muted: var(--color-gray-50);
+	--muted-foreground: var(--color-gray-600); /* #56637A, 6.1:1 on white */
+	--accent: var(--color-gray-50);
+	--accent-foreground: var(--color-gray-900);
+	--destructive: oklch(0.577 0.245 27.325);
+	--border: var(--color-gray-200);
+	--input: var(--color-gray-200);
+	--ring: var(--color-blue-600);
+	--sidebar: var(--color-gray-50);
+	--sidebar-foreground: var(--color-black);
+	--sidebar-primary: var(--color-blue-600);
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: var(--color-gray-100);
+	--sidebar-accent-foreground: var(--color-gray-900);
+	--sidebar-border: var(--color-gray-200);
+	--sidebar-ring: var(--color-blue-600);
+
+	/* Charts: palette.ts's eight colours in the order that passes the colour-blindness check */
+	--chart-1: #2a78d6;
+	--chart-2: #eb6834;
+	--chart-3: #1baf7a;
+	--chart-4: #eda100;
+	--chart-5: #e87ba4;
+	--chart-6: #008300;
+	--chart-7: #4a3aa7;
+	--chart-8: #e34948;
+
+	/* Gnos3 additions */
+	--brand: var(--color-blue-600);
+	--brand-foreground: #ffffff;
+	--link: var(--color-blue-600);
+	--info: var(--color-blue-600);
+	--success: #008236;
+	--warning: #bb4d00;
+	--success-foreground: color-mix(in oklab, var(--success) 80%, var(--foreground));
+	--warning-foreground: color-mix(in oklab, var(--warning) 80%, var(--foreground));
+	--info-foreground: color-mix(in oklab, var(--info) 80%, var(--foreground));
+	--danger-foreground: color-mix(in oklab, var(--destructive) 80%, var(--foreground));
+
+	/* Brand Kit colours: the mark, splash, sign-in and marketing, not UI surfaces */
+	--gnos3-blue: #12489a;
+	--gnos3-navy: #17396a;
+	--gnos3-midnight: #192a42;
+	--gnos3-ink: #0c1422;
+	--gnos3-graphite: #18191d;
+	--gnos3-mist: #eef2f8;
+}
+
+.dark {
+	--background: var(--color-gray-950); /* #0A1019 */
+	--foreground: #e8edf5;
+	--card: var(--color-gray-900); /* #121A28 */
+	--card-foreground: #e8edf5;
+	--popover: var(--color-gray-900);
+	--popover-foreground: #e8edf5;
+	--primary: #1f62d1; /* lifted Gnos3 Blue, white text 5.6:1 */
+	--primary-foreground: #ffffff;
+	--secondary: var(--color-gray-850);
+	--secondary-foreground: #e8edf5;
+	--muted: var(--color-gray-850); /* #1A2436 */
+	--muted-foreground: var(--color-gray-500); /* #93A0B6, 7.2:1 */
+	--accent: var(--color-gray-850);
+	--accent-foreground: #e8edf5;
+	--destructive: oklch(0.704 0.191 22.216);
+	--border: var(--color-gray-800); /* #233047 */
+	--input: color-mix(in srgb, var(--color-gray-800) 75%, var(--color-gray-700)); /* #2A3850 */
+	--ring: var(--color-blue-400); /* #6E9CEB */
+	--sidebar: color-mix(in srgb, var(--color-gray-950), var(--color-gray-900)); /* #0E1522 */
+	--sidebar-foreground: #e8edf5;
+	--sidebar-primary: #1f62d1;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: var(--color-gray-850);
+	--sidebar-accent-foreground: #e8edf5;
+	--sidebar-border: var(--color-gray-800);
+	--sidebar-ring: var(--color-blue-400);
+	--chart-1: #3987e5;
+	--chart-2: #d95926;
+	--chart-3: #199e70;
+	--chart-4: #c98500;
+	--chart-5: #d55181;
+	--chart-6: #008300;
+	--chart-7: #9085e9;
+	--chart-8: #e66767;
+	--brand: #1f62d1;
+	--link: var(--color-blue-400);
+	--info: var(--color-blue-400);
+	--success: #05df72;
+	--warning: #ffb900;
+}
+
+@theme inline {
+	--radius-sm: calc(var(--radius) - 4px); /* 6px: menu items */
+	--radius-md: calc(var(--radius) - 2px); /* 8px: buttons, inputs, badges */
+	--radius-lg: var(--radius); /* 10px: dialogs, alerts */
+	--radius-xl: calc(var(--radius) + 4px); /* 14px: cards */
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	--color-chart-6: var(--chart-6);
+	--color-chart-7: var(--chart-7);
+	--color-chart-8: var(--chart-8);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-brand: var(--brand);
+	--color-brand-foreground: var(--brand-foreground);
+	--color-link: var(--link);
+	--color-info: var(--info);
+	--color-success: var(--success);
+	--color-warning: var(--warning);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning-foreground: var(--warning-foreground);
+	--color-info-foreground: var(--info-foreground);
+	--color-danger-foreground: var(--danger-foreground);
+	--color-gnos3-blue: var(--gnos3-blue);
+	--color-gnos3-navy: var(--gnos3-navy);
+	--color-gnos3-midnight: var(--gnos3-midnight);
+	--color-gnos3-ink: var(--gnos3-ink);
+	--color-gnos3-graphite: var(--gnos3-graphite);
+	--color-gnos3-mist: var(--gnos3-mist);
+}
+
+/*
   The default border color has changed to `currentColor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
   looks the same as it did with Tailwind CSS v3.
@@ -70,7 +261,7 @@
 	::before,
 	::backdrop,
 	::file-selector-button {
-		border-color: var(--color-gray-200, currentColor);
+		border-color: var(--border, currentColor);
 	}
 }
 

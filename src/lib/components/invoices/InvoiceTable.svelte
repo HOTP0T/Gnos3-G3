@@ -5,24 +5,62 @@
 	import dayjs from 'dayjs';
 	import { browser } from '$app/environment';
 
-	import { getInvoices, updateInvoice, deleteInvoice, reprocessInvoice, markInvoiceReviewed, getTags, getInvoiceStats } from '$lib/apis/invoices';
-	import { getCompanies, getEmployees, getExpenseCategories } from '$lib/apis/accounting';
+	import Search from '@lucide/svelte/icons/search';
+	import Columns3 from '@lucide/svelte/icons/columns-3';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Eye from '@lucide/svelte/icons/eye';
+	import Check from '@lucide/svelte/icons/check';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Receipt from '@lucide/svelte/icons/receipt';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
-	import Pagination from '$lib/components/common/Pagination.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import Badge from '$lib/components/common/Badge.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import {
+		getInvoices,
+		updateInvoice,
+		deleteInvoice,
+		reprocessInvoice,
+		markInvoiceReviewed,
+		getTags,
+		getInvoiceStats
+	} from '$lib/apis/invoices';
+	import { getCompanies, getEmployees, getExpenseCategories } from '$lib/apis/accounting';
+	import { k4miDocHref } from '$lib/apis/k4mi';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
+	import TablePagination from '$lib/components/gnos3-ui/TablePagination.svelte';
 	import FilterBar from '$lib/components/invoices/FilterBar.svelte';
 	import ExportButton from '$lib/components/invoices/ExportButton.svelte';
 	import DocumentPreviewModal from '$lib/components/invoices/DocumentPreviewModal.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	// Data
 	let invoices: any[] = [];
 	let total = 0;
 	let loading = true;
+	let loadError = '';
 
 	// Pagination
 	let page = 1;
@@ -30,7 +68,7 @@
 
 	// Filters
 	let filters: Record<string, any> = {};
-	let showFilters = false;
+	let needsReviewFilter: boolean | undefined = undefined;
 	let availableTags: string[] = [];
 
 	// Lookups for Company / Employee / Category columns
@@ -53,10 +91,7 @@
 				Object.keys(companiesById).map(async (cidStr) => {
 					const cid = Number(cidStr);
 					try {
-						const [eRes, cRes] = await Promise.all([
-							getEmployees(cid),
-							getExpenseCategories(cid)
-						]);
+						const [eRes, cRes] = await Promise.all([getEmployees(cid), getExpenseCategories(cid)]);
 						for (const emp of eRes?.employees ?? []) empMap[emp.id] = emp;
 						for (const cat of cRes?.categories ?? []) catMap[cat.id] = cat;
 					} catch {
@@ -88,8 +123,8 @@
 			sortBy = key;
 			sortDir = 'asc';
 		}
-		page = 1;
-		loadInvoices();
+		if (page !== 1) page = 1;
+		else loadInvoices();
 	};
 
 	// Editing
@@ -138,25 +173,78 @@
 	// Column widths — persisted to localStorage
 	const COL_WIDTHS_KEY = 'invoice-col-widths';
 	const DEFAULT_WIDTHS: Record<string, number> = {
-		vendor_name: 150,
-		invoice_number: 120,
-		invoice_date: 95,
-		due_date: 95,
-		currency: 50,
-		subtotal: 80,
-		tax_amount: 70,
-		total_amount: 85,
-		payment_terms: 100,
-		po_number: 90,
-		client_name: 120,
-		description: 150,
-		_company: 130,
-		_employee: 130,
-		_category: 110,
-		_status: 95,
-		_confidence: 88,
-		_actions: 95
+		vendor_name: 170,
+		invoice_number: 130,
+		invoice_date: 104,
+		due_date: 104,
+		currency: 72,
+		subtotal: 104,
+		tax_amount: 92,
+		total_amount: 112,
+		payment_terms: 110,
+		po_number: 100,
+		client_name: 130,
+		description: 160,
+		_company: 150,
+		_employee: 140,
+		_category: 130,
+		_status: 180,
+		_confidence: 120,
+		_actions: 76
 	};
+
+	// Columns after the editable ones; Vendor is always shown.
+	const EXTRA_COLUMNS: Array<{ key: string; label: string; sortKey?: string }> = [
+		{ key: '_company', label: 'Company' },
+		{ key: '_employee', label: 'Employee' },
+		{ key: '_category', label: 'Category' },
+		{ key: '_status', label: 'Status', sortKey: 'processing_status' },
+		{ key: '_confidence', label: 'Confidence', sortKey: 'confidence_score' }
+	];
+	const ALL_COLUMN_KEYS = [
+		...EDITABLE_COLUMNS.map((c) => c.key),
+		...EXTRA_COLUMNS.map((c) => c.key)
+	];
+	const ALWAYS_VISIBLE = 'vendor_name';
+	const COL_VISIBLE_KEY = 'invoice-table-columns';
+
+	let visibleColumns: Set<string> = (() => {
+		try {
+			const saved = localStorage.getItem(COL_VISIBLE_KEY);
+			return new Set<string>(saved ? JSON.parse(saved) : ALL_COLUMN_KEYS);
+		} catch {
+			return new Set<string>(ALL_COLUMN_KEYS);
+		}
+	})();
+
+	const saveVisibleColumns = () => {
+		try {
+			localStorage.setItem(COL_VISIBLE_KEY, JSON.stringify(Array.from(visibleColumns)));
+		} catch {}
+	};
+
+	const toggleColumn = (key: string) => {
+		const next = new Set(visibleColumns);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		visibleColumns = next;
+		saveVisibleColumns();
+	};
+
+	const showAllColumns = () => {
+		visibleColumns = new Set(ALL_COLUMN_KEYS);
+		saveVisibleColumns();
+	};
+
+	$: shownEditable = EDITABLE_COLUMNS.filter(
+		(c) => c.key === ALWAYS_VISIBLE || visibleColumns.has(c.key)
+	);
+	$: shownExtra = EXTRA_COLUMNS.filter((c) => visibleColumns.has(c.key));
+	$: colCount = shownEditable.length + shownExtra.length + 1;
+	$: tableWidth = [...shownEditable, ...shownExtra, { key: '_actions' }].reduce(
+		(sum, c) => sum + (colWidths[c.key] ?? 100),
+		0
+	);
 
 	let colWidths: Record<string, number> = (() => {
 		try {
@@ -168,7 +256,9 @@
 	})();
 
 	const saveColWidths = () => {
-		localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidths));
+		try {
+			localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidths));
+		} catch {}
 	};
 
 	// Column resize drag
@@ -196,8 +286,13 @@
 		saveColWidths();
 	};
 
+	// The page that was last loaded: a page change reloads once (see the reactive block below).
+	let lastPage = 1;
+
 	const loadInvoices = async () => {
 		loading = true;
+		loadError = '';
+		lastPage = page;
 		try {
 			const params: Record<string, any> = {
 				...filters,
@@ -217,6 +312,7 @@
 				total = res.total;
 			}
 		} catch (err) {
+			loadError = `${err}`;
 			toast.error(`${err}`);
 		}
 		loading = false;
@@ -236,8 +332,13 @@
 		}, 300);
 	};
 
+	$: filtersActive =
+		!!searchQuery || Object.values(filters).some((v) => v !== undefined && v !== '' && v !== null);
+
 	// Inline editing
 	const startEdit = (invoice: any, field: string) => {
+		// Clicking inside the open editor must not reset what was typed.
+		if (editingCell?.id === invoice.id && editingCell?.field === field) return;
 		editingCell = { id: invoice.id, field };
 		const val = invoice[field];
 		if (val === null || val === undefined) {
@@ -272,7 +373,10 @@
 		const oldVal = invoice[field];
 		const oldStr = oldVal === null || oldVal === undefined ? '' : String(oldVal);
 		const newStr = updateVal === null ? '' : String(updateVal);
-		if (oldStr === newStr || (col?.type === 'date' && dayjs(oldStr).format('YYYY-MM-DD') === newStr)) {
+		if (
+			oldStr === newStr ||
+			(col?.type === 'date' && dayjs(oldStr).format('YYYY-MM-DD') === newStr)
+		) {
 			editingCell = null;
 			return;
 		}
@@ -395,9 +499,18 @@
 		showPreview = true;
 	};
 
+	// Row actions: what each row offers
+	const canMarkReviewed = (invoice: any) =>
+		invoice.needs_review && invoice.processing_status !== 'processing';
+	const canReprocess = (invoice: any) =>
+		invoice.processing_status !== 'processing' &&
+		(invoice.processing_status === 'failed' ||
+			invoice.needs_review ||
+			(invoice.confidence_score !== null && parseFloat(invoice.confidence_score) < 0.7));
+
 	// Cell display helpers
 	const formatCurrency = (val: any) => {
-		if (val === null || val === undefined) return '-';
+		if (val === null || val === undefined) return '—';
 		return parseFloat(val).toLocaleString(undefined, {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 2
@@ -405,13 +518,13 @@
 	};
 
 	const formatDate = (val: any) => {
-		if (!val) return '-';
+		if (!val) return '—';
 		return dayjs(val).format('YYYY-MM-DD');
 	};
 
 	const displayValue = (invoice: any, col: any) => {
 		const val = invoice[col.key];
-		if (val === null || val === undefined) return '-';
+		if (val === null || val === undefined) return '—';
 		if (col.type === 'number') return formatCurrency(val);
 		if (col.type === 'date') return formatDate(val);
 		return String(val);
@@ -461,12 +574,8 @@
 	};
 
 	// React to page changes only after initial load
-	$: if (mounted && page) {
+	$: if (mounted && page !== lastPage) {
 		loadInvoices();
-	}
-
-	$: if (mounted && showFilters) {
-		getTags(localStorage.token).then((t) => (availableTags = t));
 	}
 
 	onMount(() => {
@@ -481,7 +590,7 @@
 			}
 			if (urlNeedsReview === 'true') {
 				filters = { ...filters, needs_review: true };
-				showFilters = true;
+				needsReviewFilter = true;
 			}
 		}
 
@@ -489,16 +598,25 @@
 			mounted = true;
 			refreshInterval = setInterval(pollStats, POLL_INTERVAL_MS);
 		});
-		getTags(localStorage.token).then((t) => (availableTags = t));
+		getTags(localStorage.token)
+			.then((t) => (availableTags = t ?? []))
+			.catch(() => {});
 		loadAccountingLookups();
 	});
 </script>
 
 <ConfirmDialog
-	bind:show={showDeleteConfirm}
-	on:confirm={handleDelete}
-	title={$i18n.t('Delete Invoice')}
-	message={$i18n.t('Are you sure you want to delete this invoice? This action cannot be undone.')}
+	bind:open={showDeleteConfirm}
+	title={$i18n.t('Delete invoice?')}
+	description={deleteTarget
+		? `${deleteTarget.invoice_number || deleteTarget.vendor_name || `#${deleteTarget.id}`} ${$i18n.t(
+				'and its extracted data will be removed. The K4mi document stays. This cannot be undone.'
+			)}`
+		: ''}
+	confirmLabel={$i18n.t('Delete')}
+	destructive
+	onconfirm={handleDelete}
+	oncancel={() => (deleteTarget = null)}
 />
 
 <DocumentPreviewModal
@@ -514,466 +632,390 @@
 	}}
 />
 
-<div class="py-2">
-	<!-- Header -->
-	<div
-		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900"
+{#snippet sortLabel(sortKey: string, label: string, right: boolean)}
+	<button
+		type="button"
+		class="-mx-1 inline-flex max-w-full items-center gap-1 rounded-sm px-1 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none {right
+			? 'flex-row-reverse'
+			: ''}"
+		on:click={() => handleSort(sortKey)}
+		aria-sort={sortBy === sortKey ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
 	>
-		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
-			<div class="flex-shrink-0 dark:text-gray-200">{$i18n.t('Invoices')}</div>
-			<div class="text-lg font-medium text-gray-500 dark:text-gray-500">
-				{total}
-			</div>
+		<span class="truncate">{$i18n.t(label)}</span>
+		{#if sortBy === sortKey}
+			{#if sortDir === 'asc'}<ArrowUp
+					class="size-3.5 shrink-0 text-muted-foreground"
+				/>{:else}<ArrowDown class="size-3.5 shrink-0 text-muted-foreground" />{/if}
+		{:else}
+			<ArrowUpDown class="size-3.5 shrink-0 text-muted-foreground/50" />
+		{/if}
+	</button>
+{/snippet}
+
+{#snippet resizeHandle(key: string)}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize opacity-0 transition-opacity hover:bg-ring/60 hover:opacity-100"
+		on:mousedown={(e) => startResize(e, key)}
+	></div>
+{/snippet}
+
+<div class="flex flex-col gap-4">
+	<!-- Toolbar: search, faceted filters, Columns, Export -->
+	<div class="flex flex-wrap items-center gap-2">
+		<div class="relative w-full sm:w-64">
+			<Search
+				class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+			/>
+			<Input
+				type="search"
+				class="h-8 pl-8"
+				aria-label={$i18n.t('Search invoices...')}
+				placeholder={$i18n.t('Search invoices...')}
+				bind:value={searchQuery}
+				oninput={handleSearch}
+			/>
 		</div>
 
-		<div class="flex gap-1">
-			<div class="flex w-full space-x-2">
-				<!-- Search -->
-				<div class="flex flex-1">
-					<div class="self-center ml-1 mr-3">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="2"
-							stroke="currentColor"
-							class="size-3.5"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-							/>
-						</svg>
-					</div>
-					<input
-						class="w-full text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent dark:text-gray-200"
-						bind:value={searchQuery}
-						on:input={handleSearch}
-						placeholder={$i18n.t('Search invoices...')}
-					/>
-				</div>
+		<FilterBar bind:needsReview={needsReviewFilter} {availableTags} on:filter={handleFilter} />
 
-				<!-- Filter toggle -->
-				<Tooltip content={$i18n.t('Filters')}>
-					<button
-						class="p-2 rounded-xl hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-850 transition font-medium text-sm"
-						on:click={() => {
-							showFilters = !showFilters;
-						}}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="2"
-							stroke="currentColor"
-							class="size-3.5"
+		<div class="ml-auto flex items-center gap-2">
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="outline" size="sm">
+							<Columns3 />{$i18n.t('Columns')}
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="max-h-[60vh] w-56 overflow-y-auto">
+					<DropdownMenu.Label>{$i18n.t('Visible columns')}</DropdownMenu.Label>
+					{#each [...EDITABLE_COLUMNS, ...EXTRA_COLUMNS] as col}
+						<DropdownMenu.CheckboxItem
+							checked={col.key === ALWAYS_VISIBLE || visibleColumns.has(col.key)}
+							disabled={col.key === ALWAYS_VISIBLE}
+							closeOnSelect={false}
+							onCheckedChange={() => col.key !== ALWAYS_VISIBLE && toggleColumn(col.key)}
 						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"
-							/>
-						</svg>
-					</button>
-				</Tooltip>
+							{$i18n.t(col.label)}
+						</DropdownMenu.CheckboxItem>
+					{/each}
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item onSelect={showAllColumns}>{$i18n.t('Show all')}</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 
-				<!-- Export -->
-				<ExportButton {invoices} />
-			</div>
+			<ExportButton {invoices} />
 		</div>
 	</div>
 
-	<!-- Filters -->
-	<FilterBar bind:show={showFilters} {availableTags} on:filter={handleFilter} />
-
-	<!-- Table -->
-	{#if loading && invoices.length === 0}
-		<div class="flex justify-center my-10">
-			<Spinner className="size-5" />
+	{#if loadError && invoices.length === 0 && !loading}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load invoices.')}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={loadInvoices}>
+					<RefreshCw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{:else if loading && invoices.length === 0}
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(8) as _}
+				<Skeleton class="h-8 w-full" />
+			{/each}
 		</div>
 	{:else if invoices.length === 0}
-		<div class="flex justify-center my-10 text-sm text-gray-500">
-			{$i18n.t('No invoices found')}
-		</div>
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><Receipt /></Empty.Media>
+				<Empty.Title>{$i18n.t('No invoices found')}</Empty.Title>
+				<Empty.Description>
+					{#if filtersActive}
+						{$i18n.t('Try another search or clear the filters.')}
+					{:else}
+						{$i18n.t('Tag a K4mi document with')} <code>invoice</code>
+						{$i18n.t('to extract one.')}
+					{/if}
+				</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{:else}
-		<div class="overflow-x-auto">
-			<table
-				class="text-sm text-left text-gray-900 dark:text-gray-100 table-fixed"
-				style="width: {Object.values(colWidths).reduce((a, b) => a + b, 0)}px; min-width: 100%;"
-			>
-				<thead
-					class="text-xs text-gray-900 dark:text-gray-100 font-bold uppercase bg-gray-100 dark:bg-gray-800"
-				>
-					<tr class="border-b-[1.5px] border-gray-200 dark:border-gray-700">
-						{#each EDITABLE_COLUMNS as col}
-							<th
-								scope="col"
-								class="px-2.5 py-2 whitespace-nowrap relative {col.align === 'right' ? 'text-right' : ''}"
+		<!-- Table box: wide, scrolls sideways with Vendor pinned -->
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root class="table-fixed text-[13px]" style="width: {tableWidth}px; min-width: 100%;">
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						{#each shownEditable as col (col.key)}
+							<Table.Head
+								class="relative {col.align === 'right' ? 'text-right' : ''} {col.key ===
+								ALWAYS_VISIBLE
+									? 'sticky left-0 z-[2] bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))] shadow-[inset_-1px_0_0_var(--border)]'
+									: ''}"
 								style="width: {colWidths[col.key]}px"
 							>
-								<div
-									class="flex items-center gap-1 cursor-pointer select-none {col.align === 'right' ? 'justify-end' : ''}"
-									on:click={() => handleSort(col.key)}
-								>
-									<span>{$i18n.t(col.label)}</span>
-									{#if sortBy === col.key}
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-3 flex-shrink-0">
-											{#if sortDir === 'asc'}
-												<path fill-rule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 10.53a.75.75 0 1 1 1.06-1.06l1.97 1.97V2.75A.75.75 0 0 1 8 2Z" clip-rule="evenodd" />
-											{:else}
-												<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L5.28 6.53a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
-											{/if}
-										</svg>
-									{:else}
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-3 flex-shrink-0 opacity-25">
-											<path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Zm0 3.25a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
-										</svg>
-									{/if}
-								</div>
-								<div
-									class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 transition-opacity"
-									on:mousedown={(e) => startResize(e, col.key)}
-								></div>
-							</th>
+								{@render sortLabel(col.key, col.label, col.align === 'right')}
+								{@render resizeHandle(col.key)}
+							</Table.Head>
 						{/each}
-						<th scope="col" class="px-2.5 py-2" style="width: {colWidths._company}px">
-							<span>{$i18n.t('Company')}</span>
-						</th>
-						<th scope="col" class="px-2.5 py-2" style="width: {colWidths._employee}px">
-							<span>{$i18n.t('Employee')}</span>
-						</th>
-						<th scope="col" class="px-2.5 py-2" style="width: {colWidths._category}px">
-							<span>{$i18n.t('Category')}</span>
-						</th>
-						<th scope="col" class="px-2.5 py-2 relative" style="width: {colWidths._status}px">
-							<div class="flex items-center gap-1 cursor-pointer select-none" on:click={() => handleSort('processing_status')}>
-								<span>{$i18n.t('Status')}</span>
-								{#if sortBy === 'processing_status'}
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-3 flex-shrink-0">
-										{#if sortDir === 'asc'}
-											<path fill-rule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 10.53a.75.75 0 1 1 1.06-1.06l1.97 1.97V2.75A.75.75 0 0 1 8 2Z" clip-rule="evenodd" />
-										{:else}
-											<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L5.28 6.53a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
-										{/if}
-									</svg>
+						{#each shownExtra as col (col.key)}
+							<Table.Head class="relative" style="width: {colWidths[col.key]}px">
+								{#if col.sortKey}
+									{@render sortLabel(col.sortKey, col.label, false)}
 								{:else}
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-3 flex-shrink-0 opacity-25">
-										<path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Zm0 3.25a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
-									</svg>
+									{$i18n.t(col.label)}
 								{/if}
-							</div>
-							<div class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 transition-opacity" on:mousedown={(e) => startResize(e, '_status')}></div>
-						</th>
-						<th scope="col" class="px-2.5 py-2 relative" style="width: {colWidths._confidence}px">
-							<div class="flex items-center gap-1 cursor-pointer select-none" on:click={() => handleSort('confidence_score')}>
-								<span>{$i18n.t('Confidence')}</span>
-								{#if sortBy === 'confidence_score'}
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-3 flex-shrink-0">
-										{#if sortDir === 'asc'}
-											<path fill-rule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 10.53a.75.75 0 1 1 1.06-1.06l1.97 1.97V2.75A.75.75 0 0 1 8 2Z" clip-rule="evenodd" />
-										{:else}
-											<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L5.28 6.53a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
-										{/if}
-									</svg>
-								{:else}
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-3 flex-shrink-0 opacity-25">
-										<path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Zm0 3.25a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
-									</svg>
-								{/if}
-							</div>
-							<div class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 transition-opacity" on:mousedown={(e) => startResize(e, '_confidence')}></div>
-						</th>
-						<th scope="col" class="px-2.5 py-2 text-right" style="width: {colWidths._actions}px">{$i18n.t('Actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
+								{@render resizeHandle(col.key)}
+							</Table.Head>
+						{/each}
+						<Table.Head style="width: {colWidths._actions}px">
+							<span class="sr-only">{$i18n.t('Actions')}</span>
+						</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each invoices as invoice (invoice.id)}
-						<tr
-							class="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-850 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
-						>
-							{#each EDITABLE_COLUMNS as col}
-								<td
-									class="px-3 py-1 overflow-hidden {col.align === 'right' ? 'text-right' : ''} cursor-pointer"
+						{@const busy = reprocessingIds.has(invoice.id) || reviewingIds.has(invoice.id)}
+						<Table.Row class="group">
+							{#each shownEditable as col (col.key)}
+								{@const editing = editingCell?.id === invoice.id && editingCell?.field === col.key}
+								<Table.Cell
+									class="cursor-pointer overflow-hidden px-2.5 py-1 {col.align === 'right'
+										? 'text-right tabular-nums'
+										: ''} {col.key === ALWAYS_VISIBLE
+										? 'sticky left-0 z-[1] bg-background font-medium shadow-[inset_-1px_0_0_var(--border)] group-hover:bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))]'
+										: ''}"
 									style="max-width: {colWidths[col.key]}px"
-									on:click={() => startEdit(invoice, col.key)}
+									onclick={() => startEdit(invoice, col.key)}
 								>
-									{#if editingCell?.id === invoice.id && editingCell?.field === col.key}
-										{#if col.type === 'date'}
-											<input
-												class="w-full text-xs bg-transparent outline-hidden border-b border-blue-500"
-												type="date"
-												bind:value={editValue}
-												on:keydown={handleKeydown}
-												on:blur={saveEdit}
-												autofocus
-											/>
-										{:else if col.type === 'number'}
-											<input
-												class="w-full text-xs bg-transparent outline-hidden border-b border-blue-500 {col.align === 'right' ? 'text-right' : ''}"
-												type="number"
-												step="0.01"
-												bind:value={editValue}
-												on:keydown={handleKeydown}
-												on:blur={saveEdit}
-												autofocus
-											/>
-										{:else}
-											<input
-												class="w-full text-xs bg-transparent outline-hidden border-b border-blue-500"
-												type="text"
-												maxlength={col.maxLength}
-												bind:value={editValue}
-												on:keydown={handleKeydown}
-												on:blur={saveEdit}
-												autofocus
-											/>
-										{/if}
+									{#if editing}
+										<!-- svelte-ignore a11y_autofocus -->
+										<input
+											class="h-7 w-full min-w-0 rounded-md border border-ring bg-background px-1.5 text-[13px] ring-[3px] ring-ring/50 outline-none {col.align ===
+											'right'
+												? 'text-right tabular-nums'
+												: ''}"
+											type={col.type === 'date'
+												? 'date'
+												: col.type === 'number'
+													? 'number'
+													: 'text'}
+											step={col.type === 'number' ? '0.01' : undefined}
+											maxlength={col.type === 'text' ? col.maxLength : undefined}
+											aria-label={$i18n.t(col.label)}
+											bind:value={editValue}
+											on:keydown={handleKeydown}
+											on:blur={saveEdit}
+											autofocus
+										/>
 									{:else}
-										{@const cellVal = displayValue(invoice, col)}
 										{@const rawVal = invoice[col.key]}
 										{#if rawVal !== null && rawVal !== undefined && String(rawVal) !== ''}
-											<Tooltip content={String(rawVal)}>
-												<span class="block w-full overflow-hidden text-ellipsis whitespace-nowrap">
-													{cellVal}
-												</span>
-											</Tooltip>
+											<span
+												class="block truncate {col.key === 'invoice_number' ||
+												col.key === 'po_number'
+													? 'font-mono text-[12.5px]'
+													: ''} {col.key === 'currency' ? 'text-muted-foreground' : ''}"
+												title={String(rawVal)}>{displayValue(invoice, col)}</span
+											>
 										{:else}
-											<span class="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-gray-400">
-												{cellVal}
-											</span>
+											<span class="block truncate text-muted-foreground">—</span>
 										{/if}
 									{/if}
-								</td>
+								</Table.Cell>
 							{/each}
 
-							<!-- Company -->
-							<td class="px-3 py-1 overflow-hidden text-ellipsis whitespace-nowrap" style="max-width: {colWidths._company}px">
-								{#if invoice.company_id && companiesById[invoice.company_id]}
-									<Tooltip content={companiesById[invoice.company_id].name}>
-										<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 whitespace-nowrap">
-											{companiesById[invoice.company_id].name}
-										</span>
-									</Tooltip>
-								{:else}
-									<span class="text-gray-300 dark:text-gray-600">—</span>
-								{/if}
-							</td>
-
-							<!-- Employee -->
-							<td class="px-3 py-1 overflow-hidden text-ellipsis whitespace-nowrap" style="max-width: {colWidths._employee}px">
-								{#if invoice.employee_id && employeesById[invoice.employee_id]}
-									{@const emp = employeesById[invoice.employee_id]}
-									<Tooltip content="{emp.full_name} ({emp.code})">
-										<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
-											{emp.full_name}
-										</span>
-									</Tooltip>
-								{:else}
-									<span class="text-gray-300 dark:text-gray-600">—</span>
-								{/if}
-							</td>
-
-							<!-- Category -->
-							<td class="px-3 py-1 overflow-hidden text-ellipsis whitespace-nowrap" style="max-width: {colWidths._category}px">
-								{#if invoice.expense_category_id && categoriesById[invoice.expense_category_id]}
-									<Tooltip content={categoriesById[invoice.expense_category_id].label}>
-										<span class="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 whitespace-nowrap">
-											{categoriesById[invoice.expense_category_id].label}
-										</span>
-									</Tooltip>
-								{:else}
-									<span class="text-gray-300 dark:text-gray-600">—</span>
-								{/if}
-							</td>
-
-							<!-- Status -->
-							<td class="px-3 py-1">
-								<Badge
-									type={invoice.processing_status === 'completed'
-										? 'success'
-										: invoice.processing_status === 'failed'
-											? 'error'
-											: 'muted'}
-									content={invoice.processing_status}
-								/>
-							</td>
-
-							<!-- Confidence -->
-							<td class="px-3 py-1">
-								{#if invoice.confidence_score !== null}
-									<Badge
-										type={parseFloat(invoice.confidence_score) >= 0.7
-											? 'success'
-											: parseFloat(invoice.confidence_score) >= 0.4
-												? 'warning'
-												: 'error'}
-										content={`${(parseFloat(invoice.confidence_score) * 100).toFixed(0)}%`}
-									/>
-								{:else}
-									<span class="text-gray-400">-</span>
-								{/if}
-							</td>
-
-							<!-- Actions -->
-							<td class="px-3 py-1 text-right whitespace-nowrap">
-								<div class="flex items-center justify-end gap-1">
-									<!-- Preview -->
-									<Tooltip content={$i18n.t('Preview')}>
-										<button
-											class="p-1 hover:bg-gray-100 dark:hover:bg-gray-850 rounded-lg transition"
-											on:click={() => openPreview(invoice)}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke-width="2"
-												stroke="currentColor"
-												class="size-3.5"
+							{#each shownExtra as col (col.key)}
+								<Table.Cell
+									class="overflow-hidden px-2.5 py-1"
+									style="max-width: {colWidths[col.key]}px"
+								>
+									{#if col.key === '_company'}
+										{#if invoice.company_id && companiesById[invoice.company_id]}
+											<Badge
+												variant="secondary"
+												class="max-w-full justify-start"
+												title={companiesById[invoice.company_id].name}
 											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"
-												/>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-												/>
-											</svg>
-										</button>
-									</Tooltip>
-
-									<!-- Expand -->
-									<Tooltip content={$i18n.t('Details')}>
-										<button
-											class="p-1 hover:bg-gray-100 dark:hover:bg-gray-850 rounded-lg transition"
-											on:click={() => toggleExpand(invoice.id)}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke-width="2"
-												stroke="currentColor"
-												class="size-3.5 transition-transform {expandedRows.has(
-													invoice.id
-												)
-													? 'rotate-180'
-													: ''}"
+												<span class="truncate">{companiesById[invoice.company_id].name}</span>
+											</Badge>
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									{:else if col.key === '_employee'}
+										{#if invoice.employee_id && employeesById[invoice.employee_id]}
+											{@const emp = employeesById[invoice.employee_id]}
+											<Badge
+												variant="secondary"
+												class="max-w-full justify-start"
+												title="{emp.full_name} ({emp.code})"
 											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="m19.5 8.25-7.5 7.5-7.5-7.5"
-												/>
-											</svg>
-										</button>
-									</Tooltip>
+												<span class="truncate">{emp.full_name}</span>
+											</Badge>
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									{:else if col.key === '_category'}
+										{#if invoice.expense_category_id && categoriesById[invoice.expense_category_id]}
+											<Badge
+												variant="secondary"
+												class="max-w-full justify-start"
+												title={categoriesById[invoice.expense_category_id].label}
+											>
+												<span class="truncate"
+													>{categoriesById[invoice.expense_category_id].label}</span
+												>
+											</Badge>
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									{:else if col.key === '_status'}
+										<div class="flex items-center gap-1">
+											<StatusBadge kind="extraction" status={invoice.processing_status} />
+											{#if invoice.needs_review}
+												<span class="inline-flex" title={$i18n.t('Needs review')}>
+													<StatusBadge
+														kind="extraction"
+														status="needs_review"
+														label={$i18n.t('Review')}
+													/>
+												</span>
+											{/if}
+										</div>
+									{:else if col.key === '_confidence'}
+										{#if invoice.confidence_score !== null && invoice.confidence_score !== undefined}
+											<StatusBadge kind="confidence" status={invoice.confidence_score} />
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									{/if}
+								</Table.Cell>
+							{/each}
 
-									<!-- Mark reviewed -->
-									{#if invoice.needs_review && invoice.processing_status !== 'processing'}
-										<Tooltip content={$i18n.t('Mark reviewed — clears the flag and removes the needs-review tag in K4mi')}>
-											<button
-												class="p-1 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition text-emerald-600 disabled:opacity-50"
+							<!-- Actions: one contextual button, the rest in the menu -->
+							<Table.Cell class="px-1.5 py-1 text-right">
+								<div class="flex items-center justify-end gap-0.5">
+									{#if canMarkReviewed(invoice)}
+										<Tip
+											content={$i18n.t(
+												'Mark reviewed — clears the flag and removes the needs-review tag in K4mi'
+											)}
+										>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Mark reviewed')}
 												disabled={reviewingIds.has(invoice.id)}
-												on:click={() => handleMarkReviewed(invoice)}
+												onclick={() => handleMarkReviewed(invoice)}
 											>
-												{#if reviewingIds.has(invoice.id)}
-													<Spinner className="size-3.5" />
-												{:else}
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke-width="2"
-														stroke="currentColor"
-														class="size-3.5"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-														/>
-													</svg>
-												{/if}
-											</button>
-										</Tooltip>
+												{#if reviewingIds.has(invoice.id)}<Spinner />{:else}<Check />{/if}
+											</Button>
+										</Tip>
+									{:else if invoice.processing_status === 'failed'}
+										<Tip content={$i18n.t('Reprocess')}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Reprocess')}
+												disabled={reprocessingIds.has(invoice.id)}
+												onclick={() => handleReprocess(invoice)}
+											>
+												{#if reprocessingIds.has(invoice.id)}<Spinner />{:else}<RotateCcw />{/if}
+											</Button>
+										</Tip>
+									{:else}
+										<Tip content={$i18n.t('Preview')}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Preview')}
+												onclick={() => openPreview(invoice)}
+											>
+												<Eye />
+											</Button>
+										</Tip>
 									{/if}
 
-									<!-- Reprocess -->
-									{#if invoice.processing_status !== 'processing' && (invoice.processing_status === 'failed' || invoice.needs_review || (invoice.confidence_score !== null && parseFloat(invoice.confidence_score) < 0.7))}
-										<Tooltip content={$i18n.t('Reprocess')}>
-											<button
-												class="p-1 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition text-orange-500 disabled:opacity-50"
-												disabled={reprocessingIds.has(invoice.id) || invoice.processing_status === 'processing'}
-												on:click={() => handleReprocess(invoice)}
+									<DropdownMenu.Root>
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-xs"
+													aria-label={$i18n.t('More actions')}
+												>
+													{#if busy}<Spinner />{:else}<Ellipsis />{/if}
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content align="end" class="w-56">
+											<DropdownMenu.Label class="truncate text-muted-foreground">
+												{invoice.invoice_number || invoice.vendor_name || `#${invoice.id}`}
+											</DropdownMenu.Label>
+											<DropdownMenu.Item onSelect={() => openPreview(invoice)}>
+												<Eye />{$i18n.t('Preview')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onSelect={() => toggleExpand(invoice.id)}>
+												{#if expandedRows.has(invoice.id)}<ChevronUp />{:else}<ChevronDown />{/if}
+												{$i18n.t('Details')}
+											</DropdownMenu.Item>
+											{#if invoice.k4mi_document_id}
+												<DropdownMenu.Item>
+													{#snippet child({ props })}
+														<a
+															{...props}
+															href={k4miDocHref(invoice.k4mi_document_id)}
+															target="_blank"
+															rel="noopener noreferrer"
+														>
+															<ExternalLink />{$i18n.t('Open in K4mi')}
+														</a>
+													{/snippet}
+												</DropdownMenu.Item>
+											{/if}
+											{#if canMarkReviewed(invoice)}
+												<DropdownMenu.Item
+													disabled={reviewingIds.has(invoice.id)}
+													onSelect={() => handleMarkReviewed(invoice)}
+												>
+													<Check />{$i18n.t('Mark reviewed')}
+												</DropdownMenu.Item>
+											{/if}
+											{#if canReprocess(invoice)}
+												<DropdownMenu.Item
+													disabled={reprocessingIds.has(invoice.id)}
+													onSelect={() => handleReprocess(invoice)}
+												>
+													<RotateCcw />{$i18n.t('Reprocess')}
+												</DropdownMenu.Item>
+											{/if}
+											<DropdownMenu.Separator />
+											<DropdownMenu.Item
+												variant="destructive"
+												onSelect={() => confirmDelete(invoice)}
 											>
-												{#if reprocessingIds.has(invoice.id)}
-													<Spinner className="size-3.5" />
-												{:else}
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke-width="2"
-														stroke="currentColor"
-														class="size-3.5"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
-														/>
-													</svg>
-												{/if}
-											</button>
-										</Tooltip>
-									{/if}
-
-									<!-- Delete -->
-									<Tooltip content={$i18n.t('Delete')}>
-										<button
-											class="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition text-red-500"
-											on:click={() => confirmDelete(invoice)}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke-width="2"
-												stroke="currentColor"
-												class="size-3.5"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-												/>
-											</svg>
-										</button>
-									</Tooltip>
+												<Trash2 />{$i18n.t('Delete')}
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
 								</div>
-							</td>
-						</tr>
+							</Table.Cell>
+						</Table.Row>
 
-						<!-- Expanded Detail Row -->
+						<!-- Expanded detail row -->
 						{#if expandedRows.has(invoice.id)}
-							<tr class="bg-gray-50/50 dark:bg-gray-850/30">
-								<td colspan={EDITABLE_COLUMNS.length + 3} class="px-4 py-3">
-									<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-										<!-- Left: Raw extraction & errors -->
-										<div class="space-y-3">
+							<Table.Row class="bg-muted/30 hover:bg-muted/30">
+								<Table.Cell colspan={colCount} class="p-0 whitespace-normal">
+									<div class="sticky left-0 grid max-w-[min(72rem,100vw)] gap-6 p-4 lg:grid-cols-2">
+										<!-- Left: raw extraction & errors -->
+										<div class="flex min-w-0 flex-col gap-4">
 											{#if invoice.extraction_raw}
 												<div>
-													<div class="text-xs font-medium text-gray-500 mb-1">
-														{$i18n.t('Raw Extraction')}
-													</div>
+													<div class="mb-1.5 text-sm font-medium">{$i18n.t('Raw Extraction')}</div>
 													<pre
-														class="text-xs bg-gray-50 dark:bg-gray-850 rounded-lg p-3 overflow-auto max-h-48 dark:text-gray-300">{JSON.stringify(
+														class="max-h-48 overflow-auto rounded-md border bg-muted p-3 font-mono text-xs">{JSON.stringify(
 															invoice.extraction_raw,
 															null,
 															2
@@ -983,89 +1025,87 @@
 
 											{#if invoice.extraction_errors?.length}
 												<div>
-													<div class="text-xs font-medium text-gray-500 mb-1">
+													<div class="mb-1.5 text-sm font-medium">
 														{$i18n.t('Extraction Errors')}
 													</div>
-													<div class="space-y-1">
+													<ul class="grid gap-1 text-sm">
 														{#each invoice.extraction_errors as error}
-															<Badge type="error" content={error} />
+															<li class="flex items-start gap-1.5 text-destructive">
+																<CircleAlert class="mt-0.5 size-3.5 shrink-0" />{error}
+															</li>
 														{/each}
-													</div>
+													</ul>
 												</div>
 											{/if}
+
+											<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+												<dt class="text-muted-foreground">{$i18n.t('K4mi ID')}</dt>
+												<dd class="font-mono text-[13px]">{invoice.k4mi_document_id ?? '—'}</dd>
+												{#if invoice.extraction_model}
+													<dt class="text-muted-foreground">{$i18n.t('Model')}</dt>
+													<dd class="font-mono text-[13px] break-all">
+														{invoice.extraction_model}
+													</dd>
+												{/if}
+												{#if invoice.user_corrected}
+													<dt class="text-muted-foreground">{$i18n.t('Edits')}</dt>
+													<dd>
+														<Badge variant="outline"><Pencil />{$i18n.t('User Corrected')}</Badge>
+													</dd>
+												{/if}
+											</dl>
 										</div>
 
-										<!-- Right: Line items, notes, tags -->
-										<div class="space-y-3">
+										<!-- Right: line items, notes, tags -->
+										<div class="flex min-w-0 flex-col gap-4">
 											{#if invoice.line_items?.length}
 												<div>
-													<div class="text-xs font-medium text-gray-500 mb-1">
-														{$i18n.t('Line Items')}
+													<div class="mb-1.5 text-sm font-medium">{$i18n.t('Line Items')}</div>
+													<div class="overflow-hidden rounded-md border bg-background">
+														<Table.Root class="text-[13px]">
+															<Table.Header class="bg-muted/50">
+																<Table.Row class="hover:bg-transparent">
+																	<Table.Head class="h-8">{$i18n.t('Description')}</Table.Head>
+																	<Table.Head class="h-8 text-right">{$i18n.t('Qty')}</Table.Head>
+																	<Table.Head class="h-8 text-right">{$i18n.t('Price')}</Table.Head>
+																	<Table.Head class="h-8 text-right">{$i18n.t('Amount')}</Table.Head
+																	>
+																</Table.Row>
+															</Table.Header>
+															<Table.Body>
+																{#each invoice.line_items as item}
+																	<Table.Row>
+																		<Table.Cell class="py-1.5 whitespace-normal"
+																			>{item.description ?? '—'}</Table.Cell
+																		>
+																		<Table.Cell class="py-1.5 text-right tabular-nums"
+																			>{item.quantity ?? '—'}</Table.Cell
+																		>
+																		<Table.Cell class="py-1.5 text-right tabular-nums"
+																			>{item.unit_price != null
+																				? formatCurrency(item.unit_price)
+																				: '—'}</Table.Cell
+																		>
+																		<Table.Cell class="py-1.5 text-right tabular-nums"
+																			>{item.amount != null
+																				? formatCurrency(item.amount)
+																				: '—'}</Table.Cell
+																		>
+																	</Table.Row>
+																{/each}
+															</Table.Body>
+														</Table.Root>
 													</div>
-													<table
-														class="w-full text-xs text-left text-gray-500 dark:text-gray-400"
-													>
-														<thead>
-															<tr
-																class="border-b border-gray-100 dark:border-gray-850"
-															>
-																<th class="py-1 pr-2"
-																	>{$i18n.t('Description')}</th
-																>
-																<th class="py-1 pr-2 text-right"
-																	>{$i18n.t('Qty')}</th
-																>
-																<th class="py-1 pr-2 text-right"
-																	>{$i18n.t('Price')}</th
-																>
-																<th class="py-1 text-right"
-																	>{$i18n.t('Amount')}</th
-																>
-															</tr>
-														</thead>
-														<tbody>
-															{#each invoice.line_items as item}
-																<tr>
-																	<td class="py-0.5 pr-2 dark:text-gray-300"
-																		>{item.description ??
-																			'-'}</td
-																	>
-																	<td
-																		class="py-0.5 pr-2 text-right dark:text-gray-300"
-																		>{item.quantity ?? '-'}</td
-																	>
-																	<td
-																		class="py-0.5 pr-2 text-right dark:text-gray-300"
-																		>{item.unit_price != null
-																			? formatCurrency(
-																					item.unit_price
-																				)
-																			: '-'}</td
-																	>
-																	<td
-																		class="py-0.5 text-right dark:text-gray-300"
-																		>{item.amount != null
-																			? formatCurrency(
-																					item.amount
-																				)
-																			: '-'}</td
-																	>
-																</tr>
-															{/each}
-														</tbody>
-													</table>
 												</div>
 											{/if}
 
 											{#if invoice.k4mi_notes?.length}
 												<div>
-													<div class="text-xs font-medium text-gray-500 mb-1">
-														{$i18n.t('Notes')}
-													</div>
-													<div class="space-y-1">
+													<div class="mb-1.5 text-sm font-medium">{$i18n.t('Notes', { context: 'gnos3' })}</div>
+													<div class="grid gap-2">
 														{#each invoice.k4mi_notes as note}
 															<div
-																class="text-xs bg-gray-50 dark:bg-gray-850 rounded-lg p-2 dark:text-gray-300"
+																class="rounded-md border bg-background px-3 py-2 text-sm whitespace-pre-wrap"
 															>
 																{note.text || note.note || ''}
 															</div>
@@ -1076,66 +1116,46 @@
 
 											{#if invoice.k4mi_tags?.length}
 												<div>
-													<div class="text-xs font-medium text-gray-500 mb-1">
-														{$i18n.t('Tags')}
-													</div>
+													<div class="mb-1.5 text-sm font-medium">{$i18n.t('Tags')}</div>
 													<div class="flex flex-wrap gap-1">
 														{#each invoice.k4mi_tags as tag}
-															<span
-																class="px-1.5 py-0.5 rounded-xl bg-gray-100 dark:bg-gray-850 text-xs dark:text-gray-200"
-															>
-																{tag}
-															</span>
+															<Badge variant="outline">{tag}</Badge>
 														{/each}
 													</div>
 												</div>
 											{/if}
-
-											<div class="flex gap-3 text-xs text-gray-400">
-												<span
-													>K4mi ID: {invoice.k4mi_document_id}</span
-												>
-												{#if invoice.extraction_model}
-													<span
-														>Model: {invoice.extraction_model}</span
-													>
-												{/if}
-												{#if invoice.user_corrected}
-													<Badge
-														type="info"
-														content={$i18n.t('User Corrected')}
-													/>
-												{/if}
-											</div>
 										</div>
 									</div>
-								</td>
-							</tr>
+								</Table.Cell>
+							</Table.Row>
 						{/if}
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
 		</div>
 
-		<!-- Pagination -->
-		<div class="flex items-center justify-between mt-2">
+		<!-- Count and pagination -->
+		<div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+			<TablePagination bind:page count={total} {perPage} class="min-w-0 flex-1" />
 			<div class="flex items-center gap-2">
-				<span class="text-xs text-gray-500">{$i18n.t('Per page')}:</span>
-				<select
-					class="text-xs bg-transparent dark:bg-gray-900 dark:text-gray-300 outline-hidden border border-gray-100/30 dark:border-gray-850/30 rounded-lg px-2 py-1"
-					bind:value={perPage}
-					on:change={() => {
+				<Label for="invoice-per-page" class="font-normal text-muted-foreground"
+					>{$i18n.t('Per page')}</Label
+				>
+				<NativeSelect.Root
+					id="invoice-per-page"
+					size="sm"
+					value={String(perPage)}
+					onchange={(e: Event) => {
+						perPage = Number((e.currentTarget as HTMLSelectElement).value);
 						page = 1;
 						loadInvoices();
 					}}
 				>
-					<option value={25}>25</option>
-					<option value={50}>50</option>
-					<option value={100}>100</option>
-				</select>
+					<NativeSelect.Option value="25">25</NativeSelect.Option>
+					<NativeSelect.Option value="50">50</NativeSelect.Option>
+					<NativeSelect.Option value="100">100</NativeSelect.Option>
+				</NativeSelect.Root>
 			</div>
-
-			<Pagination bind:page count={total} {perPage} />
 		</div>
 	{/if}
 </div>

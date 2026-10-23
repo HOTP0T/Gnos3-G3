@@ -14,16 +14,43 @@
 	} from '$lib/apis/accounting';
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
 	import InvoiceSelector from '$lib/components/accounting/InvoiceSelector.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import type { Writable } from 'svelte/store';
 	import { convertAmount } from '$lib/utils/currency';
 	import ReportAmount from '$lib/components/accounting/ReportAmount.svelte';
 
-	const i18n = getContext('i18n');
+	import Download from '@lucide/svelte/icons/download';
+	import Search from '@lucide/svelte/icons/search';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+	import Inbox from '@lucide/svelte/icons/inbox';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import StatusBadge, { STATUS_MAP } from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import { cn } from '$lib/utils/shadcn.js';
+
+	const i18n: any = getContext('i18n');
 	export let companyId: number;
 	export let reportType: 'ap' | 'ar' = 'ap';
 
 	let loading = false;
+	let loadError = '';
 	let exporting = false;
 	let rawData: any = null;
 	let asOf = new Date().toISOString().slice(0, 10);
@@ -35,9 +62,10 @@
 	const companyCurrency = getContext<Writable<string>>('companyCurrency');
 	$: baseCcy = rawData?.currency || $companyCurrency || 'EUR';
 	$: converting = !!($displayCurrency && baseCcy && $displayCurrency !== baseCcy);
-	$: fx = converting && rawData
-		? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], asOf)
-		: null;
+	$: fx =
+		converting && rawData
+			? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], asOf)
+			: null;
 	$: factor = converting ? (fx?.hasRate ? fx.rate : null) : 1;
 	$: noRate = converting && !fx?.hasRate;
 	$: displayCcy = converting ? $displayCurrency : baseCcy;
@@ -53,8 +81,10 @@
 	let sortBy: 'name' | 'balance' | 'days' | 'bucket' = 'balance';
 	let sortDir: 'asc' | 'desc' = 'desc';
 
-	// Drill-down modal
+	// Drill-down modal (shownRow keeps the content while the dialog animates out)
 	let modalRow: any = null;
+	let shownRow: any = null;
+	$: if (modalRow) shownRow = modalRow;
 
 	// Invoice linking (from the drill-down, for journal items)
 	let showInvoiceSelector = false;
@@ -160,10 +190,12 @@
 
 	const load = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			const fn = reportType === 'ap' ? getAPAging : getARAging;
 			rawData = await fn(buildParams());
 		} catch (err) {
+			loadError = `${err}`;
 			toast.error(`${err}`);
 		}
 		loading = false;
@@ -203,7 +235,8 @@
 		reloadIfLoaded();
 	};
 
-	const sortIcon = (col: string) => (sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '');
+	const ariaSort = (col: string) =>
+		sortBy === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined;
 
 	const clearFilters = () => {
 		q = '';
@@ -226,255 +259,453 @@
 		return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	};
 
-	const bucketColor = (b: string) => {
-		switch (b) {
-			case 'current':
-				return 'text-green-600 dark:text-green-400';
-			case '31-60':
-				return 'text-yellow-600 dark:text-yellow-400';
-			case '61-90':
-				return 'text-orange-600 dark:text-orange-400';
-			case '90+':
-				return 'text-red-600 dark:text-red-400';
-			default:
-				return '';
-		}
+	// Aging bucket → badge (icon + word, never colour alone): the design system's status map.
+	const BUCKET_BADGE = STATUS_MAP.aging;
+	const bucketTone = (b: string) => {
+		const spec = BUCKET_BADGE[b];
+		if (!spec) return '';
+		if (spec.tone === 'success') return 'text-success';
+		return spec.variant === 'warning'
+			? 'text-warning'
+			: spec.variant === 'danger'
+				? 'text-destructive'
+				: '';
 	};
+
+	// The drill-down dialog stays open (and lets the invoice picker take focus) while the picker is
+	// up. The picker closes itself on the same Escape / outside click before our handler runs, so
+	// whether it was open is noted when the event starts (window, capture phase).
+	let pickerOpenAtEventStart = false;
+	const notePicker = () => (pickerOpenAtEventStart = showInvoiceSelector);
+	const keepOpenWhilePicking = (e: Event) => {
+		if (showInvoiceSelector || pickerOpenAtEventStart) e.preventDefault();
+	};
+
+	// Dense report table: 13px, 6px row padding, 12px at the outer edges (design system → Reports).
+	const TABLE =
+		'text-[13px] [&_td]:py-1.5 [&_td:first-child]:pl-3 [&_th:first-child]:pl-3 [&_td:last-child]:pr-3 [&_th:last-child]:pr-3';
+	const SORT_BTN =
+		'-mx-1 inline-flex items-center gap-1 rounded-sm px-1 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
 </script>
 
-<div class="space-y-3">
-	<!-- Controls -->
-	<div class="flex flex-wrap gap-3 items-end">
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('As of')}</label>
-			<input
-				type="date"
-				bind:value={asOf}
-				on:change={reloadIfLoaded}
-				class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden"
-			/>
-		</div>
-		<div class="grow min-w-[160px]">
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Search')} {$i18n.t(entityLabel)}</label>
-			<input
-				type="text"
-				bind:value={q}
-				on:input={onSearchInput}
-				placeholder={$i18n.t('Name contains…')}
-				class="w-full text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden"
-			/>
-		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Min balance')}</label>
-			<input type="number" bind:value={minBalance} on:change={reloadIfLoaded} class="w-28 text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden" />
-		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Max balance')}</label>
-			<input type="number" bind:value={maxBalance} on:change={reloadIfLoaded} class="w-28 text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden" />
-		</div>
-		<button class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition" on:click={load}>
-			{$i18n.t('Generate')}
+{#snippet bucketBadge(b: string)}
+	{#if BUCKET_BADGE[b]}
+		<StatusBadge kind="aging" status={b} class="tabular-nums" />
+	{:else}
+		<span class="text-muted-foreground">{b ?? '—'}</span>
+	{/if}
+{/snippet}
+
+{#snippet sortHead(col: 'name' | 'balance' | 'days' | 'bucket', label: string, cls: string)}
+	<Table.Head class={cls} aria-sort={ariaSort(col)}>
+		<button type="button" class={SORT_BTN} onclick={() => setSort(col)}>
+			{label}
+			{#if sortBy === col}
+				{#if sortDir === 'asc'}<ArrowUp class="size-3.5 text-muted-foreground" />{:else}<ArrowDown
+						class="size-3.5 text-muted-foreground"
+					/>{/if}
+			{/if}
 		</button>
+	</Table.Head>
+{/snippet}
+
+<div class="flex min-w-0 flex-col gap-4">
+	<!-- Controls -->
+	<div class="flex flex-wrap items-end gap-2">
+		<div class="grid gap-1.5">
+			<Label for="aging-as-of-{reportType}">{$i18n.t('As of')}</Label>
+			<Input
+				id="aging-as-of-{reportType}"
+				type="date"
+				class="h-8 w-40"
+				bind:value={asOf}
+				onchange={reloadIfLoaded}
+			/>
+		</div>
+		<div class="grid min-w-[10rem] grow gap-1.5 sm:max-w-72">
+			<Label for="aging-q-{reportType}">{$i18n.t('Search')} {$i18n.t(entityLabel)}</Label>
+			<div class="relative">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input
+					id="aging-q-{reportType}"
+					type="search"
+					class="h-8 pl-8"
+					placeholder={$i18n.t('Name contains…')}
+					bind:value={q}
+					oninput={onSearchInput}
+				/>
+			</div>
+		</div>
+		<div class="grid gap-1.5">
+			<Label for="aging-min-{reportType}">{$i18n.t('Min balance')}</Label>
+			<Input
+				id="aging-min-{reportType}"
+				type="number"
+				class="h-8 w-28 text-right tabular-nums"
+				bind:value={minBalance}
+				onchange={reloadIfLoaded}
+			/>
+		</div>
+		<div class="grid gap-1.5">
+			<Label for="aging-max-{reportType}">{$i18n.t('Max balance')}</Label>
+			<Input
+				id="aging-max-{reportType}"
+				type="number"
+				class="h-8 w-28 text-right tabular-nums"
+				bind:value={maxBalance}
+				onchange={reloadIfLoaded}
+			/>
+		</div>
+		<Button size="sm" disabled={loading} onclick={load}>
+			{#if loading}<Spinner />{/if}
+			{$i18n.t('Generate', { context: 'gnos3' })}
+		</Button>
 		{#if data}
-			<button
-				class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850 transition inline-flex items-center gap-1.5 disabled:opacity-50"
-				on:click={doExport}
-				disabled={exporting}
-			>
-				{#if exporting}<Spinner className="size-3.5" />{/if}
+			<Button variant="outline" size="sm" onclick={doExport} disabled={exporting}>
+				{#if exporting}<Spinner />{:else}<Download />{/if}
 				{$i18n.t('Export Excel')}
-			</button>
+			</Button>
 		{/if}
 		{#if hasFilters}
-			<button class="px-3 py-1.5 text-sm rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition" on:click={clearFilters}>
+			<Button variant="ghost" size="sm" onclick={clearFilters}>
+				<X />
 				{$i18n.t('Clear filters')}
-			</button>
+			</Button>
 		{/if}
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(10rem,100%),1fr))] gap-4">
+			{#each Array(5) as _}
+				<Skeleton class="h-[74px] rounded-xl" />
+			{/each}
+		</div>
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(6) as _}
+				<Skeleton class="h-6 w-full" />
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the report.')}</Alert.Title>
+			<Alert.Description>{loadError}</Alert.Description>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
 	{:else if data}
 		{#if displayCcy}
-			<div class="text-[11px] text-gray-400 dark:text-gray-500 px-0.5 mb-1">
-				{$i18n.t('Currency')}: {displayCcy}
-				{#if noRate}<span class="text-amber-600 dark:text-amber-400">({$i18n.t('no rate for')} {$displayCurrency}, {$i18n.t('showing')} {baseCcy})</span>{/if}
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+				<span>{$i18n.t('Currency')}: {displayCcy}</span>
+				{#if noRate}
+					<span class="inline-flex items-center gap-1 text-foreground">
+						<TriangleAlert class="size-4 text-warning" />
+						({$i18n.t('no rate for')}
+						{$displayCurrency}, {$i18n.t('showing')}
+						{baseCcy})
+					</span>
+				{/if}
 			</div>
 		{/if}
 		<!-- Summary cards (click to filter by bucket) -->
-		<div class="grid grid-cols-5 gap-2">
-			{#each [{ k: 'current', label: $i18n.t('Current'), val: data.summary.current, bg: 'bg-green-50 dark:bg-green-900/20', fg: 'text-green-700 dark:text-green-400' }, { k: '31-60', label: '31–60', val: data.summary.days_31_60, bg: 'bg-yellow-50 dark:bg-yellow-900/20', fg: 'text-yellow-700 dark:text-yellow-400' }, { k: '61-90', label: '61–90', val: data.summary.days_61_90, bg: 'bg-orange-50 dark:bg-orange-900/20', fg: 'text-orange-700 dark:text-orange-400' }, { k: '90+', label: '90+', val: data.summary.over_90, bg: 'bg-red-50 dark:bg-red-900/20', fg: 'text-red-700 dark:text-red-400' }] as card}
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(10rem,100%),1fr))] gap-4">
+			{#each [{ k: 'current', label: $i18n.t('Current'), val: data.summary.current }, { k: '31-60', label: '31–60', val: data.summary.days_31_60 }, { k: '61-90', label: '61–90', val: data.summary.days_61_90 }, { k: '90+', label: '90+', val: data.summary.over_90 }] as card}
+				{@const spec = BUCKET_BADGE[card.k]}
 				<button
-					class="rounded-lg p-3 text-center transition border {bucket === card.k ? 'border-blue-500 ring-1 ring-blue-500' : 'border-transparent'} {card.bg}"
-					on:click={() => toggleBucket(card.k)}
+					type="button"
+					aria-pressed={bucket === card.k}
 					title={$i18n.t('Filter by this bucket')}
+					onclick={() => toggleBucket(card.k)}
+					class={cn(
+						'flex min-w-0 flex-col gap-1 rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+						bucket === card.k && 'border-ring ring-[3px] ring-ring/30'
+					)}
 				>
-					<div class="text-[10px] uppercase text-gray-500 dark:text-gray-400">{card.label}</div>
-					<div class="text-sm font-bold font-mono {card.fg}"><ReportAmount value={card.val} {...fxProps} /></div>
+					<span class="flex items-center gap-1.5 text-sm text-muted-foreground">
+						{#if spec.icon}
+							<spec.icon class={cn('size-4', bucketTone(card.k))} aria-hidden="true" />
+						{/if}
+						{card.label}
+					</span>
+					<span class="text-lg leading-7 font-semibold tabular-nums"
+						><ReportAmount value={card.val} {...fxProps} /></span
+					>
 				</button>
 			{/each}
-			<div class="rounded-lg p-3 bg-gray-50 dark:bg-gray-850 text-center border border-transparent">
-				<div class="text-[10px] uppercase text-gray-500 dark:text-gray-400">{$i18n.t('Total')}</div>
-				<div class="text-sm font-bold font-mono dark:text-gray-200"><ReportAmount value={data.summary.total} {...fxProps} /></div>
+			<div class="flex min-w-0 flex-col gap-1 rounded-xl border bg-muted/50 px-4 py-3">
+				<span class="text-sm text-muted-foreground">{$i18n.t('Total')}</span>
+				<span class="text-lg leading-7 font-semibold tabular-nums"
+					><ReportAmount value={data.summary.total} {...fxProps} /></span
+				>
 			</div>
 		</div>
 
 		{#if data.rows.length === 0}
-			<div class="text-sm text-gray-400 italic text-center py-6">{$i18n.t('No outstanding balances')}</div>
+			<Empty.Root class="border border-dashed">
+				<Empty.Header>
+					<Empty.Media variant="icon"><Inbox /></Empty.Media>
+					<Empty.Title>{$i18n.t('No outstanding balances')}</Empty.Title>
+					{#if hasFilters}
+						<Empty.Description
+							>{$i18n.t('Clear the filters to see every balance.')}</Empty.Description
+						>
+					{/if}
+				</Empty.Header>
+				{#if hasFilters}
+					<Empty.Content>
+						<Button variant="outline" size="sm" onclick={clearFilters}
+							>{$i18n.t('Clear filters')}</Button
+						>
+					</Empty.Content>
+				{/if}
+			</Empty.Root>
 		{:else}
-			<div class="overflow-x-auto bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30">
-				<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-					<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-						<tr>
-							<th class="px-3 py-2 cursor-pointer select-none" on:click={() => setSort('name')}>{$i18n.t(entityLabel)} {sortIcon('name')}</th>
-							<th class="px-2 py-2 text-center">{$i18n.t('Items')}</th>
-							<th class="px-2 py-2 text-right">{$i18n.t('Original')}</th>
-							<th class="px-2 py-2 text-right">{$i18n.t('Paid')}</th>
-							<th class="px-2 py-2 text-right cursor-pointer select-none" on:click={() => setSort('balance')}>{$i18n.t('Balance')} {sortIcon('balance')}</th>
-							<th class="px-2 py-2 text-center cursor-pointer select-none" on:click={() => setSort('days')}>{$i18n.t('Days')} {sortIcon('days')}</th>
-							<th class="px-2 py-2 text-center cursor-pointer select-none" on:click={() => setSort('bucket')}>{$i18n.t('Bucket')} {sortIcon('bucket')}</th>
-							<th class="px-2 py-2"></th>
-						</tr>
-					</thead>
-					<tbody>
+			<div class="overflow-hidden rounded-md border">
+				<Table.Root class={TABLE}>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							{@render sortHead('name', $i18n.t(entityLabel), '')}
+							<Table.Head class="text-right">{$i18n.t('Items')}</Table.Head>
+							<Table.Head class="min-w-28 text-right">{$i18n.t('Original')}</Table.Head>
+							<Table.Head class="min-w-28 text-right">{$i18n.t('Paid')}</Table.Head>
+							{@render sortHead('balance', $i18n.t('Balance'), 'min-w-28 text-right')}
+							{@render sortHead('days', $i18n.t('Days'), 'text-right')}
+							{@render sortHead('bucket', $i18n.t('Bucket'), '')}
+							<Table.Head class="w-16"><span class="sr-only">{$i18n.t('View')}</span></Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
 						{#each data.rows as row}
-							<tr
-								class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50/50 dark:hover:bg-gray-850/30 cursor-pointer"
-								on:click={() => (modalRow = row)}
+							<Table.Row
+								class="cursor-pointer"
+								tabindex={0}
+								onclick={() => (modalRow = row)}
+								onkeydown={(e: KeyboardEvent) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.preventDefault();
+										modalRow = row;
+									}
+								}}
 							>
-								<td class="px-3 py-1.5 font-medium max-w-[220px] truncate">{row.vendor_or_customer}</td>
-								<td class="px-2 py-1.5 text-center">{row.item_count}</td>
-								<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={row.original_amount} {...fxProps} /></td>
-								<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={row.paid_amount} {...fxProps} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-medium"><ReportAmount value={row.balance} {...fxProps} /></td>
-								<td class="px-2 py-1.5 text-center">{row.days_outstanding}</td>
-								<td class="px-2 py-1.5 text-center"><span class="font-medium {bucketColor(row.bucket)}">{row.bucket}</span></td>
-								<td class="px-2 py-1.5 text-right text-blue-600 dark:text-blue-400">{$i18n.t('View')} →</td>
-							</tr>
+								<Table.Cell class="max-w-[220px] truncate font-medium"
+									>{row.vendor_or_customer}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums">{row.item_count}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={row.original_amount} {...fxProps} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={row.paid_amount} {...fxProps} /></Table.Cell
+								>
+								<Table.Cell class="text-right font-medium tabular-nums"
+									><ReportAmount value={row.balance} {...fxProps} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums">{row.days_outstanding}</Table.Cell>
+								<Table.Cell>{@render bucketBadge(row.bucket)}</Table.Cell>
+								<Table.Cell class="text-right">
+									<span class="inline-flex items-center gap-0.5 text-link"
+										>{$i18n.t('View')}<ChevronRight class="size-3.5" aria-hidden="true" /></span
+									>
+								</Table.Cell>
+							</Table.Row>
 						{/each}
-					</tbody>
-					<tfoot class="font-bold bg-gray-50/50 dark:bg-gray-850/30 border-t-2 border-gray-200 dark:border-gray-700">
-						<tr>
-							<td class="px-3 py-2" colspan="4">{$i18n.t('Total')}</td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={data.summary.total} {...fxProps} /></td>
-							<td colspan="3"></td>
-						</tr>
-					</tfoot>
-				</table>
+					</Table.Body>
+					<Table.Footer>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell colspan={4}>{$i18n.t('Total')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={data.summary.total} {...fxProps} /></Table.Cell
+							>
+							<Table.Cell colspan={3}></Table.Cell>
+						</Table.Row>
+					</Table.Footer>
+				</Table.Root>
 			</div>
 		{/if}
+	{:else}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><FileSpreadsheet /></Empty.Media>
+				<Empty.Title>{$i18n.t(title)}</Empty.Title>
+				<Empty.Description>{$i18n.t('Choose a date, then Generate.')}</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{/if}
 </div>
 
-<!-- Drill-down modal -->
-{#if modalRow}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" on:click|self={() => (modalRow = null)} role="presentation">
-		<div class="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-			<div class="flex items-start justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-850">
-				<div>
-					<div class="text-[10px] uppercase text-gray-400">{$i18n.t(title)}</div>
-					<div class="text-base font-semibold dark:text-gray-100">{modalRow.vendor_or_customer}</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-						{modalRow.item_count} {$i18n.t('open items')} · {$i18n.t('Balance')} <span class="font-mono font-medium">{fmt(modalRow.balance)}</span>
-					</div>
-				</div>
-				<button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none" on:click={() => (modalRow = null)}>×</button>
-			</div>
-			<div class="overflow-y-auto px-5 py-3">
-				<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-					<thead class="text-[10px] uppercase text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-850">
-						<tr>
-							<th class="py-2 pr-2">{$i18n.t('Type')}</th>
-							<th class="py-2 px-2">{$i18n.t('Reference')}</th>
-							<th class="py-2 px-2">{$i18n.t('Date')}</th>
-							<th class="py-2 px-2">{$i18n.t('Due')}</th>
-							<th class="py-2 px-2 text-right">{$i18n.t('Original')}</th>
-							<th class="py-2 px-2 text-right">{$i18n.t('Paid')}</th>
-							<th class="py-2 px-2 text-right">{$i18n.t('Balance')}</th>
-							<th class="py-2 px-2 text-center">{$i18n.t('Days')}</th>
-							<th class="py-2 pl-2 text-center">{$i18n.t('Bucket')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each modalRow.items as it}
-							<tr class="border-b border-gray-50 dark:border-gray-850/30">
-								<td class="py-1.5 pr-2">
-									<span class="px-1.5 py-0.5 rounded text-[10px] {it.is_invoice ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}">
-										{it.is_invoice ? $i18n.t('Invoice') : $i18n.t('Journal')}
-									</span>
-								</td>
-								<td class="py-1.5 px-2 font-mono max-w-[220px]">
+<svelte:window on:keydown|capture={notePicker} on:pointerdown|capture={notePicker} />
+
+<!-- Drill-down: the open items of one vendor / customer -->
+<Dialog.Root
+	open={!!modalRow}
+	onOpenChange={(v) => {
+		if (!v) modalRow = null;
+	}}
+>
+	<Dialog.Content
+		class="max-h-[90vh] overflow-y-auto sm:max-w-3xl"
+		trapFocus={!showInvoiceSelector}
+		onInteractOutside={keepOpenWhilePicking}
+		onEscapeKeydown={keepOpenWhilePicking}
+	>
+		{#if shownRow}
+			<Dialog.Header>
+				<p class="text-xs text-muted-foreground">{$i18n.t(title)}</p>
+				<Dialog.Title>{shownRow.vendor_or_customer}</Dialog.Title>
+				<Dialog.Description>
+					{shownRow.item_count}
+					{$i18n.t('open items')} · {$i18n.t('Balance')}
+					<span class="font-medium text-foreground tabular-nums">{fmt(shownRow.balance)}</span>
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="min-w-0 overflow-hidden rounded-md border">
+				<Table.Root class={TABLE}>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head>{$i18n.t('Type')}</Table.Head>
+							<Table.Head>{$i18n.t('Reference')}</Table.Head>
+							<Table.Head>{$i18n.t('Date')}</Table.Head>
+							<Table.Head>{$i18n.t('Due')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Original')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Paid')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Balance')}</Table.Head>
+							<Table.Head class="text-right">{$i18n.t('Days')}</Table.Head>
+							<Table.Head>{$i18n.t('Bucket')}</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each shownRow.items as it}
+							<Table.Row>
+								<Table.Cell>
+									{#if it.is_invoice}
+										<Badge variant="outline">{$i18n.t('Invoice')}</Badge>
+									{:else}
+										<Badge variant="secondary">{$i18n.t('Journal')}</Badge>
+									{/if}
+								</Table.Cell>
+								<Table.Cell class="max-w-[240px] font-mono text-[13px] whitespace-normal">
 									{#if it.is_invoice && it.k4mi_document_id}
-										<K4miDocLink docId={it.k4mi_document_id} title={$i18n.t('Open in K4mi')}>{it.reference ?? '—'}</K4miDocLink>
+										<K4miDocLink docId={it.k4mi_document_id} title={$i18n.t('Open in K4mi')}
+											>{it.reference ?? '—'}</K4miDocLink
+										>
 									{:else}
 										<div class="truncate">{it.reference ?? '—'}</div>
 										<!-- Journal item: show + manage linked invoices -->
-										<div class="flex flex-wrap items-center gap-1 mt-0.5">
+										<div class="mt-1 flex flex-wrap items-center gap-1 font-sans">
 											{#each it.linked_invoices ?? [] as li}
-												<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-[10px]">
-													<K4miDocLink docId={li.k4mi_document_id} title={$i18n.t('Open in K4mi')}>{li.invoice_number ?? `#${li.invoice_id}`}</K4miDocLink>
-													<button class="text-blue-400 hover:text-red-500" title={$i18n.t('Unlink')} on:click|stopPropagation={() => unlinkInvoice(it, li.invoice_id)} disabled={linking}>×</button>
-												</span>
+												<Badge variant="outline" class="gap-1 pr-0.5 font-normal">
+													<K4miDocLink docId={li.k4mi_document_id} title={$i18n.t('Open in K4mi')}
+														>{li.invoice_number ?? `#${li.invoice_id}`}</K4miDocLink
+													>
+													<Tip content={$i18n.t('Unlink')}>
+														<button
+															type="button"
+															class="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-destructive focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
+															aria-label={$i18n.t('Unlink')}
+															disabled={linking}
+															onclick={(e) => {
+																e.stopPropagation();
+																unlinkInvoice(it, li.invoice_id);
+															}}><X class="size-3" /></button
+														>
+													</Tip>
+												</Badge>
 											{/each}
-											<button
-												class="px-1.5 py-0.5 rounded border border-dashed border-gray-300 dark:border-gray-600 text-[10px] text-gray-500 hover:text-blue-600 hover:border-blue-400 transition disabled:opacity-50"
-												on:click|stopPropagation={() => openLinkPicker(it)}
+											<Button
+												variant="outline"
+												size="xs"
+												class="h-6 border-dashed"
 												disabled={linking}
-											>+ {$i18n.t('Link invoice')}</button>
+												onclick={(e) => {
+													e.stopPropagation();
+													openLinkPicker(it);
+												}}><Plus />{$i18n.t('Link invoice')}</Button
+											>
 											{#if it.transaction_id}
-												<button
-													class="px-1.5 py-0.5 rounded border border-dashed border-gray-300 dark:border-gray-600 text-[10px] text-gray-500 hover:text-green-600 hover:border-green-400 transition disabled:opacity-50"
-													on:click|stopPropagation={() => openReconcile(it)}
+												<Button
+													variant="outline"
+													size="xs"
+													class="h-6 border-dashed"
+													aria-expanded={reconcileItem?.transaction_id === it.transaction_id}
 													disabled={linking}
-												>⇄ {$i18n.t('Reconcile')}</button>
+													onclick={(e) => {
+														e.stopPropagation();
+														openReconcile(it);
+													}}><ArrowLeftRight />{$i18n.t('Reconcile')}</Button
+												>
 											{/if}
 										</div>
 									{/if}
-								</td>
-								<td class="py-1.5 px-2">{it.invoice_date ?? '—'}</td>
-								<td class="py-1.5 px-2">{it.due_date ?? '—'}</td>
-								<td class="py-1.5 px-2 text-right font-mono">{fmt(it.original_amount)}</td>
-								<td class="py-1.5 px-2 text-right font-mono">{fmt(it.paid_amount)}</td>
-								<td class="py-1.5 px-2 text-right font-mono font-medium">{fmt(it.balance)}</td>
-								<td class="py-1.5 px-2 text-center">{it.days_outstanding}</td>
-								<td class="py-1.5 pl-2 text-center"><span class="font-medium {bucketColor(it.bucket)}">{it.bucket}</span></td>
-							</tr>
+								</Table.Cell>
+								<Table.Cell class="tabular-nums">{it.invoice_date ?? '—'}</Table.Cell>
+								<Table.Cell class="tabular-nums">{it.due_date ?? '—'}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">{fmt(it.original_amount)}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">{fmt(it.paid_amount)}</Table.Cell>
+								<Table.Cell class="text-right font-medium tabular-nums"
+									>{fmt(it.balance)}</Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums">{it.days_outstanding}</Table.Cell>
+								<Table.Cell>{@render bucketBadge(it.bucket)}</Table.Cell>
+							</Table.Row>
 							{#if reconcileItem && reconcileItem.transaction_id === it.transaction_id}
-								<tr class="bg-gray-50/70 dark:bg-gray-850/40">
-									<td colspan="9" class="px-3 py-2">
-										<div class="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-1">
-											{$i18n.t('Match to an unmatched bank line')} ({fmt(it.balance)})
+								<Table.Row class="bg-muted/50 hover:bg-muted/50">
+									<Table.Cell colspan={9} class="whitespace-normal">
+										<div class="mb-2 text-sm font-medium">
+											{$i18n.t('Match to an unmatched bank line')}
+											<span class="text-muted-foreground tabular-nums">({fmt(it.balance)})</span>
 										</div>
 										{#if loadingCandidates}
-											<div class="flex items-center gap-2 text-gray-400"><Spinner className="size-3.5" /> {$i18n.t('Loading…')}</div>
+											<div class="flex items-center gap-2 text-muted-foreground">
+												<Spinner />
+												{$i18n.t('Loading…')}
+											</div>
 										{:else if bankCandidates.length === 0}
-											<div class="text-xs text-gray-400 italic">{$i18n.t('No matching unmatched bank lines found for this amount.')}</div>
+											<p class="text-sm text-muted-foreground">
+												{$i18n.t('No matching unmatched bank lines found for this amount.')}
+											</p>
 										{:else}
-											<div class="space-y-1">
+											<div class="flex flex-col gap-1">
 												{#each bankCandidates as line}
 													<button
-														class="w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-green-400 hover:bg-green-50/50 dark:hover:bg-green-900/10 transition text-left disabled:opacity-50"
-														on:click|stopPropagation={() => doReconcile(line)}
+														type="button"
+														class="flex w-full items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
 														disabled={linking}
+														onclick={(e) => {
+															e.stopPropagation();
+															doReconcile(line);
+														}}
 													>
 														<div class="min-w-0">
-															<div class="text-xs dark:text-gray-200 truncate">{line.description ?? line.reference ?? `#${line.id}`}</div>
-															<div class="text-[10px] text-gray-400">{line.transaction_date ?? ''} · {line.bank_account_name ?? ''} · {line.match_status}</div>
+															<div class="truncate">
+																{line.description ?? line.reference ?? `#${line.id}`}
+															</div>
+															<div
+																class="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground tabular-nums"
+															>
+																{line.transaction_date ?? ''} · {line.bank_account_name ?? ''} ·
+																<StatusBadge kind="bank" status={line.match_status} bare />
+															</div>
 														</div>
-														<div class="font-mono text-xs font-medium whitespace-nowrap">{fmt(line.amount)}</div>
+														<div class="font-medium whitespace-nowrap tabular-nums">
+															{fmt(line.amount)}
+														</div>
 													</button>
 												{/each}
 											</div>
 										{/if}
-									</td>
-								</tr>
+									</Table.Cell>
+								</Table.Row>
 							{/if}
 						{/each}
-					</tbody>
-				</table>
+					</Table.Body>
+				</Table.Root>
 			</div>
-		</div>
-	</div>
-{/if}
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
+<!-- The invoice picker opens as its own dialog on top of the drill-down -->
 <InvoiceSelector bind:show={showInvoiceSelector} on:select={handleLinkSelect} />

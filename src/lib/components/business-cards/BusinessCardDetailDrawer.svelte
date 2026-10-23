@@ -1,7 +1,16 @@
 <script lang="ts">
-	import { createEventDispatcher, getContext, onDestroy } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { fly, fade } from 'svelte/transition';
+
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Check from '@lucide/svelte/icons/check';
+	import Maximize2 from '@lucide/svelte/icons/maximize-2';
+	import Minimize2 from '@lucide/svelte/icons/minimize-2';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 
 	import {
 		updateBusinessCard,
@@ -11,37 +20,56 @@
 		getBusinessCardPreviewUrl,
 		type BusinessCard
 	} from '$lib/apis/business-cards';
+	import { k4miDocHref } from '$lib/apis/k4mi';
 	import { fetchAsBlobUrl, revokeBlobUrl } from '$lib/utils/blobPreview';
 
-	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
+	import { cn } from '$lib/utils/shadcn.js';
 
-	const i18n = getContext('i18n');
-	const dispatch = createEventDispatcher<{
-		close: void;
-		updated: BusinessCard;
-		deleteRequest: BusinessCard;
-	}>();
+	const i18n: any = getContext('i18n');
 
-	export let card: BusinessCard;
+	let {
+		card: cardProp,
+		onclose,
+		onupdated,
+		ondeleterequest
+	}: {
+		card: BusinessCard;
+		onclose: () => void;
+		onupdated: (card: BusinessCard) => void;
+		ondeleterequest: (card: BusinessCard) => void;
+	} = $props();
 
-	let draft: Partial<BusinessCard> = {};
-	let saving = false;
-	let syncing = false;
-	let reprocessing = false;
-	let marking = false;
+	// Local copy: "mark reviewed" saves pending edits first and works on the saved row.
+	let card = $state<BusinessCard>(cardProp);
+	$effect(() => {
+		card = cardProp;
+	});
 
-	$: dirty = Object.keys(draft).length > 0;
+	let open = $state(true);
+	let draft = $state<Partial<BusinessCard>>({});
+	let saving = $state(false);
+	let syncing = $state(false);
+	let reprocessing = $state(false);
+	let marking = $state(false);
+	let confirmDiscard = $state(false);
 
-	type Field = {
-		key: keyof BusinessCard;
-		label: string;
-		type?: 'text' | 'textarea';
-		full?: boolean;
-	};
+	const dirty = $derived(Object.keys(draft).length > 0);
 
-	const SECTIONS: Array<{ title: string; fields: Field[] }> = [
+	type Field = { key: keyof BusinessCard; label: string; type?: 'text' | 'textarea'; full?: boolean };
+
+	const MAIN_SECTIONS: Array<{ title: string; fields: Field[] }> = [
 		{
 			title: 'Identity',
 			fields: [
@@ -59,7 +87,9 @@
 				{ key: 'mobile', label: 'Mobile' },
 				{ key: 'fax', label: 'Fax' }
 			]
-		},
+		}
+	];
+	const MORE_SECTIONS: Array<{ title: string; fields: Field[] }> = [
 		{
 			title: 'Online & address',
 			fields: [
@@ -83,14 +113,22 @@
 		const normalized = value.trim() === '' ? null : value;
 		const original = (card as any)[key] ?? null;
 		const isSame =
-			normalized === original ||
-			(normalized == null && (original == null || original === ''));
-		if (isSame) {
-			delete (draft as any)[key];
-			draft = { ...draft };
-		} else {
-			draft = { ...draft, [key]: normalized };
-		}
+			normalized === original || (normalized == null && (original == null || original === ''));
+		const next = { ...draft } as Record<string, unknown>;
+		if (isSame) delete next[key as string];
+		else next[key as string] = normalized;
+		draft = next as Partial<BusinessCard>;
+	};
+
+	const close = () => {
+		open = false;
+		onclose();
+	};
+
+	// Escape, the overlay and the close button all come here: unsaved edits ask first.
+	const requestClose = () => {
+		if (dirty) confirmDiscard = true;
+		else close();
 	};
 
 	const handleSave = async () => {
@@ -100,7 +138,7 @@
 			const updated = await updateBusinessCard(localStorage.token, card.id, draft);
 			toast.success($i18n.t('Saved'));
 			draft = {};
-			dispatch('updated', updated);
+			onupdated(updated);
 		} catch (err) {
 			toast.error(`${err}`);
 		} finally {
@@ -114,7 +152,7 @@
 		try {
 			await syncBusinessCardFromK4mi(localStorage.token, card.id);
 			toast.success($i18n.t('Syncing from K4mi…'));
-			setTimeout(() => dispatch('close'), 600);
+			setTimeout(close, 600);
 		} catch (err) {
 			toast.error(`${err}`);
 		} finally {
@@ -133,7 +171,7 @@
 			}
 			const updated = await markBusinessCardReviewed(localStorage.token, card.id);
 			toast.success($i18n.t('Marked as reviewed'));
-			dispatch('updated', updated);
+			onupdated(updated);
 		} catch (err) {
 			toast.error(`${err}`);
 		} finally {
@@ -147,7 +185,7 @@
 		try {
 			await reprocessBusinessCard(localStorage.token, card.id);
 			toast.success($i18n.t('Re-extraction queued'));
-			setTimeout(() => dispatch('close'), 600);
+			setTimeout(close, 600);
 		} catch (err) {
 			toast.error(`${err}`);
 		} finally {
@@ -155,9 +193,7 @@
 		}
 	};
 
-	const formatK4miNotes = (
-		notes: unknown
-	): Array<{ text: string; created: string }> => {
+	const formatK4miNotes = (notes: unknown): Array<{ text: string; created: string }> => {
 		if (!Array.isArray(notes)) return [];
 		return notes
 			.map((n) => {
@@ -171,17 +207,23 @@
 			.filter((n) => n.text);
 	};
 
-	$: k4miNotes = formatK4miNotes(card.k4mi_notes);
-	$: confidencePct =
-		card.confidence_score != null ? Math.round(Number(card.confidence_score) * 100) : null;
+	const k4miNotes = $derived(formatK4miNotes(card.k4mi_notes));
+	const status = $derived(
+		card.processing_status === 'processing' || card.processing_status === 'pending'
+			? card.processing_status
+			: card.processing_status === 'failed'
+				? 'failed'
+				: card.needs_review
+					? 'needs_review'
+					: 'ok'
+	);
 
-	// Iframes / <img> tags can't send `Authorization: Bearer …`, and Phase 1
-	// RBAC added a router-level auth dep on `/api/business-cards/*`. Fetch the
-	// preview ourselves with the right header and use a blob URL.
-	let previewUrl: string | null = null;
-	let previewMode: 'image' | 'iframe' = 'image';
-	let previewError = false;
-	let previewExpanded = false;
+	// Iframes / <img> can't send `Authorization: Bearer …` and /api/business-cards/* needs it:
+	// fetch the preview with the header and show a blob URL.
+	let previewUrl = $state<string | null>(null);
+	let previewMode = $state<'image' | 'iframe'>('image');
+	let previewError = $state(false);
+	let previewExpanded = $state(false);
 	let lastFetchedFor: number | null = null;
 
 	const loadPreview = async (cardId: number | null, hasDoc: boolean) => {
@@ -199,27 +241,20 @@
 		const result = await fetchAsBlobUrl(getBusinessCardPreviewUrl(cardId), token);
 		if (result && lastFetchedFor === cardId) {
 			previewUrl = result.url;
-			// Pre-select the right mode from content-type so we skip the
-			// <img> → onerror → <iframe> dance for PDFs.
-			if (!result.contentType.startsWith('image/')) {
-				previewMode = 'iframe';
-			}
+			// Pick the mode from the content type so PDFs skip the <img> → onerror → <iframe> step.
+			if (!result.contentType.startsWith('image/')) previewMode = 'iframe';
 		} else if (lastFetchedFor === cardId) {
 			previewError = true;
 		}
 	};
 
-	$: loadPreview(card?.id ?? null, !!card?.k4mi_document_id);
+	$effect(() => {
+		loadPreview(card?.id ?? null, !!card?.k4mi_document_id);
+	});
 
 	onDestroy(() => revokeBlobUrl(previewUrl));
 
-	const handleClose = () => {
-		if (dirty && !confirm($i18n.t('Discard unsaved changes?'))) return;
-		dispatch('close');
-	};
-
 	const handleKeydown = (e: KeyboardEvent) => {
-		if (e.key === 'Escape') handleClose();
 		if ((e.metaKey || e.ctrlKey) && e.key === 's') {
 			e.preventDefault();
 			if (dirty) handleSave();
@@ -227,461 +262,302 @@
 	};
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
-<div class="fixed inset-0 z-50 flex" transition:fade={{ duration: 150 }}>
-	<button
-		class="flex-1 bg-black/30 dark:bg-black/50 cursor-default"
-		on:click={handleClose}
-		aria-label={$i18n.t('Close')}
-	></button>
+{#snippet fieldGrid(fields: Field[])}
+	<div class="grid grid-cols-[repeat(auto-fit,minmax(min(11rem,100%),1fr))] gap-3">
+		{#each fields as f}
+			<div class={cn('grid gap-1.5', f.full && 'col-span-full')}>
+				<Label for="bc-{String(f.key)}" class="text-[13px]">{$i18n.t(f.label)}</Label>
+				{#if f.type === 'textarea'}
+					<Textarea
+						id="bc-{String(f.key)}"
+						rows={2}
+						value={fieldValue(f.key)}
+						oninput={(e) => onChange(f.key, e.currentTarget.value)}
+					/>
+				{:else}
+					<Input
+						id="bc-{String(f.key)}"
+						class="h-8"
+						value={fieldValue(f.key)}
+						placeholder={$i18n.t('Not on the card')}
+						oninput={(e) => onChange(f.key, e.currentTarget.value)}
+					/>
+				{/if}
+			</div>
+		{/each}
+	</div>
+{/snippet}
 
-	<aside
-		class="w-full max-w-3xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col h-full overflow-hidden"
-		transition:fly={{ x: 600, duration: 250 }}
+<!-- Function binding: the sheet's close button, Escape and the overlay all call the setter,
+	 which asks before dropping unsaved edits; the sheet stays open until close() runs. -->
+<Sheet.Root
+	bind:open={
+		() => open,
+		(v) => {
+			if (v) open = true;
+			else requestClose();
+		}
+	}
+>
+	<Sheet.Content
+		side="right"
+		class={cn(
+			'flex w-full flex-col gap-0 p-0',
+			previewExpanded ? 'data-[side=right]:sm:max-w-3xl' : 'data-[side=right]:sm:max-w-[30rem]'
+		)}
 	>
-		<header class="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
-			<div class="flex items-start justify-between gap-3">
-				<div class="min-w-0 flex-1">
-					<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-50 truncate">
-						{card.full_name || $i18n.t('Untitled card')}
-					</h2>
+		<Sheet.Header class="gap-1.5 p-4 pr-12">
+			<div class="flex items-center gap-3">
+				<span
+					class="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium"
+				>
+					{(card.full_name || '?')
+						.split(/\s+/)
+						.filter(Boolean)
+						.slice(0, 2)
+						.map((p) => p[0]?.toUpperCase())
+						.join('') || '?'}
+				</span>
+				<div class="min-w-0">
+					<Sheet.Title class="truncate">{card.full_name || $i18n.t('Untitled card')}</Sheet.Title>
 					{#if card.job_title || card.company_name}
-						<p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">
+						<Sheet.Description class="truncate">
 							{[card.job_title, card.company_name].filter(Boolean).join(' · ')}
-						</p>
+						</Sheet.Description>
 					{/if}
-
-					<div class="flex flex-wrap items-center gap-2 mt-2.5">
-						{#if card.processing_status === 'processing' || card.processing_status === 'pending'}
-							<span
-								class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-							>
-								<Spinner className="size-3" />
-								{$i18n.t('Processing')}
-							</span>
-						{:else if card.processing_status === 'failed'}
-							<span
-								class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300"
-							>
-								{$i18n.t('Failed')}
-							</span>
-						{:else if card.needs_review}
-							<span
-								class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-							>
-								{$i18n.t('Needs review')}
-							</span>
-						{:else}
-							<span
-								class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-							>
-								{$i18n.t('OK')}
-							</span>
-						{/if}
-
-						{#if confidencePct != null}
-							<span
-								class="text-xs text-gray-500 dark:text-gray-400"
-								title={$i18n.t('Extraction confidence')}
-							>
-								{confidencePct}% {$i18n.t('confidence')}
-							</span>
-						{/if}
-
-						{#if card.user_corrected}
-							<span
-								class="text-xs text-blue-700 dark:text-blue-300"
-								title={$i18n.t('Manually edited — DB is authoritative')}
-							>
-								{$i18n.t('User-edited')}
-							</span>
-						{/if}
-					</div>
 				</div>
-
-				<button
-					class="p-1 -m-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition"
-					on:click={handleClose}
-					aria-label={$i18n.t('Close')}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="size-5"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
-					>
-				</button>
 			</div>
 
-			<div class="flex flex-wrap items-center gap-2 mt-3">
-				{#if card.k4mi_document_id}
-					<K4miDocLink
-						docId={card.k4mi_document_id}
-						extraClass="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="size-3.5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline
-								points="15 3 21 3 21 9"
-							/><line x1="10" y1="14" x2="21" y2="3" /></svg
-						>
-						{$i18n.t('Open in K4mi')}
-					</K4miDocLink>
+			<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+				<StatusBadge kind="extraction" {status} />
+				{#if card.confidence_score != null}
+					<Badge variant="outline" title={$i18n.t('Extraction confidence')}>
+						{Math.round(Number(card.confidence_score) * 100)}% {$i18n.t('confidence')}
+					</Badge>
 				{/if}
+				{#if card.user_corrected}
+					<Badge variant="outline" title={$i18n.t('Manually edited — DB is authoritative')}>
+						<Pencil />{$i18n.t('User-edited')}
+					</Badge>
+				{/if}
+			</div>
+
+			<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
 				{#if card.k4mi_document_id}
-					<button
-						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-						on:click={handleSync}
-						disabled={syncing}
+					<Button
+						variant="outline"
+						size="xs"
+						href={k4miDocHref(card.k4mi_document_id)}
+						target="_blank"
+						rel="noopener noreferrer"
 					>
-						{#if syncing}
-							<Spinner className="size-3.5" />
-						{:else}
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="size-3.5"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path
-									d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-								/></svg
-							>
-						{/if}
+						<ExternalLink />{$i18n.t('Open in K4mi')}
+					</Button>
+					<Button variant="outline" size="xs" onclick={handleSync} disabled={syncing}>
+						{#if syncing}<Spinner />{:else}<RefreshCw />{/if}
 						{$i18n.t('Sync from K4mi')}
-					</button>
-					<button
-						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-						on:click={handleReprocess}
-						disabled={reprocessing}
-					>
-						{#if reprocessing}
-							<Spinner className="size-3.5" />
-						{:else}
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="size-3.5"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg
-							>
-						{/if}
+					</Button>
+					<Button variant="outline" size="xs" onclick={handleReprocess} disabled={reprocessing}>
+						{#if reprocessing}<Spinner />{:else}<RotateCcw />{/if}
 						{$i18n.t('Reprocess')}
-					</button>
+					</Button>
 				{/if}
-				<button
-					class="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition"
-					on:click={() => dispatch('deleteRequest', card)}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="size-3.5"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						><polyline points="3 6 5 6 21 6" /><path
-							d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
-						/></svg
+				<Tip content={$i18n.t('Delete')}>
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+						aria-label={$i18n.t('Delete')}
+						onclick={() => ondeleterequest(card)}
 					>
-					{$i18n.t('Delete')}
-				</button>
+						<Trash2 />
+					</Button>
+				</Tip>
 			</div>
-		</header>
+		</Sheet.Header>
 
-		<div class="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-			{#if previewUrl}
-				<section>
-					<div class="flex items-center justify-between mb-2">
-						<h3
-							class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-						>
-							{$i18n.t('Original document')}
-						</h3>
-						<div class="flex items-center gap-2">
-							<button
-								class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition inline-flex items-center gap-1"
-								on:click={() => (previewExpanded = !previewExpanded)}
-								aria-label={previewExpanded ? $i18n.t('Collapse') : $i18n.t('Expand')}
+		<div class="flex flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4">
+			<Separator />
+
+			{#if previewUrl || previewError}
+				<section class="grid gap-2">
+					<div class="flex items-center justify-between">
+						<h3 class="text-sm font-medium">{$i18n.t('Original document')}</h3>
+						<div class="flex items-center gap-1">
+							<Button
+								variant="ghost"
+								size="xs"
+								onclick={() => (previewExpanded = !previewExpanded)}
 							>
-								{#if previewExpanded}
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="size-3.5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										><polyline points="4 14 10 14 10 20" /><polyline
-											points="20 10 14 10 14 4"
-										/><line x1="14" y1="10" x2="21" y2="3" /><line
-											x1="3"
-											y1="21"
-											x2="10"
-											y2="14"
-										/></svg
-									>
-									{$i18n.t('Collapse')}
-								{:else}
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="size-3.5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line
-											x1="21"
-											y1="3"
-											x2="14"
-											y2="10"
-										/><line x1="3" y1="21" x2="10" y2="14" /></svg
-									>
-									{$i18n.t('Expand')}
-								{/if}
-							</button>
-							<K4miDocLink
-								docId={card.k4mi_document_id}
-								extraClass="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition"
-							>
-								{$i18n.t('Open in new tab')}
-							</K4miDocLink>
+								{#if previewExpanded}<Minimize2 />{$i18n.t('Collapse')}{:else}<Maximize2 />{$i18n.t(
+										'Expand'
+									)}{/if}
+							</Button>
 						</div>
 					</div>
-
 					<div
-						class="rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 overflow-hidden flex items-center justify-center {previewExpanded
-							? 'min-h-[60vh]'
-							: 'h-[320px]'}"
+						class={cn(
+							'flex items-center justify-center overflow-hidden rounded-md border bg-muted',
+							previewExpanded ? 'min-h-[60vh]' : 'h-[240px]'
+						)}
 					>
 						{#if previewError}
-							<div class="text-center text-sm text-gray-500 dark:text-gray-400 p-6">
+							<div class="p-6 text-center text-sm text-muted-foreground">
 								<p>{$i18n.t('Could not load the original document.')}</p>
-								<p class="text-xs mt-1">
+								<p class="mt-1 text-xs">
 									{$i18n.t('Check that bc-api can reach K4mi and that the document still exists.')}
 								</p>
 								{#if card.k4mi_document_id}
-									<K4miDocLink
-										docId={card.k4mi_document_id}
-										extraClass="inline-block mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+									<a
+										class="mt-2 inline-block text-xs text-link underline-offset-4 hover:underline"
+										href={k4miDocHref(card.k4mi_document_id)}
+										target="_blank"
+										rel="noopener noreferrer">{$i18n.t('Open in K4mi instead →')}</a
 									>
-										{$i18n.t('Open in K4mi instead →')}
-									</K4miDocLink>
 								{/if}
 							</div>
 						{:else if previewMode === 'image'}
 							<img
 								src={previewUrl}
 								alt={card.full_name || 'Business card'}
-								class="max-w-full max-h-full object-contain"
-								on:error={() => {
-									// Probably a PDF — swap to iframe.
-									previewMode = 'iframe';
-								}}
+								class="max-h-full max-w-full object-contain"
+								onerror={() => (previewMode = 'iframe')}
 							/>
 						{:else}
 							<iframe
 								src={previewUrl}
-								class="w-full h-full"
+								class="h-full w-full"
 								title={card.full_name || 'Business card preview'}
-								on:error={() => (previewError = true)}
+								onerror={() => (previewError = true)}
 							></iframe>
 						{/if}
 					</div>
 				</section>
 			{/if}
 
-			{#each SECTIONS as section}
-				<section>
-					<h3
-						class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2"
-					>
-						{$i18n.t(section.title)}
-					</h3>
-					<div class="grid grid-cols-2 gap-x-3 gap-y-2.5">
-						{#each section.fields as f}
-							<label class={f.full ? 'col-span-2 block' : 'block'}>
-								<span class="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">
-									{$i18n.t(f.label)}
-								</span>
-								{#if f.type === 'textarea'}
-									<textarea
-										class="w-full px-2.5 py-1.5 text-sm rounded-md bg-gray-50 dark:bg-gray-800 border border-transparent focus:border-blue-400 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-900 outline-none transition resize-y min-h-[3rem]"
-										rows="2"
-										value={fieldValue(f.key)}
-										on:input={(e) => onChange(f.key, e.currentTarget.value)}
-									></textarea>
-								{:else}
-									<input
-										class="w-full px-2.5 py-1.5 text-sm rounded-md bg-gray-50 dark:bg-gray-800 border border-transparent focus:border-blue-400 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-900 outline-none transition"
-										type="text"
-										value={fieldValue(f.key)}
-										on:input={(e) => onChange(f.key, e.currentTarget.value)}
-									/>
-								{/if}
-							</label>
-						{/each}
-					</div>
+			{#each MAIN_SECTIONS as section}
+				<section class="grid gap-3">
+					<h3 class="text-sm font-medium">{$i18n.t(section.title, { context: 'gnos3' })}</h3>
+					{@render fieldGrid(section.fields)}
 				</section>
 			{/each}
 
-			<section>
-				<h3
-					class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2"
+			<Collapsible.Root class="grid gap-3">
+				<Collapsible.Trigger
+					class="group flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
 				>
-					{$i18n.t('K4mi document notes')}
-				</h3>
-				{#if k4miNotes.length === 0}
-					<p class="text-xs text-gray-400 dark:text-gray-600">
-						{$i18n.t('No K4mi notes on this document yet. Add notes in K4mi and click "Sync from K4mi" above to pull them in.')}
-					</p>
-				{:else}
-					<ul class="space-y-2">
-						{#each k4miNotes as n}
-							<li
-								class="text-sm bg-gray-50 dark:bg-gray-800/60 rounded-md px-3 py-2 border border-gray-100 dark:border-gray-800"
-							>
-								<p class="text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{n.text}</p>
-								{#if n.created}
-									<p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
-										{new Date(n.created).toLocaleString()}
-									</p>
+					<ChevronRight class="size-4 transition-transform group-data-[state=open]:rotate-90" />
+					{$i18n.t('Online & address')} · {$i18n.t('Notes', { context: 'gnos3' })} · {$i18n.t('K4mi')} · {$i18n.t(
+						'Extraction metadata'
+					)}
+				</Collapsible.Trigger>
+				<Collapsible.Content class="grid gap-5">
+					{#each MORE_SECTIONS as section}
+						<section class="grid gap-3">
+							<h3 class="text-sm font-medium">{$i18n.t(section.title, { context: 'gnos3' })}</h3>
+							{@render fieldGrid(section.fields)}
+						</section>
+					{/each}
+
+					<section class="grid gap-2">
+						<h3 class="text-sm font-medium">{$i18n.t('K4mi document notes')}</h3>
+						{#if k4miNotes.length === 0}
+							<p class="text-sm text-muted-foreground">
+								{$i18n.t(
+									'No K4mi notes on this document yet. Add notes in K4mi and click "Sync from K4mi" above to pull them in.'
+								)}
+							</p>
+						{:else}
+							<ul class="grid gap-2">
+								{#each k4miNotes as n}
+									<li class="rounded-md border bg-muted/50 px-3 py-2 text-sm">
+										<p class="whitespace-pre-wrap">{n.text}</p>
+										{#if n.created}
+											<p class="mt-1 text-xs text-muted-foreground">
+												{new Date(n.created).toLocaleString()}
+											</p>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</section>
+
+					{#if Array.isArray(card.k4mi_tags) && card.k4mi_tags.length > 0}
+						<section class="grid gap-2">
+							<h3 class="text-sm font-medium">{$i18n.t('K4mi tags')}</h3>
+							<div class="flex flex-wrap gap-1.5">
+								{#each card.k4mi_tags as tag}
+									<Badge variant="secondary">{tag}</Badge>
+								{/each}
+							</div>
+						</section>
+					{/if}
+
+					{#if card.extraction_model}
+						<section class="grid gap-2">
+							<h3 class="text-sm font-medium">{$i18n.t('Extraction metadata')}</h3>
+							<dl class="grid grid-cols-3 gap-x-3 gap-y-1.5 text-sm">
+								<dt class="text-muted-foreground">{$i18n.t('Model')}</dt>
+								<dd class="col-span-2 font-mono text-[13px] break-all">{card.extraction_model}</dd>
+								{#if card.created_at}
+									<dt class="text-muted-foreground">{$i18n.t('Created')}</dt>
+									<dd class="col-span-2">{new Date(card.created_at).toLocaleString()}</dd>
 								{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</section>
-
-			{#if Array.isArray(card.k4mi_tags) && card.k4mi_tags.length > 0}
-				<section>
-					<h3
-						class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2"
-					>
-						{$i18n.t('K4mi tags')}
-					</h3>
-					<div class="flex flex-wrap gap-1.5">
-						{#each card.k4mi_tags as tag}
-							<span
-								class="inline-flex px-2 py-0.5 text-xs rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-							>
-								{tag}
-							</span>
-						{/each}
-					</div>
-				</section>
-			{/if}
-
-			{#if card.extraction_model}
-				<section>
-					<h3
-						class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2"
-					>
-						{$i18n.t('Extraction metadata')}
-					</h3>
-					<dl class="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
-						<dt class="col-span-1 text-gray-500 dark:text-gray-400">{$i18n.t('Model')}</dt>
-						<dd class="col-span-2 text-gray-700 dark:text-gray-300 break-all">
-							{card.extraction_model}
-						</dd>
-						{#if card.created_at}
-							<dt class="col-span-1 text-gray-500 dark:text-gray-400">{$i18n.t('Created')}</dt>
-							<dd class="col-span-2 text-gray-700 dark:text-gray-300">
-								{new Date(card.created_at).toLocaleString()}
-							</dd>
-						{/if}
-						{#if card.updated_at}
-							<dt class="col-span-1 text-gray-500 dark:text-gray-400">{$i18n.t('Updated')}</dt>
-							<dd class="col-span-2 text-gray-700 dark:text-gray-300">
-								{new Date(card.updated_at).toLocaleString()}
-							</dd>
-						{/if}
-					</dl>
-				</section>
-			{/if}
+								{#if card.updated_at}
+									<dt class="text-muted-foreground">{$i18n.t('Updated')}</dt>
+									<dd class="col-span-2">{new Date(card.updated_at).toLocaleString()}</dd>
+								{/if}
+							</dl>
+						</section>
+					{/if}
+				</Collapsible.Content>
+			</Collapsible.Root>
 		</div>
 
-		<footer
-			class="px-5 py-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between gap-3 flex-shrink-0 bg-gray-50/60 dark:bg-gray-900/40"
-		>
-			<div class="text-xs text-gray-500 dark:text-gray-400">
+		<Sheet.Footer class="mt-auto flex-row flex-wrap items-center gap-2 border-t p-4">
+			<span class="mr-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground">
 				{#if dirty}
-					{$i18n.t('Unsaved changes')}
+					<span class="size-1.5 rounded-full bg-warning"></span>{$i18n.t('Unsaved changes')}
 				{:else}
 					{$i18n.t('All changes saved')}
 				{/if}
-			</div>
-			<div class="flex items-center gap-2">
-				{#if card.needs_review}
-					<Tooltip
-						content={$i18n.t('Clear the needs-review flag and remove the tag in K4mi')}
-					>
-						<button
-							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-							on:click={handleMarkReviewed}
-							disabled={marking || saving}
-						>
-							{#if marking}
-								<Spinner className="size-3.5" />
-							{:else}
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									class="size-3.5"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									><polyline points="20 6 9 17 4 12" /></svg
-								>
-							{/if}
-							{dirty ? $i18n.t('Save & mark reviewed') : $i18n.t('Mark reviewed')}
-						</button>
-					</Tooltip>
-				{/if}
-				<button
-					class="px-3 py-1.5 text-sm rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-					on:click={handleClose}
-				>
-					{$i18n.t('Close')}
-				</button>
-				<Tooltip content={$i18n.t('Cmd/Ctrl + S')}>
-					<button
-						class="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-						on:click={handleSave}
-						disabled={!dirty || saving}
-					>
+			</span>
+			<Button variant="outline" size="sm" onclick={requestClose}>{$i18n.t('Close')}</Button>
+			{#if card.needs_review}
+				<Tip content={$i18n.t('Clear the needs-review flag and remove the tag in K4mi')}>
+					<Button size="sm" onclick={handleMarkReviewed} disabled={marking || saving}>
+						{#if marking}<Spinner />{:else}<Check />{/if}
+						{dirty ? $i18n.t('Save & mark reviewed') : $i18n.t('Mark reviewed')}
+					</Button>
+				</Tip>
+				{#if dirty}
+					<Button variant="secondary" size="sm" onclick={handleSave} disabled={saving}>
 						{saving ? $i18n.t('Saving…') : $i18n.t('Save')}
-					</button>
-				</Tooltip>
-			</div>
-		</footer>
-	</aside>
-</div>
+					</Button>
+				{/if}
+			{:else}
+				<Tip content={$i18n.t('Cmd/Ctrl + S')}>
+					<Button size="sm" onclick={handleSave} disabled={!dirty || saving}>
+						{#if saving}<Spinner />{/if}
+						{saving ? $i18n.t('Saving…') : $i18n.t('Save')}
+					</Button>
+				</Tip>
+			{/if}
+		</Sheet.Footer>
+	</Sheet.Content>
+</Sheet.Root>
+
+<ConfirmDialog
+	bind:open={confirmDiscard}
+	title={$i18n.t('Discard unsaved changes?')}
+	description={$i18n.t('Your edits to this card will be lost.')}
+	confirmLabel={$i18n.t('Discard')}
+	destructive
+	onconfirm={() => {
+		draft = {};
+		close();
+	}}
+/>

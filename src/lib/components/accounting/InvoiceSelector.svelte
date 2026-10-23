@@ -3,12 +3,28 @@
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 
+	import Search from '@lucide/svelte/icons/search';
+	import Info from '@lucide/svelte/icons/info';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import FileSearch from '@lucide/svelte/icons/file-search';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+
 	import { getInvoiceList } from '$lib/apis/accounting';
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let show = false;
@@ -25,9 +41,8 @@
 	let statusFilter: string = 'all'; // 'all' | 'review' | 'ready'
 	let sortBy: string = 'date_desc'; // 'date_desc' | 'amount_desc' | 'vendor_asc'
 
-	// Preview popover state
+	// Details popover: the invoice whose details are open
 	let previewInvoice: any = null;
-	let previewPos = { x: 0, y: 0 };
 
 	const sortOptions: Record<string, { sort_by: string; sort_dir: string }> = {
 		date_desc: { sort_by: 'invoice_date', sort_dir: 'desc' },
@@ -82,32 +97,14 @@
 	};
 
 	const formatCurrency = (val: any) => {
-		if (val === null || val === undefined) return '-';
+		if (val === null || val === undefined) return '—';
 		return parseFloat(val).toLocaleString(undefined, {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 2
 		});
 	};
 
-	const truncate = (text: string | null | undefined, maxLen: number) => {
-		if (!text) return '-';
-		return text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
-	};
-
-	const showPreview = (e: MouseEvent, invoice: any) => {
-		e.stopPropagation();
-		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		// Position popover to the left of the icon, vertically centered
-		previewPos = {
-			x: rect.left,
-			y: rect.top + rect.height / 2
-		};
-		previewInvoice = previewInvoice?.id === invoice.id ? null : invoice;
-	};
-
-	const closePreview = () => {
-		previewInvoice = null;
-	};
+	const formatDate = (val: any) => (val ? dayjs(val).format('YYYY-MM-DD') : '—');
 
 	const getLineItemsCount = (invoice: any): number => {
 		if (!invoice.line_items) return 0;
@@ -118,454 +115,342 @@
 		return 0;
 	};
 
+	// Row keyboard access: Enter / Space on the row itself selects it.
+	const rowKeydown = (e: KeyboardEvent, invoice: any) => {
+		if (e.target !== e.currentTarget) return;
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			selectInvoice(invoice);
+		}
+	};
+
 	$: if (show) {
 		previewInvoice = null;
 		loadInvoices();
 	}
 </script>
 
-{#if show}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
-		class="fixed inset-0 bg-black/60 flex items-center justify-center z-[99999]"
-		on:mousedown={() => {
-			previewInvoice = null;
-			show = false;
-		}}
-	>
-		<div
-			class="bg-white dark:bg-gray-950 rounded-2xl w-[60rem] max-w-[95vw] max-h-[80vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-800"
-			on:mousedown|stopPropagation
-		>
-			<!-- Header -->
-			<div
-				class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between"
-			>
-				<h2 class="text-lg font-medium dark:text-gray-200">
-					{$i18n.t('Select Invoice')}
-				</h2>
-				<button
-					class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-					on:click={() => (show = false)}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke-width="2"
-						stroke="currentColor"
-						class="size-5 dark:text-gray-300"
-					>
-						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-					</svg>
-				</button>
-			</div>
+<Dialog.Root bind:open={show}>
+	<Dialog.Content class="flex max-h-[90vh] flex-col gap-4 sm:max-w-5xl">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Select Invoice')}</Dialog.Title>
+			<Dialog.Description>{$i18n.t('Click an invoice to link it.')}</Dialog.Description>
+		</Dialog.Header>
 
-			<!-- Search + Filters -->
-			<div class="px-5 py-3 border-b border-gray-100 dark:border-gray-800 space-y-2">
-				<input
-					type="text"
-					class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 dark:text-gray-200 px-3 py-2 outline-hidden focus:border-blue-500 transition"
-					placeholder={$i18n.t('Search by vendor, invoice number, client, description, or amount...')}
-					bind:value={search}
-					on:input={handleSearch}
+		<!-- Search + filters -->
+		<div class="flex flex-wrap items-center gap-2">
+			<div class="relative w-full">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
 				/>
-				<div class="flex items-center gap-3">
-					<!-- Status filter -->
-					<div class="flex items-center gap-1.5">
-						<span class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Status')}:</span>
-						<select
-							class="text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 dark:text-gray-200 px-2 py-1.5 outline-hidden focus:border-blue-500 transition"
-							bind:value={statusFilter}
-							on:change={() => loadInvoices()}
-						>
-							<option value="all">{$i18n.t('All')}</option>
-							<option value="review">{$i18n.t('Needs Review')}</option>
-							<option value="ready">{$i18n.t('Ready')}</option>
-						</select>
-					</div>
-
-					<!-- Sort by -->
-					<div class="flex items-center gap-1.5">
-						<span class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Sort')}:</span>
-						<select
-							class="text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 dark:text-gray-200 px-2 py-1.5 outline-hidden focus:border-blue-500 transition"
-							bind:value={sortBy}
-							on:change={() => loadInvoices()}
-						>
-							<option value="date_desc">{$i18n.t('Date (newest)')}</option>
-							<option value="amount_desc">{$i18n.t('Amount (highest)')}</option>
-							<option value="vendor_asc">{$i18n.t('Vendor (A-Z)')}</option>
-						</select>
-					</div>
-
-					<!-- Result count -->
-					{#if !loading && total > 0}
-						<span class="text-xs text-gray-400 ml-auto">
-							{total}
-							{$i18n.t('invoices')}
-						</span>
-					{/if}
-				</div>
+				<Input
+					type="search"
+					class="pl-8"
+					placeholder={$i18n.t(
+						'Search by vendor, invoice number, client, description, or amount...'
+					)}
+					aria-label={$i18n.t('Search')}
+					bind:value={search}
+					oninput={handleSearch}
+				/>
 			</div>
-
-			<!-- Invoice List -->
-			<div class="flex-1 overflow-y-auto px-5 py-2 relative">
-				{#if loading}
-					<div class="flex justify-center py-8">
-						<Spinner className="size-5" />
-					</div>
-				{:else if invoices.length === 0}
-					<div class="text-center py-8 text-gray-400 text-sm">
-						{$i18n.t('No invoices found')}
-					</div>
-				{:else}
-					<table class="w-full text-sm text-left">
-						<thead
-							class="text-xs text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-700"
-						>
-							<tr>
-								<th class="py-2 pr-2">{$i18n.t('Invoice #')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Vendor')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Client')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Description')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Date')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Due')}</th>
-								<th class="py-2 pr-2 text-right">{$i18n.t('Amount')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Cur.')}</th>
-								<th class="py-2 pr-2">{$i18n.t('Status')}</th>
-								<th class="py-2 w-16"></th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each invoices as invoice}
-								<tr
-									class="border-b border-gray-100 dark:border-gray-800 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition cursor-pointer"
-									on:click={() => selectInvoice(invoice)}
-								>
-									<td class="py-2 pr-2 font-mono dark:text-gray-300 whitespace-nowrap">
-										{invoice.invoice_number ?? `#${invoice.id}`}
-										{#if invoice.k4mi_document_id}
-											<K4miDocLink
-												docId={invoice.k4mi_document_id}
-												title={$i18n.t('Open in K4mi')}
-												extraClass="ml-1 text-blue-500 hover:text-blue-700 inline-block align-middle"
-												stopPropagation
-											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													fill="none"
-													viewBox="0 0 24 24"
-													stroke-width="1.5"
-													stroke="currentColor"
-													class="w-3 h-3"
-													><path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
-													/></svg
-												>
-											</K4miDocLink>
-										{/if}
-									</td>
-									<td
-										class="py-2 pr-2 dark:text-gray-300 max-w-[120px] truncate"
-										title={invoice.vendor_name ?? ''}
-									>
-										{invoice.vendor_name ?? '-'}
-									</td>
-									<td
-										class="py-2 pr-2 dark:text-gray-300 max-w-[100px] truncate"
-										title={invoice.client_name ?? ''}
-									>
-										{invoice.client_name ?? '-'}
-									</td>
-									<td
-										class="py-2 pr-2 text-gray-500 dark:text-gray-400 max-w-[120px] truncate"
-										title={invoice.description ?? ''}
-									>
-										{truncate(invoice.description, 30)}
-									</td>
-									<td class="py-2 pr-2 text-gray-500 whitespace-nowrap">
-										{invoice.invoice_date
-											? dayjs(invoice.invoice_date).format('YYYY-MM-DD')
-											: '-'}
-									</td>
-									<td class="py-2 pr-2 text-gray-500 whitespace-nowrap">
-										{invoice.due_date
-											? dayjs(invoice.due_date).format('YYYY-MM-DD')
-											: '-'}
-									</td>
-									<td class="py-2 pr-2 text-right font-medium dark:text-gray-300 whitespace-nowrap">
-										{formatCurrency(invoice.total_amount)}
-									</td>
-									<td class="py-2 pr-2 text-gray-400 text-[10px] uppercase whitespace-nowrap">
-										{invoice.currency ?? 'USD'}
-									</td>
-									<td class="py-2 pr-2">
-										{#if invoice.needs_review}
-											<span class="text-xs text-yellow-600 dark:text-yellow-400"
-												>{$i18n.t('Review')}</span
-											>
-										{:else}
-											<span class="text-xs text-green-600 dark:text-green-400"
-												>{$i18n.t('Ready')}</span
-											>
-										{/if}
-									</td>
-									<td class="py-2 text-right whitespace-nowrap">
-										<!-- Info / preview button -->
-										<button
-											class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition mr-1 relative"
-											title={$i18n.t('Invoice details')}
-											on:click|stopPropagation={(e) => showPreview(e, invoice)}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke-width="1.5"
-												stroke="currentColor"
-												class="w-3.5 h-3.5 text-gray-500 dark:text-gray-400"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"
-												/>
-											</svg>
-										</button>
-										<!-- Select button -->
-										<button
-											class="px-2.5 py-1 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 transition"
-											on:click|stopPropagation={() => selectInvoice(invoice)}
-										>
-											{$i18n.t('Select')}
-										</button>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-
-					<!-- Pagination -->
-					{#if total > limit}
-						<div
-							class="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 dark:border-gray-800"
-						>
-							<div class="text-xs text-gray-400">
-								{$i18n.t('Showing')}
-								{offset + 1}-{offset + invoices.length}
-								{$i18n.t('of')}
-								{total}
-							</div>
-							<div class="flex gap-2">
-								<button
-									class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-40"
-									on:click={() => {
-										offset = Math.max(0, offset - limit);
-										loadInvoices(false);
-									}}
-									disabled={offset === 0}
-								>
-									{$i18n.t('Previous')}
-								</button>
-								<button
-									class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-40"
-									on:click={() => {
-										offset += limit;
-										loadInvoices(false);
-									}}
-									disabled={offset + invoices.length >= total}
-								>
-									{$i18n.t('Next')}
-								</button>
-							</div>
-						</div>
-					{/if}
-				{/if}
+			<div class="flex items-center gap-1.5">
+				<label for="inv-sel-status" class="text-sm text-muted-foreground">{$i18n.t('Status')}</label
+				>
+				<NativeSelect.Root
+					id="inv-sel-status"
+					size="sm"
+					bind:value={statusFilter}
+					onchange={() => loadInvoices()}
+				>
+					<NativeSelect.Option value="all">{$i18n.t('All')}</NativeSelect.Option>
+					<NativeSelect.Option value="review">{$i18n.t('Needs Review')}</NativeSelect.Option>
+					<NativeSelect.Option value="ready">{$i18n.t('Ready')}</NativeSelect.Option>
+				</NativeSelect.Root>
 			</div>
+			<div class="flex items-center gap-1.5">
+				<label for="inv-sel-sort" class="text-sm text-muted-foreground">{$i18n.t('Sort')}</label>
+				<NativeSelect.Root
+					id="inv-sel-sort"
+					size="sm"
+					bind:value={sortBy}
+					onchange={() => loadInvoices()}
+				>
+					<NativeSelect.Option value="date_desc">{$i18n.t('Date (newest)')}</NativeSelect.Option>
+					<NativeSelect.Option value="amount_desc"
+						>{$i18n.t('Amount (highest)')}</NativeSelect.Option
+					>
+					<NativeSelect.Option value="vendor_asc">{$i18n.t('Vendor (A-Z)')}</NativeSelect.Option>
+				</NativeSelect.Root>
+			</div>
+			{#if !loading && total > 0}
+				<span class="ml-auto text-sm text-muted-foreground tabular-nums">
+					{total}
+					{$i18n.t('invoices')}
+				</span>
+			{/if}
 		</div>
 
-		<!-- Preview Popover (rendered outside the modal scroll container) -->
-		{#if previewInvoice}
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<div
-				class="fixed bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-4 w-[22rem] z-[100000] text-sm"
-				style="top: {Math.min(previewPos.y, window.innerHeight - 360)}px; left: {Math.max(8, previewPos.x - 360)}px;"
-				on:mousedown|stopPropagation
-			>
-				<div class="flex items-center justify-between mb-3">
-					<h3 class="font-medium dark:text-gray-200 text-sm">
-						{$i18n.t('Invoice Details')}
-					</h3>
-					<button
-						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-						on:click|stopPropagation={closePreview}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="2"
-							stroke="currentColor"
-							class="w-4 h-4 dark:text-gray-400"
-						>
-							<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-						</svg>
-					</button>
+		<!-- Invoice list -->
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			{#if loading}
+				<div class="flex flex-col gap-2 rounded-md border p-3">
+					{#each Array(6) as _}
+						<Skeleton class="h-8 w-full" />
+					{/each}
 				</div>
-				<div class="space-y-1.5 text-xs">
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Invoice #')}</span>
-						<span class="dark:text-gray-200 font-mono">
-							{previewInvoice.invoice_number ?? `#${previewInvoice.id}`}
-						</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Vendor')}</span>
-						<span class="dark:text-gray-200 text-right max-w-[160px] truncate">
-							{previewInvoice.vendor_name ?? '-'}
-						</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Client')}</span>
-						<span class="dark:text-gray-200 text-right max-w-[160px] truncate">
-							{previewInvoice.client_name ?? '-'}
-						</span>
-					</div>
-					{#if previewInvoice.description}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400 shrink-0 mr-2"
-								>{$i18n.t('Description')}</span
-							>
-							<span
-								class="dark:text-gray-200 text-right max-w-[180px] truncate"
-								title={previewInvoice.description}
-							>
-								{previewInvoice.description}
-							</span>
-						</div>
-					{/if}
-					<div class="border-t border-gray-100 dark:border-gray-800 my-1.5"></div>
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Date')}</span>
-						<span class="dark:text-gray-200">
-							{previewInvoice.invoice_date
-								? dayjs(previewInvoice.invoice_date).format('YYYY-MM-DD')
-								: '-'}
-						</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Due Date')}</span>
-						<span class="dark:text-gray-200">
-							{previewInvoice.due_date
-								? dayjs(previewInvoice.due_date).format('YYYY-MM-DD')
-								: '-'}
-						</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Amount')}</span>
-						<span class="dark:text-gray-200 font-medium">
-							{formatCurrency(previewInvoice.total_amount)}
-							<span class="text-gray-400 text-[10px] uppercase ml-0.5"
-								>{previewInvoice.currency ?? 'USD'}</span
-							>
-						</span>
-					</div>
-					{#if previewInvoice.subtotal !== null && previewInvoice.subtotal !== undefined}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Subtotal')}</span>
-							<span class="dark:text-gray-200">{formatCurrency(previewInvoice.subtotal)}</span>
-						</div>
-					{/if}
-					{#if previewInvoice.tax_amount !== null && previewInvoice.tax_amount !== undefined}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400">
-								{$i18n.t('Tax')}
-								{#if previewInvoice.tax_inclusive}
-									<span class="text-[10px] text-gray-400">({$i18n.t('incl.')})</span>
-								{/if}
-							</span>
-							<span class="dark:text-gray-200"
-								>{formatCurrency(previewInvoice.tax_amount)}</span
-							>
-						</div>
-					{/if}
-					<div class="border-t border-gray-100 dark:border-gray-800 my-1.5"></div>
-					{#if previewInvoice.po_number}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400">{$i18n.t('PO #')}</span>
-							<span class="dark:text-gray-200 font-mono">{previewInvoice.po_number}</span>
-						</div>
-					{/if}
-					{#if previewInvoice.business_unit}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Business Unit')}</span>
-							<span class="dark:text-gray-200">{previewInvoice.business_unit}</span>
-						</div>
-					{/if}
-					{#if previewInvoice.payment_terms}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Payment Terms')}</span>
-							<span class="dark:text-gray-200">{previewInvoice.payment_terms}</span>
-						</div>
-					{/if}
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Line Items')}</span>
-						<span class="dark:text-gray-200">{getLineItemsCount(previewInvoice)}</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Status')}</span>
-						<span>
-							{#if previewInvoice.needs_review}
-								<span class="text-yellow-600 dark:text-yellow-400"
-									>{$i18n.t('Needs Review')}</span
+			{:else if invoices.length === 0}
+				<Empty.Root class="border border-dashed">
+					<Empty.Header>
+						<Empty.Media variant="icon"><FileSearch /></Empty.Media>
+						<Empty.Title>{$i18n.t('No invoices found')}</Empty.Title>
+						<Empty.Description>
+							{$i18n.t('Try another search, or set the status filter to All.')}
+						</Empty.Description>
+					</Empty.Header>
+				</Empty.Root>
+			{:else}
+				<div class="overflow-hidden rounded-md border">
+					<Table.Root class="text-[13px]">
+						<Table.Header class="bg-muted/50">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Head>{$i18n.t('Invoice #')}</Table.Head>
+								<Table.Head>{$i18n.t('Vendor')}</Table.Head>
+								<Table.Head>{$i18n.t('Client')}</Table.Head>
+								<Table.Head>{$i18n.t('Description')}</Table.Head>
+								<Table.Head>{$i18n.t('Date')}</Table.Head>
+								<Table.Head>{$i18n.t('Due')}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Amount')}</Table.Head>
+								<Table.Head>{$i18n.t('Cur.')}</Table.Head>
+								<Table.Head>{$i18n.t('Status')}</Table.Head>
+								<Table.Head><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each invoices as invoice (invoice.id)}
+								<Table.Row
+									class="cursor-pointer"
+									tabindex={0}
+									onclick={() => selectInvoice(invoice)}
+									onkeydown={(e: KeyboardEvent) => rowKeydown(e, invoice)}
 								>
-							{:else}
-								<span class="text-green-600 dark:text-green-400">{$i18n.t('Ready')}</span>
-							{/if}
-						</span>
-					</div>
-					{#if previewInvoice.confidence_score !== null && previewInvoice.confidence_score !== undefined}
-						<div class="flex justify-between">
-							<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Confidence')}</span>
-							<span class="dark:text-gray-200"
-								>{Math.round(parseFloat(previewInvoice.confidence_score) * 100)}%</span
-							>
-						</div>
-					{/if}
+									<Table.Cell class="font-mono text-[13px]">
+										<span class="inline-flex max-w-[9rem] items-center gap-1">
+											<span class="truncate" title={invoice.invoice_number ?? ''}
+												>{invoice.invoice_number ?? `#${invoice.id}`}</span
+											>
+											{#if invoice.k4mi_document_id}
+												<K4miDocLink
+													docId={invoice.k4mi_document_id}
+													title={$i18n.t('Open in K4mi')}
+													extraClass="inline-flex shrink-0 text-link"
+													stopPropagation
+												>
+													<ExternalLink class="size-3.5" />
+													<span class="sr-only">{$i18n.t('Open in K4mi')}</span>
+												</K4miDocLink>
+											{/if}
+										</span>
+									</Table.Cell>
+									<Table.Cell class="max-w-[9rem]">
+										<span class="block truncate" title={invoice.vendor_name ?? ''}
+											>{invoice.vendor_name ?? '—'}</span
+										>
+									</Table.Cell>
+									<Table.Cell class="max-w-[7rem]">
+										<span class="block truncate" title={invoice.client_name ?? ''}
+											>{invoice.client_name ?? '—'}</span
+										>
+									</Table.Cell>
+									<Table.Cell class="max-w-[8rem] text-muted-foreground">
+										<span class="block truncate" title={invoice.description ?? ''}
+											>{invoice.description || '—'}</span
+										>
+									</Table.Cell>
+									<Table.Cell class="tabular-nums">{formatDate(invoice.invoice_date)}</Table.Cell>
+									<Table.Cell class="text-muted-foreground tabular-nums"
+										>{formatDate(invoice.due_date)}</Table.Cell
+									>
+									<Table.Cell class="text-right font-medium tabular-nums">
+										{formatCurrency(invoice.total_amount)}
+									</Table.Cell>
+									<Table.Cell class="font-mono text-[13px] text-muted-foreground">
+										{invoice.currency ?? 'USD'}
+									</Table.Cell>
+									<Table.Cell>
+										<StatusBadge
+											kind="booking"
+											status={invoice.needs_review ? 'review' : 'ready'}
+										/>
+									</Table.Cell>
+									<Table.Cell class="text-right" onclick={(e: MouseEvent) => e.stopPropagation()}>
+										<div class="inline-flex items-center gap-1">
+											<!-- Details popover -->
+											<Popover.Root
+												open={previewInvoice?.id === invoice.id}
+												onOpenChange={(o) => {
+													if (o) previewInvoice = invoice;
+													else if (previewInvoice?.id === invoice.id) previewInvoice = null;
+												}}
+											>
+												<Popover.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant="ghost"
+															size="icon-xs"
+															aria-label={$i18n.t('Invoice details')}
+															title={$i18n.t('Invoice details')}
+														>
+															<Info />
+														</Button>
+													{/snippet}
+												</Popover.Trigger>
+												<Popover.Content side="left" align="center" class="w-80 gap-3">
+													<h3 class="font-medium">{$i18n.t('Invoice Details')}</h3>
+													<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+														<dt class="text-muted-foreground">{$i18n.t('Invoice #')}</dt>
+														<dd class="text-right font-mono">
+															{invoice.invoice_number ?? `#${invoice.id}`}
+														</dd>
+														<dt class="text-muted-foreground">{$i18n.t('Vendor')}</dt>
+														<dd class="truncate text-right">{invoice.vendor_name ?? '—'}</dd>
+														<dt class="text-muted-foreground">{$i18n.t('Client')}</dt>
+														<dd class="truncate text-right">{invoice.client_name ?? '—'}</dd>
+														{#if invoice.description}
+															<dt class="text-muted-foreground">{$i18n.t('Description')}</dt>
+															<dd class="truncate text-right" title={invoice.description}>
+																{invoice.description}
+															</dd>
+														{/if}
+													</dl>
+													<Separator />
+													<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+														<dt class="text-muted-foreground">{$i18n.t('Date')}</dt>
+														<dd class="text-right tabular-nums">
+															{formatDate(invoice.invoice_date)}
+														</dd>
+														<dt class="text-muted-foreground">{$i18n.t('Due Date')}</dt>
+														<dd class="text-right tabular-nums">{formatDate(invoice.due_date)}</dd>
+														<dt class="text-muted-foreground">{$i18n.t('Amount')}</dt>
+														<dd class="text-right font-medium tabular-nums">
+															{formatCurrency(invoice.total_amount)}
+															<span class="font-mono text-xs text-muted-foreground"
+																>{invoice.currency ?? 'USD'}</span
+															>
+														</dd>
+														{#if invoice.subtotal !== null && invoice.subtotal !== undefined}
+															<dt class="text-muted-foreground">{$i18n.t('Subtotal')}</dt>
+															<dd class="text-right tabular-nums">
+																{formatCurrency(invoice.subtotal)}
+															</dd>
+														{/if}
+														{#if invoice.tax_amount !== null && invoice.tax_amount !== undefined}
+															<dt class="text-muted-foreground">
+																{$i18n.t('Tax')}
+																{#if invoice.tax_inclusive}
+																	<span class="text-xs">({$i18n.t('incl.')})</span>
+																{/if}
+															</dt>
+															<dd class="text-right tabular-nums">
+																{formatCurrency(invoice.tax_amount)}
+															</dd>
+														{/if}
+													</dl>
+													<Separator />
+													<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+														{#if invoice.po_number}
+															<dt class="text-muted-foreground">{$i18n.t('PO #')}</dt>
+															<dd class="text-right font-mono">{invoice.po_number}</dd>
+														{/if}
+														{#if invoice.business_unit}
+															<dt class="text-muted-foreground">{$i18n.t('Business Unit')}</dt>
+															<dd class="text-right">{invoice.business_unit}</dd>
+														{/if}
+														{#if invoice.payment_terms}
+															<dt class="text-muted-foreground">{$i18n.t('Payment Terms')}</dt>
+															<dd class="text-right">{invoice.payment_terms}</dd>
+														{/if}
+														<dt class="text-muted-foreground">{$i18n.t('Line Items')}</dt>
+														<dd class="text-right tabular-nums">{getLineItemsCount(invoice)}</dd>
+														<dt class="text-muted-foreground">{$i18n.t('Status')}</dt>
+														<dd class="text-right">
+															<StatusBadge
+																kind="booking"
+																status={invoice.needs_review ? 'review' : 'ready'}
+																label={invoice.needs_review
+																	? $i18n.t('Needs Review')
+																	: $i18n.t('Ready')}
+															/>
+														</dd>
+														{#if invoice.confidence_score !== null && invoice.confidence_score !== undefined}
+															<dt class="text-muted-foreground">{$i18n.t('Confidence')}</dt>
+															<dd class="text-right">
+																<StatusBadge kind="confidence" status={invoice.confidence_score} />
+															</dd>
+														{/if}
+													</dl>
+													{#if invoice.k4mi_document_id}
+														<Separator />
+														<K4miDocLink
+															docId={invoice.k4mi_document_id}
+															title={$i18n.t('View full document in K4mi')}
+															extraClass="inline-flex items-center gap-1.5 text-link underline-offset-4 hover:underline"
+															stopPropagation
+														>
+															<ExternalLink class="size-3.5" />
+															{$i18n.t('View full document in K4mi')}
+														</K4miDocLink>
+													{/if}
+												</Popover.Content>
+											</Popover.Root>
+											<Button variant="outline" size="xs" onclick={() => selectInvoice(invoice)}>
+												{$i18n.t('Select')}
+											</Button>
+										</div>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+		</div>
 
-					<!-- K4mi document link -->
-					{#if previewInvoice.k4mi_document_id}
-						<div class="border-t border-gray-100 dark:border-gray-800 my-1.5"></div>
-						<K4miDocLink
-							docId={previewInvoice.k4mi_document_id}
-							title={$i18n.t('View full document in K4mi')}
-							extraClass="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition mt-1"
-							stopPropagation
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.5"
-								stroke="currentColor"
-								class="w-3.5 h-3.5"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
-								/>
-							</svg>
-							{$i18n.t('View full document in K4mi')}
-						</K4miDocLink>
-					{/if}
+		<!-- Pagination -->
+		{#if !loading && total > limit}
+			<div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+				<span class="text-muted-foreground tabular-nums">
+					{$i18n.t('Showing')}
+					{offset + 1}–{offset + invoices.length}
+					{$i18n.t('of')}
+					{total}
+				</span>
+				<div class="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={offset === 0}
+						onclick={() => {
+							offset = Math.max(0, offset - limit);
+							loadInvoices(false);
+						}}
+					>
+						<ChevronLeft />{$i18n.t('Previous')}
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={offset + invoices.length >= total}
+						onclick={() => {
+							offset += limit;
+							loadInvoices(false);
+						}}
+					>
+						{$i18n.t('Next')}<ChevronRight />
+					</Button>
 				</div>
 			</div>
 		{/if}
-	</div>
-{/if}
+	</Dialog.Content>
+</Dialog.Root>

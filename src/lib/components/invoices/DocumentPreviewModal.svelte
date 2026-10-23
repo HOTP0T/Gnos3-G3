@@ -3,13 +3,22 @@
 	import dayjs from 'dayjs';
 	import { toast } from 'svelte-sonner';
 
-	import Modal from '$lib/components/common/Modal.svelte';
-	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import FileWarning from '@lucide/svelte/icons/file-warning';
+
 	import { updateInvoice } from '$lib/apis/invoices';
+	import { k4miDocHref } from '$lib/apis/k4mi';
 	import { INVOICE_API_BASE_URL } from '$lib/constants';
 	import { fetchAsBlobUrl, revokeBlobUrl } from '$lib/utils/blobPreview';
 
-	const i18n = getContext('i18n');
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+
+	const i18n: any = getContext('i18n');
 
 	export let show = false;
 	export let invoice: any = null;
@@ -21,6 +30,7 @@
 	// router-level auth dep on `/api/invoices/*`. So fetch the PDF ourselves
 	// (where we control headers) and use a blob URL for the iframe src.
 	let previewUrl = '';
+	let previewError = false;
 	let lastFetchedFor: number | null = null;
 
 	const loadPreview = async (id: number | null) => {
@@ -29,15 +39,15 @@
 			revokeBlobUrl(previewUrl);
 			previewUrl = '';
 		}
+		previewError = false;
 		lastFetchedFor = id;
 		if (!id) return;
 		const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
-		const result = await fetchAsBlobUrl(
-			`${INVOICE_API_BASE}/api/invoices/${id}/preview`,
-			token
-		);
+		const result = await fetchAsBlobUrl(`${INVOICE_API_BASE}/api/invoices/${id}/preview`, token);
 		if (result && lastFetchedFor === id) {
 			previewUrl = result.url;
+		} else if (lastFetchedFor === id) {
+			previewError = true;
 		}
 	};
 
@@ -142,12 +152,18 @@
 	}
 
 	function formatMoney(val: any, currency: string): string {
-		if (val === null || val === undefined) return '-';
-		return `${currency}${parseFloat(val).toFixed(2)}`;
+		if (val === null || val === undefined || val === '') return '—';
+		const n = parseFloat(val);
+		if (!isFinite(n)) return '—';
+		const amount = n.toLocaleString(undefined, {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2
+		});
+		return currency ? `${currency} ${amount}` : amount;
 	}
 
 	function formatDate(val: any): string {
-		if (!val) return '-';
+		if (!val) return '—';
 		return dayjs(val).format('YYYY-MM-DD');
 	}
 
@@ -155,206 +171,175 @@
 		const val = invoice?.[field.key];
 		if (field.type === 'date') return formatDate(val);
 		if (field.type === 'number') return formatMoney(val, invoice?.currency ?? '');
-		return val ?? '-';
+		return val === null || val === undefined || val === '' ? '—' : String(val);
 	}
+
+	const SECTIONS = [
+		{ key: 'info', label: 'Invoice' },
+		{ key: 'money', label: 'Amounts' },
+		{ key: 'details', label: 'Details' }
+	];
+
+	$: confidence =
+		invoice?.confidence_score !== null && invoice?.confidence_score !== undefined
+			? Math.round(parseFloat(invoice.confidence_score) * 100)
+			: null;
+	$: subtitle = invoice
+		? [
+				invoice.invoice_number,
+				invoice.vendor_name,
+				invoice.extraction_model
+					? $i18n.t('extracted by {{model}}', { model: invoice.extraction_model })
+					: ''
+			]
+				.filter(Boolean)
+				.join(' · ')
+		: '';
 </script>
 
-<Modal size="2xl" bind:show>
-	<div class="p-5 max-h-[90vh] overflow-y-auto">
-		<div class="flex justify-between items-center mb-4">
-			<div class="text-lg font-medium dark:text-gray-200">
-				{$i18n.t('Document Preview')}
-			</div>
-			<div class="flex items-center gap-2">
+<Dialog.Root bind:open={show}>
+	<Dialog.Content class="max-h-[90vh] gap-5 overflow-y-auto sm:max-w-[60rem]">
+		<Dialog.Header class="pr-8">
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<Dialog.Title>{$i18n.t('Document Preview')}</Dialog.Title>
 				{#if invoice?.k4mi_document_id}
-					<K4miDocLink
-						docId={invoice.k4mi_document_id}
-						extraClass="text-xs px-3 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-lg font-medium dark:text-gray-200"
+					<Button
+						variant="outline"
+						size="sm"
+						href={k4miDocHref(invoice.k4mi_document_id)}
+						target="_blank"
+						rel="noopener noreferrer"
 					>
-						{$i18n.t('Open in K4mi')}
-					</K4miDocLink>
+						<ExternalLink />{$i18n.t('Open in K4mi')}
+					</Button>
 				{/if}
-				<button
-					class="self-center p-1 hover:bg-gray-100 dark:hover:bg-gray-850 rounded-lg transition"
-					on:click={() => {
-						show = false;
-					}}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke-width="2"
-						stroke="currentColor"
-						class="size-5"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							d="M6 18 18 6M6 6l12 12"
-						/>
-					</svg>
-				</button>
 			</div>
-		</div>
+			<Dialog.Description class={subtitle ? '' : 'sr-only'}>
+				{subtitle || $i18n.t('Document Preview')}
+			</Dialog.Description>
+		</Dialog.Header>
 
 		{#if invoice}
-			<div class="flex flex-col lg:flex-row gap-4">
-				<!-- Left: Document Preview -->
-				<div class="flex-1 min-w-0">
-					<div
-						class="bg-gray-50 dark:bg-gray-850 rounded-lg overflow-hidden"
-						style="min-height: 70vh;"
-					>
-						<iframe
-							src={previewUrl}
-							title="Invoice Document"
-							class="w-full border-0"
-							style="min-height: 70vh;"
-						/>
-					</div>
+			<div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+				<!-- Document -->
+				<div class="h-[70vh] min-w-0 overflow-hidden rounded-md border bg-muted">
+					{#if previewUrl}
+						<iframe src={previewUrl} title={$i18n.t('Invoice document')} class="h-full w-full border-0"
+						></iframe>
+					{:else if previewError}
+						<div
+							class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground"
+						>
+							<FileWarning class="size-5" />
+							<p>{$i18n.t('Could not load the original document.')}</p>
+							{#if invoice.k4mi_document_id}
+								<a
+									class="text-link underline-offset-4 hover:underline"
+									href={k4miDocHref(invoice.k4mi_document_id)}
+									target="_blank"
+									rel="noopener noreferrer">{$i18n.t('Open in K4mi instead →')}</a
+								>
+							{/if}
+						</div>
+					{:else}
+						<Skeleton class="h-full w-full rounded-none" />
+					{/if}
 				</div>
 
-				<!-- Right: Extracted Data (editable) -->
-				<div class="w-full lg:w-96 space-y-3 lg:max-h-[75vh] lg:overflow-y-auto">
-					<div class="text-sm font-medium dark:text-gray-200">
-						{$i18n.t('Extracted Data')}
+				<!-- Extracted data (click a value to edit it) -->
+				<div class="flex min-w-0 flex-col gap-4 lg:max-h-[70vh] lg:overflow-y-auto lg:pr-1">
+					<div class="flex items-center justify-between gap-2">
+						<span class="font-medium">{$i18n.t('Extracted Data')}</span>
+						{#if confidence !== null}
+							<StatusBadge
+								kind="confidence"
+								status={confidence}
+								label={`${confidence}% ${$i18n.t('confidence')}`}
+							/>
+						{/if}
 					</div>
 
-					<div class="space-y-2 text-xs">
-						<!-- Info fields -->
-						{#each EDITABLE_FIELDS.filter((f) => f.section === 'info') as field}
-							<div class="flex justify-between items-center {field.bold ? 'font-medium' : ''}">
-								<span class="text-gray-500">{$i18n.t(field.label)}</span>
-								{#if editingField === field.key}
-									<input
-										type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
-										step={field.type === 'number' ? '0.01' : undefined}
-										class="w-40 text-xs text-right bg-transparent dark:text-gray-200 outline-hidden border-b border-blue-500 px-1 py-0.5"
-										bind:value={editValue}
-										on:keydown={handleKeydown}
-										on:blur={saveEdit}
-										autofocus
-									/>
-								{:else}
-									<button
-										class="dark:text-gray-200 text-right hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded cursor-pointer transition max-w-[60%] truncate"
-										on:click={() => startEdit(field)}
-										title={$i18n.t('Click to edit')}
-									>
-										{displayValue(field)}
-									</button>
-								{/if}
-							</div>
-						{/each}
-
-						<hr class="border-gray-100/30 dark:border-gray-850/30" />
-
-						<!-- Money fields -->
-						{#each EDITABLE_FIELDS.filter((f) => f.section === 'money') as field}
-							<div class="flex justify-between items-center {field.bold ? 'font-medium' : ''}">
-								<span class="text-gray-500">{$i18n.t(field.label)}</span>
-								{#if editingField === field.key}
-									<input
-										type="number"
-										step="0.01"
-										class="w-40 text-xs text-right bg-transparent dark:text-gray-200 outline-hidden border-b border-blue-500 px-1 py-0.5"
-										bind:value={editValue}
-										on:keydown={handleKeydown}
-										on:blur={saveEdit}
-										autofocus
-									/>
-								{:else}
-									<button
-										class="dark:text-gray-200 text-right hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded cursor-pointer transition"
-										on:click={() => startEdit(field)}
-										title={$i18n.t('Click to edit')}
-									>
-										{displayValue(field)}
-									</button>
-								{/if}
-							</div>
-						{/each}
-
-						<hr class="border-gray-100/30 dark:border-gray-850/30" />
-
-						<!-- Detail fields -->
-						{#each EDITABLE_FIELDS.filter((f) => f.section === 'details') as field}
-							<div class="flex justify-between items-center">
-								<span class="text-gray-500">{$i18n.t(field.label)}</span>
-								{#if editingField === field.key}
-									<input
-										type="text"
-										class="w-40 text-xs text-right bg-transparent dark:text-gray-200 outline-hidden border-b border-blue-500 px-1 py-0.5"
-										bind:value={editValue}
-										on:keydown={handleKeydown}
-										on:blur={saveEdit}
-										autofocus
-									/>
-								{:else}
-									<button
-										class="dark:text-gray-200 text-right hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded cursor-pointer transition max-w-[60%] truncate"
-										on:click={() => startEdit(field)}
-										title={$i18n.t('Click to edit')}
-									>
-										{displayValue(field)}
-									</button>
-								{/if}
-							</div>
-						{/each}
-
-						<hr class="border-gray-100/30 dark:border-gray-850/30" />
-
-						<!-- Read-only metadata -->
-						<div class="flex justify-between">
-							<span class="text-gray-500">{$i18n.t('Model')}</span>
-							<span class="dark:text-gray-200"
-								>{invoice.extraction_model ?? '-'}</span
-							>
-						</div>
-						<div class="flex justify-between">
-							<span class="text-gray-500">{$i18n.t('Confidence')}</span>
-							<span class="dark:text-gray-200">
-								{invoice.confidence_score !== null
-									? `${(parseFloat(invoice.confidence_score) * 100).toFixed(0)}%`
-									: '-'}
-							</span>
-						</div>
-					</div>
-
-					<!-- Tags -->
-					{#if invoice.k4mi_tags?.length}
+					{#each SECTIONS as section, i}
+						{#if i > 0}<Separator />{/if}
 						<div>
-							<div class="text-xs text-gray-500 mb-1">{$i18n.t('Tags')}</div>
+							<div class="mb-2 text-xs font-medium text-muted-foreground">
+								{$i18n.t(section.label)}
+							</div>
+							<dl
+								class="grid grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-sm"
+							>
+								{#each EDITABLE_FIELDS.filter((f) => f.section === section.key) as field}
+									<dt class="text-muted-foreground">{$i18n.t(field.label)}</dt>
+									<dd class="min-w-0">
+										{#if editingField === field.key}
+											<input
+												type={field.type === 'date'
+													? 'date'
+													: field.type === 'number'
+														? 'number'
+														: 'text'}
+												step={field.type === 'number' ? '0.01' : undefined}
+												aria-label={$i18n.t(field.label)}
+												class="h-7 w-full min-w-0 rounded-md border border-input bg-transparent px-1.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 {field.type ===
+												'number'
+													? 'tabular-nums'
+													: ''}"
+												bind:value={editValue}
+												on:keydown={handleKeydown}
+												on:blur={saveEdit}
+												autofocus
+											/>
+										{:else}
+											<button
+												type="button"
+												class="-mx-1.5 block max-w-full cursor-text truncate rounded-sm px-1.5 py-0.5 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none {field.type ===
+												'number'
+													? 'tabular-nums'
+													: ''} {field.bold ? 'font-semibold' : ''} {field.key ===
+													'invoice_number' || field.key === 'po_number'
+													? 'font-mono text-[13px]'
+													: ''} {displayValue(field) === '—' ? 'text-muted-foreground' : ''}"
+												on:click={() => startEdit(field)}
+												title={$i18n.t('Click to edit')}
+											>
+												{displayValue(field)}
+											</button>
+										{/if}
+									</dd>
+								{/each}
+							</dl>
+						</div>
+					{/each}
+
+					{#if invoice.k4mi_tags?.length}
+						<Separator />
+						<div>
+							<div class="mb-2 text-xs font-medium text-muted-foreground">{$i18n.t('Tags')}</div>
 							<div class="flex flex-wrap gap-1">
 								{#each invoice.k4mi_tags as tag}
-									<span
-										class="px-1.5 py-0.5 rounded-xl bg-gray-100 dark:bg-gray-850 text-xs dark:text-gray-200"
-									>
-										{tag}
-									</span>
+									<Badge variant="outline">{tag}</Badge>
 								{/each}
 							</div>
 						</div>
 					{/if}
 
-					<!-- Notes -->
 					{#if invoice.k4mi_notes?.length}
+						<Separator />
 						<div>
-							<div class="text-xs text-gray-500 mb-1">{$i18n.t('Notes')}</div>
-							<div class="space-y-1">
+							<div class="mb-2 text-xs font-medium text-muted-foreground">{$i18n.t('Notes', { context: 'gnos3' })}</div>
+							<div class="grid gap-2">
 								{#each invoice.k4mi_notes as note}
-									<div
-										class="text-xs bg-gray-50 dark:bg-gray-850 rounded-lg p-2 dark:text-gray-300"
-									>
+									<div class="rounded-md border bg-muted/50 px-3 py-2 text-sm whitespace-pre-wrap">
 										{note.text || note.note || ''}
 									</div>
 								{/each}
 							</div>
 						</div>
 					{/if}
+
+					<p class="text-xs text-muted-foreground">{$i18n.t('Click a value to edit it.')}</p>
 				</div>
 			</div>
 		{/if}
-	</div>
-</Modal>
+	</Dialog.Content>
+</Dialog.Root>

@@ -2,12 +2,17 @@
 	import { getContext, onMount } from 'svelte';
 
 	import { getTaxAccounts, getTaxConfig } from '$lib/apis/accounting';
+	import { citTerm, taxTerm } from '$lib/utils/taxTerms';
 	import TaxDeclaration from './TaxDeclaration.svelte';
 	import IsDeclaration from './IsDeclaration.svelte';
 	import IrDeclaration from './IrDeclaration.svelte';
 	import TaxAccountsSettings from './TaxAccountsSettings.svelte';
 
-	const i18n = getContext('i18n');
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+
+	const i18n: any = getContext('i18n');
 
 	export let companyId: number;
 
@@ -15,18 +20,19 @@
 	let activeTab: TaxTab = 'vat';
 
 	// The country decides which taxes exist: Hong Kong has no VAT and no salary
-	// withholding, so those tabs are not shown at all, and the income-tax tab
-	// takes the country's own name (IS / 企业所得税 / Profits Tax).
+	// withholding, so those tabs are not shown at all. Tabs are named in the UI
+	// language from what the tax is (VAT / GST…, corporate income tax / Profits Tax).
 	// undefined = still loading (nothing rendered), null = could not load (all tabs shown).
 	let cfg: any = undefined;
 	$: hasVat = cfg ? cfg.has_vat !== false : true;
 	$: withholdsIit = cfg ? cfg.withholds_iit !== false : true;
-	$: citLabel = cfg?.cit_label || 'IS';
 	$: tabs = [
-		...(hasVat ? [{ id: 'vat' as TaxTab, label: cfg?.tax_name || 'VAT' }] : []),
-		{ id: 'is' as TaxTab, label: citLabel },
-		...(withholdsIit ? [{ id: 'ir' as TaxTab, label: 'IR' }] : []),
-		{ id: 'accounts' as TaxTab, label: 'Accounts' }
+		...(hasVat ? [{ id: 'vat' as TaxTab, label: taxTerm($i18n.t, cfg) }] : []),
+		{ id: 'is' as TaxTab, label: citTerm($i18n.t, cfg) },
+		...(withholdsIit
+			? [{ id: 'ir' as TaxTab, label: $i18n.t('Individual income tax') }]
+			: []),
+		{ id: 'accounts' as TaxTab, label: $i18n.t('Accounts') }
 	];
 	$: if (cfg && !tabs.some((t) => t.id === activeTab)) activeTab = tabs[0].id;
 
@@ -36,7 +42,9 @@
 	const refreshMissing = async () => {
 		try {
 			const map = await getTaxAccounts(companyId);
-			missing = (map.roles ?? []).filter((r: any) => r.source === 'missing' && r.applicable !== false).length;
+			missing = (map.roles ?? []).filter(
+				(r: any) => r.source === 'missing' && r.applicable !== false
+			).length;
 		} catch {
 			missing = 0;
 		}
@@ -57,54 +65,63 @@
 		mapVersion += 1;
 		refreshMissing();
 	};
+	const gotoAccounts = () => (activeTab = 'accounts');
 </script>
 
-<div class="py-3 space-y-4">
+<div class="flex flex-col gap-4">
 	{#if cfg === undefined}
-		<div class="text-xs text-gray-400 py-4">{$i18n.t('Loading...')}</div>
+		<Skeleton class="h-9 w-72 max-w-full" />
+		<Skeleton class="h-40 w-full rounded-xl" />
 	{:else}
-	<!-- Sub-tab bar -->
-	<div class="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
-		{#each tabs as tab}
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-md transition flex items-center gap-1.5
-					{activeTab === tab.id
-					? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-					: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-				on:click={() => (activeTab = tab.id)}
-			>
-				{$i18n.t(tab.label)}
-				{#if tab.id === 'accounts' && missing > 0}
-					<span
-						class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-						title={$i18n.t('Unmapped tax roles')}>{missing}</span
-					>
-				{/if}
-			</button>
-		{/each}
-	</div>
+		<Tabs.Root value={activeTab} onValueChange={(v) => (activeTab = v as TaxTab)} class="gap-4">
+			<div class="flex max-w-full overflow-x-auto">
+				<Tabs.List>
+					{#each tabs as tab (tab.id)}
+						<Tabs.Trigger value={tab.id} class="px-3">
+							{tab.label}
+							{#if tab.id === 'accounts' && missing > 0}
+								<Badge
+									variant="danger"
+									class="h-[18px] min-w-[18px] rounded-full px-1 tabular-nums"
+									title={$i18n.t('Unmapped tax roles')}
+								>
+									{missing}<span class="sr-only">{$i18n.t('Unmapped tax roles')}</span>
+								</Badge>
+							{/if}
+						</Tabs.Trigger>
+					{/each}
+				</Tabs.List>
+			</div>
 
-	{#if cfg && (!hasVat || !withholdsIit)}
-		<div class="text-xs text-gray-400 dark:text-gray-500 px-0.5">
-			{#if !hasVat}
-				{$i18n.t('{{country}} levies no VAT / GST: there is no VAT return, and any tax printed on a supplier bill is booked as part of the cost.', { country: cfg.country })}
+			{#if cfg && (!hasVat || !withholdsIit)}
+				<p class="text-sm text-muted-foreground">
+					{#if !hasVat}
+						{$i18n.t(
+							'{{country}} levies no VAT / GST: there is no VAT return, and any tax printed on a supplier bill is booked as part of the cost.',
+							{ country: cfg.country }
+						)}
+					{/if}
+					{#if !withholdsIit}
+						{$i18n.t(
+							"Employers do not withhold Salaries Tax — employees settle it themselves; the employer files the yearly Employer's Return (BIR56A / IR56B) in April."
+						)}
+					{/if}
+				</p>
 			{/if}
-			{#if !withholdsIit}
-				{$i18n.t('Employers do not withhold Salaries Tax — employees settle it themselves; the employer files the yearly Employer\'s Return (BIR56A / IR56B) in April.')}
-			{/if}
-		</div>
-	{/if}
 
-	{#key mapVersion}
-		{#if activeTab === 'vat'}
-			<TaxDeclaration {companyId} on:gotoAccounts={() => (activeTab = 'accounts')} />
-		{:else if activeTab === 'is'}
-			<IsDeclaration {companyId} on:gotoAccounts={() => (activeTab = 'accounts')} />
-		{:else if activeTab === 'ir'}
-			<IrDeclaration {companyId} />
-		{:else if activeTab === 'accounts'}
-			<TaxAccountsSettings {companyId} on:saved={onSaved} />
-		{/if}
-	{/key}
+			<Tabs.Content value={activeTab}>
+				{#key mapVersion}
+					{#if activeTab === 'vat'}
+						<TaxDeclaration {companyId} on:gotoAccounts={gotoAccounts} />
+					{:else if activeTab === 'is'}
+						<IsDeclaration {companyId} on:gotoAccounts={gotoAccounts} />
+					{:else if activeTab === 'ir'}
+						<IrDeclaration {companyId} on:gotoAccounts={gotoAccounts} />
+					{:else if activeTab === 'accounts'}
+						<TaxAccountsSettings {companyId} on:saved={onSaved} />
+					{/if}
+				{/key}
+			</Tabs.Content>
+		</Tabs.Root>
 	{/if}
 </div>

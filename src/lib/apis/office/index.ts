@@ -3,7 +3,7 @@
 // `getOfficeExchangeToken` fetches a 5-min HS256 JWT from Gnos3's
 // `/api/v1/auths/office/exchange-token` endpoint (caller must be
 // authenticated to Gnos3 with `token`, and hold `modules.office.read`).
-// The embed component then loads `${OFFICE_BASE_URL}/sso?office_build=office-20261013-8&gnos3_token=<jwt>`
+// The embed component then loads `${OFFICE_BASE_URL}/sso?gnos3_token=<jwt>`
 // inside the module iframe; the module verifies the token and starts a session.
 
 import { WEBUI_API_BASE_URL } from '$lib/constants';

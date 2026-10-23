@@ -3,6 +3,18 @@
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 
+	import Plus from '@lucide/svelte/icons/plus';
+	import Upload from '@lucide/svelte/icons/upload';
+	import Download from '@lucide/svelte/icons/download';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+
 	import {
 		getGlobalExchangeRates,
 		createGlobalExchangeRate,
@@ -14,19 +26,64 @@
 		downloadExchangeRateTemplate
 	} from '$lib/apis/accounting';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	// A broad picker for manual entry. The auto-fetch covers whatever the source
 	// publishes; this list is only for hand-adding a pair.
 	const CURRENCIES = [
-		'EUR', 'USD', 'GBP', 'CNY', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'HKD',
-		'SGD', 'KRW', 'INR', 'THB', 'MYR', 'IDR', 'PHP', 'VND', 'TWD', 'AED',
-		'SAR', 'QAR', 'KWD', 'BHD', 'ZAR', 'BRL', 'MXN', 'TRY', 'PLN', 'CZK',
-		'HUF', 'RON', 'SEK', 'NOK', 'DKK', 'ILS', 'RUB', 'MAD'
+		'EUR',
+		'USD',
+		'GBP',
+		'CNY',
+		'JPY',
+		'CHF',
+		'CAD',
+		'AUD',
+		'NZD',
+		'HKD',
+		'SGD',
+		'KRW',
+		'INR',
+		'THB',
+		'MYR',
+		'IDR',
+		'PHP',
+		'VND',
+		'TWD',
+		'AED',
+		'SAR',
+		'QAR',
+		'KWD',
+		'BHD',
+		'ZAR',
+		'BRL',
+		'MXN',
+		'TRY',
+		'PLN',
+		'CZK',
+		'HUF',
+		'RON',
+		'SEK',
+		'NOK',
+		'DKK',
+		'ILS',
+		'RUB',
+		'MAD'
 	];
 
 	const today = () => dayjs().format('YYYY-MM-DD');
@@ -39,6 +96,7 @@
 
 	// State
 	let loading = true;
+	let loadError = '';
 	let rates: any[] = [];
 	// Filters (all applied server-side via the list query).
 	let monthFilter = thisMonth(); // YYYY-MM; '' = the most recent PAGE_LIMIT rows
@@ -92,8 +150,7 @@
 						end: res.end
 					})
 				);
-			else if (!failed.length && !notes.length)
-				toast.success($i18n.t('Every day already covered'));
+			else if (!failed.length && !notes.length) toast.success($i18n.t('Every day already covered'));
 			if (failed.length)
 				toast.error(
 					$i18n.t('Could not reach the rate source for {{spans}} — add those by hand below.', {
@@ -130,7 +187,7 @@
 	// ─── Helpers ────────────────────────────────────────────────────────────────
 
 	const formatRate = (val: any) => {
-		if (val === null || val === undefined) return '-';
+		if (val === null || val === undefined) return '—';
 		return parseFloat(val).toLocaleString(undefined, {
 			minimumFractionDigits: 4,
 			maximumFractionDigits: 6
@@ -138,13 +195,16 @@
 	};
 
 	// Rows carry the day the source published them for.
-	const formatDate = (val: any) => (val ? dayjs(val).format('YYYY-MM-DD') : '-');
+	const formatDate = (val: any) => (val ? dayjs(val).format('YYYY-MM-DD') : '—');
 	const formatDay = (val: any) => (val ? dayjs(val).format('D MMM YYYY') : '-');
+
+	const AUTO_SOURCES = ['frankfurter', 'erapi', 'ecb', 'exchangerate'];
 
 	// ─── Data loading ───────────────────────────────────────────────────────────
 
 	const loadRates = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			// Empty strings are dropped by the API client, so this sends only the
 			// active filters (server-side narrowing).
@@ -154,8 +214,9 @@
 				month: monthFilter,
 				limit: PAGE_LIMIT
 			});
-			rates = Array.isArray(res) ? res : res?.items ?? [];
+			rates = Array.isArray(res) ? res : (res?.items ?? []);
 		} catch (err) {
+			loadError = `${err}`;
 			toast.error(`${$i18n.t('Failed to load exchange rates')}: ${err}`);
 		}
 		loading = false;
@@ -253,7 +314,6 @@
 			const msg = err?.detail ?? err?.message ?? String(err);
 			toast.error($i18n.t('Failed to delete exchange rate') + ': ' + msg);
 		}
-		deleteTarget = null;
 	};
 
 	// ─── CSV Import ────────────────────────────────────────────────────────────
@@ -266,18 +326,31 @@
 		importingCsv = true;
 		try {
 			const text = await file.text();
-			const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+			const lines = text
+				.split(/\r?\n/)
+				.map((l) => l.trim())
+				.filter((l) => l.length > 0);
 			if (lines.length < 2) {
 				toast.error($i18n.t('File must have a header row and at least one data row'));
 				importingCsv = false;
 				return;
 			}
 
-			const header = lines[0].split(/[,;\t]/).map((h) => h.trim().toLowerCase().replace(/['"]/g, ''));
-			const dateIdx = header.findIndex((h) => h === 'date' || h === 'effective_date' || h === 'effective date');
-			const fromIdx = header.findIndex((h) => h === 'from' || h === 'from_currency' || h === 'from currency');
-			const toIdx = header.findIndex((h) => h === 'to' || h === 'to_currency' || h === 'to currency');
-			const rateIdx = header.findIndex((h) => h === 'rate' || h === 'exchange_rate' || h === 'exchange rate');
+			const header = lines[0]
+				.split(/[,;\t]/)
+				.map((h) => h.trim().toLowerCase().replace(/['"]/g, ''));
+			const dateIdx = header.findIndex(
+				(h) => h === 'date' || h === 'effective_date' || h === 'effective date'
+			);
+			const fromIdx = header.findIndex(
+				(h) => h === 'from' || h === 'from_currency' || h === 'from currency'
+			);
+			const toIdx = header.findIndex(
+				(h) => h === 'to' || h === 'to_currency' || h === 'to currency'
+			);
+			const rateIdx = header.findIndex(
+				(h) => h === 'rate' || h === 'exchange_rate' || h === 'exchange rate'
+			);
 
 			if (dateIdx < 0 || fromIdx < 0 || toIdx < 0 || rateIdx < 0) {
 				toast.error($i18n.t('CSV must have columns: Date, From, To, Rate'));
@@ -293,7 +366,12 @@
 				const toVal = cols[toIdx]?.toUpperCase();
 				const rateVal = parseFloat(cols[rateIdx]);
 				if (!dateVal || !fromVal || !toVal || isNaN(rateVal) || rateVal <= 0) continue;
-				parsed.push({ effective_date: dateVal, from_currency: fromVal, to_currency: toVal, rate: rateVal });
+				parsed.push({
+					effective_date: dateVal,
+					from_currency: fromVal,
+					to_currency: toVal,
+					rate: rateVal
+				});
 			}
 
 			if (parsed.length === 0) {
@@ -319,292 +397,366 @@
 	});
 </script>
 
-<ConfirmDialog
-	bind:show={showDeleteConfirm}
-	on:confirm={handleDelete}
-	title={$i18n.t('Delete Exchange Rate')}
-	message={$i18n.t('Are you sure you want to delete this exchange rate? This action cannot be undone.')}
+<input
+	type="file"
+	accept=".csv,.txt"
+	class="hidden"
+	bind:this={fileInput}
+	on:change={handleFileImport}
 />
 
-<div class="py-2">
-	<!-- Header -->
-	<div class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between">
-		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
-			<div class="flex-shrink-0 dark:text-gray-200">{$i18n.t('Exchange Rates')}</div>
-			<div class="text-lg font-medium text-gray-500 dark:text-gray-500">{rates.length}</div>
-		</div>
-
-		<div class="flex gap-2 flex-wrap">
-			<input type="file" accept=".csv,.txt" class="hidden" bind:this={fileInput} on:change={handleFileImport} />
-			<button
-				class="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-				on:click={() => downloadExchangeRateTemplate()}
-				title={$i18n.t('Download CSV template with example daily rates')}
-			>
-				{$i18n.t('Template')}
-			</button>
-			<button
-				class="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
-				disabled={importingCsv}
-				on:click={() => fileInput?.click()}
-			>
-				{importingCsv ? $i18n.t('Importing...') : $i18n.t('Import CSV')}
-			</button>
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition"
-				on:click={() => (showAddForm = !showAddForm)}
-			>
-				{showAddForm ? $i18n.t('Cancel') : $i18n.t('Add Rate')}
-			</button>
-		</div>
+<div class="flex flex-col gap-4">
+	<div class="grid max-w-3xl gap-1">
+		<h2 class="text-lg font-semibold">{$i18n.t('Exchange Rates')}</h2>
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				'Shared exchange rates for the whole platform, one per publish day. An entry uses the last rate published on or before its date, so weekends and holidays need no rate of their own. Each company uses these unless it overrides a rate in its own settings.'
+			)}
+		</p>
 	</div>
 
-	<!-- Description -->
-	<div class="text-xs text-gray-400 dark:text-gray-500 px-0.5 mb-3">
-		{$i18n.t(
-			'Shared exchange rates for the whole platform, one per publish day. An entry uses the last rate published on or before its date, so weekends and holidays need no rate of their own. Each company uses these unless it overrides a rate in its own settings.'
-		)}
-	</div>
-
-	<!-- Fetch controls -->
-	<div class="flex items-center gap-2 mb-1 px-3 py-2.5 bg-gray-50 dark:bg-gray-850/50 rounded-xl border border-gray-100 dark:border-gray-800 flex-wrap">
-		<label for="global-fetch-day" class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Day')}</label>
-		<input
-			id="global-fetch-day"
-			type="date"
-			max={today()}
-			bind:value={fetchDate}
-			class="text-xs rounded-lg px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300"
-		/>
-		<button
-			class="px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
-			disabled={fetching}
-			on:click={handleFetchNow}
-		>
-			{fetching ? $i18n.t('Fetching...') : $i18n.t('Fetch now')}
-		</button>
-		<select
-			bind:value={fetchSource}
-			class="text-xs rounded-lg px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300"
-		>
-			<option value="frankfurter">{$i18n.t('ECB / Frankfurter — all currencies')}</option>
-			<option value="erapi">{$i18n.t('open.er-api — 160+ currencies')}</option>
-		</select>
-	</div>
-	<!-- Fetch helper -->
-	<div class="text-[10px] text-gray-400 dark:text-gray-500 px-0.5 mb-3">
-		{$i18n.t('“Fetch now” pulls that day’s rates, per company base currency. A day the source did not publish on (a weekend, a holiday) lands on the business day before it. Manual rates are never overwritten.')}
-	</div>
-
-	<!-- Rate freshness. The remark every converting page echoes: which day the
-	     numbers on screen actually come from. -->
-	{#if coverage?.latest_date}
-		<div
-			class="text-[11px] px-0.5 mb-3 {ratesAreStale
-				? 'text-amber-600 dark:text-amber-400'
-				: 'text-gray-400 dark:text-gray-500'}"
-		>
-			{#if ratesAreStale}
+	<!-- Fetch from the live source -->
+	<Card.Root class="gap-0 py-0">
+		<Card.Header class="border-b py-4 [.border-b]:pb-4">
+			<Card.Title>{$i18n.t('Live rates')}</Card.Title>
+			<Card.Description>
 				{$i18n.t(
-					'Live rates last reached {{date}}, {{days}} days ago. Conversions across the platform are using that day’s rate until the source is reachable again.',
-					{ date: formatDay(coverage.latest_date), days: coverage.stale_days }
+					'“Fetch now” pulls that day’s rates, per company base currency. A day the source did not publish on (a weekend, a holiday) lands on the business day before it. Manual rates are never overwritten.'
 				)}
-			{:else}
-				{$i18n.t('Rates current to {{date}}.', { date: formatDay(coverage.latest_date) })}
-			{/if}
-		</div>
-	{/if}
-
-	<!-- Coverage: stretches with no rates at all -->
-	{#if coverage}
-		<div
-			class="flex items-start gap-3 flex-wrap px-3 py-2.5 mb-3 rounded-lg border {gaps.length
-				? 'border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20'
-				: 'border-gray-100 dark:border-gray-850 bg-gray-50/60 dark:bg-gray-900/40'}"
-		>
-			<div class="flex-1 min-w-[16rem]">
-				{#if gaps.length}
-					<div class="text-xs font-medium text-amber-700 dark:text-amber-300">
-						{$i18n.t('{{count}} stretch(es) with no rates on file', { count: gaps.length })}
-					</div>
-					<div class="text-[10px] text-amber-600/80 dark:text-amber-400/70 mt-0.5">
-						{#each gaps.slice(0, 6) as gap}
-							<div>
-								{gap.base} · {gap.start} → {gap.end}
-								<span class="opacity-70"
-									>({$i18n.t('{{count}} day(s)', { count: gap.days })})</span
-								>
-							</div>
-						{/each}
-						{#if gaps.length > 6}<div>…</div>{/if}
-					</div>
-					<div class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+			</Card.Description>
+		</Card.Header>
+		<Card.Content class="divide-y">
+			<div class="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+				<div class="grid min-w-0 gap-1">
+					<Label for="global-fetch-source">{$i18n.t('Source')}</Label>
+					<p class="text-sm text-muted-foreground">
 						{$i18n.t(
-							'An entry dated inside one of these has no recent rate to use. Fill the gaps, or add the pair by hand — entries will ask for a rate rather than reach back weeks for one.'
+							'ECB / Frankfurter covers ~31 major currencies. If a company base currency is outside that set (e.g. AED, TWD, SAR, VND), switch the source to open.er-api or add rates manually.'
 						)}
-					</div>
-				{:else}
-					<div class="text-xs text-gray-600 dark:text-gray-300">
+					</p>
+				</div>
+				<NativeSelect.Root
+					id="global-fetch-source"
+					class="w-full sm:w-72 sm:shrink-0"
+					bind:value={fetchSource}
+				>
+					<NativeSelect.Option value="frankfurter"
+						>{$i18n.t('ECB / Frankfurter — all currencies')}</NativeSelect.Option
+					>
+					<NativeSelect.Option value="erapi"
+						>{$i18n.t('open.er-api — 160+ currencies')}</NativeSelect.Option
+					>
+				</NativeSelect.Root>
+			</div>
+			<div class="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+				<div class="grid min-w-0 gap-1">
+					<Label for="global-fetch-day">{$i18n.t('Day')}</Label>
+				</div>
+				<div class="flex w-full items-center gap-2 sm:w-72 sm:shrink-0">
+					<Input
+						id="global-fetch-day"
+						type="date"
+						max={today()}
+						class="min-w-0 flex-1 tabular-nums"
+						bind:value={fetchDate}
+					/>
+					<Button disabled={fetching} onclick={handleFetchNow}>
+						{#if fetching}<Spinner />{:else}<RefreshCw />{/if}
+						{fetching ? $i18n.t('Fetching...') : $i18n.t('Fetch now')}
+					</Button>
+				</div>
+			</div>
+		</Card.Content>
+
+		<!-- Rate freshness: which day the numbers on screen actually come from -->
+		{#if coverage?.latest_date || (coverage && !gaps.length)}
+			<Card.Footer class="flex-col items-start gap-1 border-t py-3 [.border-t]:pt-3">
+				{#if coverage?.latest_date}
+					{#if ratesAreStale}
+						<p class="flex items-start gap-2 text-sm">
+							<TriangleAlert class="mt-0.5 size-4 shrink-0 text-warning" />
+							{$i18n.t(
+								'Live rates last reached {{date}}, {{days}} days ago. Conversions across the platform are using that day’s rate until the source is reachable again.',
+								{ date: formatDay(coverage.latest_date), days: coverage.stale_days }
+							)}
+						</p>
+					{:else}
+						<p class="flex items-center gap-2 text-sm text-muted-foreground">
+							<CircleCheck class="size-4 shrink-0 text-success" />
+							{$i18n.t('Rates current to {{date}}.', { date: formatDay(coverage.latest_date) })}
+						</p>
+					{/if}
+				{/if}
+				{#if coverage && !gaps.length}
+					<p class="text-sm text-muted-foreground">
 						{$i18n.t('No gaps between {{start}} and {{end}}.', {
 							start: coverage.start,
 							end: coverage.end
 						})}
-					</div>
-					{#if coverage.bases?.length}
-						<div class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-							{#each coverage.bases as b}
-								<span class="mr-2"
-									>{b.base}: {$i18n.t('{{count}} day(s)', { count: b.days_covered })}</span
-								>
-							{/each}
-						</div>
-					{/if}
+						{#if coverage.bases?.length}
+							<span class="tabular-nums">
+								{#each coverage.bases as b, i}{i ? ' · ' : ''}{b.base}: {$i18n.t(
+										'{{count}} day(s)',
+										{ count: b.days_covered }
+									)}{/each}
+							</span>
+						{/if}
+					</p>
 				{/if}
-			</div>
-			<button
-				class="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50 shrink-0"
-				disabled={backfilling || !gaps.length}
-				on:click={handleBackfill}
-			>
-				{backfilling ? $i18n.t('Filling...') : $i18n.t('Fill gaps')}
-			</button>
-		</div>
-	{/if}
-
-	<!-- Coverage caveat -->
-	<div class="text-[11px] text-amber-600 dark:text-amber-400/80 px-0.5 mb-3">
-		{$i18n.t(
-			'ECB / Frankfurter covers ~31 major currencies. If a company base currency is outside that set (e.g. AED, TWD, SAR, VND), switch the source to open.er-api or add rates manually.'
-		)}
-	</div>
-
-	<!-- Filters -->
-	<div class="flex items-center gap-2 mb-3 px-3 py-2 bg-gray-50 dark:bg-gray-850/50 rounded-xl border border-gray-100 dark:border-gray-800 flex-wrap">
-		<span class="text-xs font-medium text-gray-500 dark:text-gray-400">{$i18n.t('Filter')}</span>
-		<select
-			bind:value={filterFrom}
-			on:change={loadRates}
-			aria-label={$i18n.t('From currency')}
-			class="text-xs rounded-lg px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300"
-		>
-			<option value="">{$i18n.t('From: any')}</option>
-			{#each CURRENCIES as cur}<option value={cur}>{cur}</option>{/each}
-		</select>
-		<span class="text-gray-400 dark:text-gray-500">→</span>
-		<select
-			bind:value={filterTo}
-			on:change={loadRates}
-			aria-label={$i18n.t('To currency')}
-			class="text-xs rounded-lg px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300"
-		>
-			<option value="">{$i18n.t('To: any')}</option>
-			{#each CURRENCIES as cur}<option value={cur}>{cur}</option>{/each}
-		</select>
-		<div class="flex items-center gap-1.5">
-			<label for="global-rate-month-view" class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Month')}</label>
-			<input
-				id="global-rate-month-view"
-				type="month"
-				max={thisMonth()}
-				bind:value={monthFilter}
-				on:change={loadRates}
-				class="text-xs rounded-lg px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-transparent dark:text-gray-300"
-			/>
-		</div>
-		{#if filterFrom || filterTo || monthFilter}
-			<button
-				class="text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 underline decoration-dotted"
-				on:click={clearFilters}
-			>
-				{$i18n.t('Clear filters')}
-			</button>
+			</Card.Footer>
 		{/if}
-		<span class="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">{rates.length} {$i18n.t('shown')}</span>
-	</div>
+	</Card.Root>
 
-	<!-- Add Rate Form -->
-	{#if showAddForm}
-		<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-blue-200/50 dark:border-blue-800/30 mb-3">
-			<div class="text-sm font-medium dark:text-gray-200 mb-3">{$i18n.t('Add Exchange Rate')}</div>
-			<div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-				<div>
-					<label for="grate-from" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('From Currency')} *</label>
-					<select id="grate-from" bind:value={newFromCurrency} class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition">
-						{#each CURRENCIES as cur}<option value={cur}>{cur}</option>{/each}
-					</select>
-				</div>
-				<div>
-					<label for="grate-to" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('To Currency')} *</label>
-					<select id="grate-to" bind:value={newToCurrency} class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition">
-						{#each CURRENCIES as cur}<option value={cur}>{cur}</option>{/each}
-					</select>
-				</div>
-				<div>
-					<label for="grate-value" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Rate')} *</label>
-					<input id="grate-value" type="number" step="0.000001" min="0" bind:value={newRate} placeholder="1.0850" class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition" />
-				</div>
-				<div>
-					<label for="grate-date" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Effective Date')} *</label>
-					<input id="grate-date" type="date" bind:value={newDate} class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition" />
-				</div>
-				<button class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50" on:click={handleCreate} disabled={creating || !newFromCurrency || !newToCurrency || !newRate || !newDate}>
-					{creating ? $i18n.t('Saving...') : $i18n.t('Save')}
-				</button>
-			</div>
-			<div class="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-				{$i18n.t('The rate is stored on this exact day and applies until a later one supersedes it. A rate you enter by hand also holds against the auto-fetch for the rest of its month.')}
-			</div>
-		</div>
+	<!-- Coverage: stretches with no rates at all, shown where they are filled -->
+	{#if gaps.length}
+		<Alert.Root variant="warning">
+			<TriangleAlert />
+			<Alert.Title>
+				{$i18n.t('{{count}} stretch(es) with no rates on file', { count: gaps.length })}
+			</Alert.Title>
+			<Alert.Description>
+				<ul class="tabular-nums">
+					{#each gaps.slice(0, 6) as gap}
+						<li>
+							{gap.base} · {gap.start} → {gap.end}
+							({$i18n.t('{{count}} day(s)', { count: gap.days })})
+						</li>
+					{/each}
+					{#if gaps.length > 6}<li>…</li>{/if}
+				</ul>
+				<p class="mt-1">
+					{$i18n.t(
+						'An entry dated inside one of these has no recent rate to use. Fill the gaps, or add the pair by hand — entries will ask for a rate rather than reach back weeks for one.'
+					)}
+				</p>
+				<Button
+					variant="outline"
+					size="sm"
+					class="mt-2"
+					disabled={backfilling}
+					onclick={handleBackfill}
+				>
+					{#if backfilling}<Spinner />{/if}
+					{backfilling ? $i18n.t('Filling...') : $i18n.t('Fill gaps')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
 	{/if}
 
-	<!-- Rates Table -->
-	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
-	{:else if rates.length === 0}
-		<div class="bg-white dark:bg-gray-900 rounded-xl p-8 border border-gray-100/30 dark:border-gray-850/30 text-center">
-			<div class="text-gray-400 dark:text-gray-500 text-sm mb-3">{$i18n.t('No exchange rates defined yet.')}</div>
-			<div class="text-gray-400 dark:text-gray-500 text-xs">{$i18n.t('Nothing for this month. Click "Fetch now" to pull live rates, "Fill gaps" to backfill history, or add them manually.')}</div>
+	<!-- Rates on file -->
+	<div class="flex flex-wrap items-center gap-2">
+		<NativeSelect.Root
+			size="sm"
+			value={filterFrom}
+			aria-label={$i18n.t('From currency')}
+			onchange={(e: Event) => {
+				filterFrom = (e.currentTarget as HTMLSelectElement).value;
+				loadRates();
+			}}
+		>
+			<NativeSelect.Option value="">{$i18n.t('From: any')}</NativeSelect.Option>
+			{#each CURRENCIES as cur}<NativeSelect.Option value={cur}>{cur}</NativeSelect.Option>{/each}
+		</NativeSelect.Root>
+		<ArrowRight class="size-4 text-muted-foreground" aria-hidden="true" />
+		<NativeSelect.Root
+			size="sm"
+			value={filterTo}
+			aria-label={$i18n.t('To currency')}
+			onchange={(e: Event) => {
+				filterTo = (e.currentTarget as HTMLSelectElement).value;
+				loadRates();
+			}}
+		>
+			<NativeSelect.Option value="">{$i18n.t('To: any')}</NativeSelect.Option>
+			{#each CURRENCIES as cur}<NativeSelect.Option value={cur}>{cur}</NativeSelect.Option>{/each}
+		</NativeSelect.Root>
+		<Input
+			id="global-rate-month-view"
+			type="month"
+			max={thisMonth()}
+			class="h-8 w-40 tabular-nums"
+			aria-label={$i18n.t('Month')}
+			bind:value={monthFilter}
+			onchange={loadRates}
+		/>
+		{#if filterFrom || filterTo || monthFilter}
+			<Button variant="ghost" size="sm" onclick={clearFilters}>{$i18n.t('Clear filters')}</Button>
+		{/if}
+
+		<div class="ml-auto flex flex-wrap items-center gap-2">
+			<span class="text-sm text-muted-foreground tabular-nums"
+				>{rates.length} {$i18n.t('shown')}</span
+			>
+			<Tip content={$i18n.t('Download CSV template with example daily rates')}>
+				<Button variant="ghost" size="sm" onclick={() => downloadExchangeRateTemplate()}>
+					<Download />{$i18n.t('Template')}
+				</Button>
+			</Tip>
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={importingCsv}
+				onclick={() => fileInput?.click()}
+			>
+				{#if importingCsv}<Spinner />{:else}<Upload />{/if}
+				{importingCsv ? $i18n.t('Importing...') : $i18n.t('Import CSV')}
+			</Button>
+			<Button variant="outline" size="sm" onclick={() => (showAddForm = true)}>
+				<Plus />{$i18n.t('Add Rate')}
+			</Button>
 		</div>
+	</div>
+
+	{#if loading}
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(6) as _}
+				<Skeleton class="h-8 w-full" />
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Failed to load exchange rates')}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={loadRates}>
+					<RotateCcw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{:else if rates.length === 0}
+		<Empty.Root class="border">
+			<Empty.Header>
+				<Empty.Media variant="icon"><ArrowLeftRight /></Empty.Media>
+				<Empty.Title>{$i18n.t('No exchange rates defined yet.')}</Empty.Title>
+				<Empty.Description>
+					{$i18n.t(
+						'Nothing for this month. Click "Fetch now" to pull live rates, "Fill gaps" to backfill history, or add them manually.'
+					)}
+				</Empty.Description>
+			</Empty.Header>
+			<Empty.Content>
+				<Button variant="outline" size="sm" onclick={() => (showAddForm = true)}>
+					<Plus />{$i18n.t('Add Rate')}
+				</Button>
+			</Empty.Content>
+		</Empty.Root>
 	{:else}
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-				<thead class="text-xs text-gray-900 dark:text-gray-100 font-bold uppercase bg-gray-100 dark:bg-gray-800">
-					<tr class="border-b-[1.5px] border-gray-200 dark:border-gray-700">
-						<th class="px-3 py-2">{$i18n.t('Effective Date')}</th>
-						<th class="px-3 py-2">{$i18n.t('From')}</th>
-						<th class="px-3 py-2">{$i18n.t('To')}</th>
-						<th class="px-3 py-2 text-right">{$i18n.t('Rate')}</th>
-						<th class="px-3 py-2">{$i18n.t('Source')}</th>
-						<th class="px-3 py-2 text-right">{$i18n.t('Actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Effective Date')}</Table.Head>
+						<Table.Head>{$i18n.t('From', { context: 'currency' })}</Table.Head>
+						<Table.Head>{$i18n.t('To', { context: 'currency' })}</Table.Head>
+						<Table.Head class="text-right">{$i18n.t('Rate')}</Table.Head>
+						<Table.Head>{$i18n.t('Source')}</Table.Head>
+						<Table.Head class="w-12"><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each rates as rate (rate.id)}
-						<tr class="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-850 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition">
-							<td class="px-3 py-2 font-medium dark:text-gray-200">{formatDate(rate.effective_date)}</td>
-							<td class="px-3 py-2"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{rate.from_currency}</span></td>
-							<td class="px-3 py-2"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{rate.to_currency}</span></td>
-							<td class="px-3 py-2 text-right font-mono">{formatRate(rate.rate)}</td>
-							<td class="px-3 py-2">
+						<Table.Row>
+							<Table.Cell class="py-1.5 tabular-nums">{formatDate(rate.effective_date)}</Table.Cell>
+							<Table.Cell class="py-1.5 font-medium">{rate.from_currency}</Table.Cell>
+							<Table.Cell class="py-1.5 font-medium">{rate.to_currency}</Table.Cell>
+							<Table.Cell class="py-1.5 text-right tabular-nums">{formatRate(rate.rate)}</Table.Cell
+							>
+							<Table.Cell class="py-1.5">
 								{#if rate.source === 'manual' || rate.source === 'Manual'}
-									<span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-200">{$i18n.t('Manual')}</span>
-								{:else if rate.source === 'frankfurter' || rate.source === 'erapi' || rate.source === 'ecb' || rate.source === 'exchangerate'}
-									<span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200">{$i18n.t('Auto')}</span>
+									<Badge variant="outline">{$i18n.t('Manual')}</Badge>
+								{:else if AUTO_SOURCES.includes(rate.source)}
+									<Badge variant="secondary">{$i18n.t('Auto')}</Badge>
 								{:else}
-									<span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">{rate.source ? $i18n.t(rate.source) : $i18n.t('Import')}</span>
+									<Badge variant="outline" class="capitalize"
+										>{rate.source ? $i18n.t(rate.source) : $i18n.t('Import')}</Badge
+									>
 								{/if}
-							</td>
-							<td class="px-3 py-2 text-right">
-								<Tooltip content={$i18n.t('Delete this exchange rate')}>
-									<button class="px-3 py-1 text-xs font-medium rounded-lg bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40 transition" on:click={() => confirmDelete(rate)}>
-										{$i18n.t('Delete')}
-									</button>
-								</Tooltip>
-							</td>
-						</tr>
+							</Table.Cell>
+							<Table.Cell class="py-1.5 text-right">
+								<Tip content={$i18n.t('Delete this exchange rate')}>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										class="text-muted-foreground hover:text-destructive"
+										aria-label={$i18n.t('Delete this exchange rate')}
+										onclick={() => confirmDelete(rate)}
+									>
+										<Trash2 />
+									</Button>
+								</Tip>
+							</Table.Cell>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
 		</div>
 	{/if}
 </div>
+
+<!-- Add a rate by hand -->
+<Dialog.Root bind:open={showAddForm}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Add Exchange Rate')}</Dialog.Title>
+			<Dialog.Description>
+				{$i18n.t(
+					'The rate is stored on this exact day and applies until a later one supersedes it. A rate you enter by hand also holds against the auto-fetch for the rest of its month.'
+				)}
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid gap-2">
+				<Label for="grate-from">{$i18n.t('From Currency')} *</Label>
+				<NativeSelect.Root id="grate-from" class="w-full" bind:value={newFromCurrency}>
+					{#each CURRENCIES as cur}<NativeSelect.Option value={cur}>{cur}</NativeSelect.Option
+						>{/each}
+				</NativeSelect.Root>
+			</div>
+			<div class="grid gap-2">
+				<Label for="grate-to">{$i18n.t('To Currency')} *</Label>
+				<NativeSelect.Root id="grate-to" class="w-full" bind:value={newToCurrency}>
+					{#each CURRENCIES as cur}<NativeSelect.Option value={cur}>{cur}</NativeSelect.Option
+						>{/each}
+				</NativeSelect.Root>
+			</div>
+			<div class="grid gap-2">
+				<Label for="grate-value">{$i18n.t('Rate')} *</Label>
+				<Input
+					id="grate-value"
+					type="number"
+					step="0.000001"
+					min="0"
+					class="text-right tabular-nums"
+					bind:value={newRate}
+					placeholder="1.0850"
+				/>
+			</div>
+			<div class="grid gap-2">
+				<Label for="grate-date">{$i18n.t('Effective Date')} *</Label>
+				<Input id="grate-date" type="date" class="tabular-nums" bind:value={newDate} />
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showAddForm = false)}>{$i18n.t('Cancel')}</Button>
+			<Button
+				onclick={handleCreate}
+				disabled={creating || !newFromCurrency || !newToCurrency || !newRate || !newDate}
+			>
+				{#if creating}<Spinner />{/if}
+				{creating ? $i18n.t('Saving...') : $i18n.t('Save')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<ConfirmDialog
+	bind:open={showDeleteConfirm}
+	title={$i18n.t('Delete Exchange Rate')}
+	description={$i18n.t(
+		'Are you sure you want to delete this exchange rate? This action cannot be undone.'
+	)}
+	confirmLabel={$i18n.t('Delete')}
+	destructive
+	onconfirm={handleDelete}
+/>

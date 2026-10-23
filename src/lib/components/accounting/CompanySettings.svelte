@@ -1,7 +1,22 @@
+<!--
+	Company → Settings: a left nav of sections (a select on narrow screens) and the chosen section.
+	The section is kept in the URL (?section=…) so a link can open it directly.
+-->
 <script lang="ts">
-	import { getContext } from 'svelte';
-	import { slide } from 'svelte/transition';
-	import { toast } from 'svelte-sonner';
+	import { getContext, type Component } from 'svelte';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
+
+	import ListTree from '@lucide/svelte/icons/list-tree';
+	import CalendarRange from '@lucide/svelte/icons/calendar-range';
+	import Coins from '@lucide/svelte/icons/coins';
+	import Building from '@lucide/svelte/icons/building';
+	import BookCheck from '@lucide/svelte/icons/book-check';
+	import ListFilter from '@lucide/svelte/icons/list-filter';
+	import Repeat from '@lucide/svelte/icons/repeat';
+	import Split from '@lucide/svelte/icons/split';
+	import Users from '@lucide/svelte/icons/users';
+	import Tags from '@lucide/svelte/icons/tags';
 
 	import ChartOfAccounts from '$lib/components/accounting/ChartOfAccounts.svelte';
 	import AccountingPeriods from '$lib/components/accounting/AccountingPeriods.svelte';
@@ -13,426 +28,131 @@
 	import RecurringTemplates from '$lib/components/accounting/RecurringTemplates.svelte';
 	import EmployeesManager from '$lib/components/accounting/EmployeesManager.svelte';
 	import ExpenseCategoriesManager from '$lib/components/accounting/ExpenseCategoriesManager.svelte';
-	import ExcelImportModal from '$lib/components/accounting/ExcelImportModal.svelte';
-	import {
-		downloadChartImportTemplate,
-		downloadPeriodImportTemplate
-	} from '$lib/apis/accounting';
 
-	const i18n = getContext('i18n');
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import { cn } from '$lib/utils/shadcn.js';
 
-	export let companyId: number;
+	const i18n: any = getContext('i18n');
 
-	// Excel import modal state
-	let showImportModal = false;
-	let importType: 'chart' | 'period' = 'chart';
+	let { companyId }: { companyId: number } = $props();
 
-	// Keys to force re-render of child components after import
-	let chartKey = 0;
-	let periodKey = 0;
+	type Section = { key: string; label: string; icon: Component };
 
-	// Collapse state — all sections collapsed by default
-	let collapsed: Record<string, boolean> = {
-		chart: true,
-		periods: true,
-		categorization: true,
-		booking: true,
-		reclassify: true,
-		exchange: true,
-		assets: true,
-		recurring: true,
-		employees: true,
-		expenseCategories: true
-	};
-
-	const toggle = (key: string) => {
-		collapsed[key] = !collapsed[key];
-	};
-
-	const openImportAccounts = () => {
-		importType = 'chart';
-		showImportModal = true;
-	};
-
-	const openImportPeriods = () => {
-		importType = 'period';
-		showImportModal = true;
-	};
-
-	const handleImported = () => {
-		if (importType === 'chart') {
-			chartKey += 1;
-			toast.success($i18n.t('Accounts imported successfully'));
-		} else {
-			periodKey += 1;
-			toast.success($i18n.t('Periods imported successfully'));
+	const GROUPS: { label: string; sections: Section[] }[] = [
+		{
+			label: 'Ledger',
+			sections: [
+				{ key: 'chart', label: 'Chart of Accounts', icon: ListTree },
+				{ key: 'periods', label: 'Accounting Periods', icon: CalendarRange },
+				{ key: 'exchange', label: 'Exchange Rates', icon: Coins },
+				{ key: 'assets', label: 'Fixed Assets', icon: Building }
+			]
+		},
+		{
+			label: 'Booking',
+			sections: [
+				{ key: 'booking', label: 'Booking Defaults', icon: BookCheck },
+				{ key: 'categorization', label: 'Categorization Rules', icon: ListFilter },
+				{ key: 'recurring', label: 'Recurring Transactions', icon: Repeat },
+				{ key: 'reclassify', label: 'Postings on Control Accounts', icon: Split }
+			]
+		},
+		{
+			label: 'Expenses',
+			sections: [
+				{ key: 'employees', label: 'Employees', icon: Users },
+				{ key: 'expenseCategories', label: 'Expense Categories', icon: Tags }
+			]
 		}
-	};
+	];
+	const KEYS = GROUPS.flatMap((g) => g.sections.map((s) => s.key));
+
+	const active = $derived.by(() => {
+		const s = $page.url.searchParams.get('section');
+		return s && KEYS.includes(s) ? s : 'chart';
+	});
+
+	function select(key: string) {
+		if (key === active) return;
+		const url = new URL($page.url);
+		url.searchParams.set('section', key);
+		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+		document.getElementById('accounting-container')?.scrollTo({ top: 0 });
+	}
 </script>
 
-<ExcelImportModal
-	bind:show={showImportModal}
-	type={importType}
-	{companyId}
-	on:imported={handleImported}
-/>
-
-<div class="py-2 space-y-3">
-	<!-- Chart of Accounts Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('chart')}
+<div class="@container">
+	<div class="grid gap-6 @4xl:grid-cols-[15rem_minmax(0,1fr)]">
+		<!-- Section nav: a list from 896px of content width, a select below -->
+		<nav
+			aria-label={$i18n.t('Settings')}
+			class="hidden content-start gap-4 self-start @4xl:sticky @4xl:top-0 @4xl:grid"
 		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.chart ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Chart of Accounts')}
-				</span>
-			</div>
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<div class="flex items-center gap-2" on:click|stopPropagation>
-				<button
-					class="px-3.5 py-1.5 text-sm rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 font-medium transition flex items-center gap-1.5"
-					on:click={openImportAccounts}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-					</svg>
-					{$i18n.t('Import from Excel')}
-				</button>
-				<button
-					class="px-3.5 py-1.5 text-sm rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 font-medium transition flex items-center gap-1.5"
-					on:click={downloadChartImportTemplate}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-					</svg>
-					{$i18n.t('Download Template')}
-				</button>
-			</div>
+			{#each GROUPS as group}
+				<div class="grid gap-0.5">
+					<div class="px-2 pb-1 text-xs font-medium text-muted-foreground">
+						{$i18n.t(group.label, { context: 'tab' })}
+					</div>
+					{#each group.sections as s (s.key)}
+						<button
+							type="button"
+							aria-current={active === s.key ? 'page' : undefined}
+							class={cn(
+								'flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+								active === s.key && 'bg-accent font-medium text-foreground'
+							)}
+							onclick={() => select(s.key)}
+						>
+							<s.icon class="size-4 shrink-0" aria-hidden="true" />
+							<span class="min-w-0 truncate">{$i18n.t(s.label)}</span>
+						</button>
+					{/each}
+				</div>
+			{/each}
+		</nav>
+
+		<div class="@4xl:hidden">
+			<label for="settings-section" class="sr-only">{$i18n.t('Section')}</label>
+			<NativeSelect.Root
+				id="settings-section"
+				class="w-full"
+				value={active}
+				onchange={(e: Event) => select((e.currentTarget as HTMLSelectElement).value)}
+			>
+				{#each GROUPS as group}
+					<NativeSelect.OptGroup label={$i18n.t(group.label, { context: 'tab' })}>
+						{#each group.sections as s (s.key)}
+							<NativeSelect.Option value={s.key}>{$i18n.t(s.label)}</NativeSelect.Option>
+						{/each}
+					</NativeSelect.OptGroup>
+				{/each}
+			</NativeSelect.Root>
 		</div>
-		{#if !collapsed.chart}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				{#key chartKey}
+
+		<section class="min-w-0">
+			{#key `${companyId}-${active}`}
+				{#if active === 'chart'}
 					<ChartOfAccounts {companyId} />
-				{/key}
-			</div>
-		{/if}
-	</div>
-
-	<!-- Accounting Periods Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('periods')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.periods ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Accounting Periods')}
-				</span>
-			</div>
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<div class="flex items-center gap-2" on:click|stopPropagation>
-				<button
-					class="px-3.5 py-1.5 text-sm rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 font-medium transition flex items-center gap-1.5"
-					on:click={openImportPeriods}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-					</svg>
-					{$i18n.t('Import from Excel')}
-				</button>
-				<button
-					class="px-3.5 py-1.5 text-sm rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 font-medium transition flex items-center gap-1.5"
-					on:click={downloadPeriodImportTemplate}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-					</svg>
-					{$i18n.t('Download Template')}
-				</button>
-			</div>
-		</div>
-		{#if !collapsed.periods}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				{#key periodKey}
+				{:else if active === 'periods'}
 					<AccountingPeriods {companyId} />
-				{/key}
-			</div>
-		{/if}
-	</div>
-
-	<!-- Booking defaults (default AP / AR) -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('booking')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.booking ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Booking Defaults')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.booking}
-			<div class="px-4 pb-3 pt-2" transition:slide={{ duration: 200 }}>
-				<BookingDefaults {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Control-account postings (reclassify) -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('reclassify')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.reclassify ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Postings on Control Accounts')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.reclassify}
-			<div class="px-4 pb-3 pt-2" transition:slide={{ duration: 200 }}>
-				<ControlAccountPostings {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Categorization Rules Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('categorization')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.categorization ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Categorization Rules')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.categorization}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				<CategorizationRules {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Exchange Rates Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('exchange')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.exchange ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Exchange Rates')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.exchange}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				<ExchangeRates {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Fixed Assets Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('assets')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.assets ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Fixed Assets')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.assets}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				<FixedAssets {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Employees Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('employees')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.employees ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Employees')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.employees}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				<EmployeesManager {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Expense Categories Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('expenseCategories')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.expenseCategories ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Expense Categories')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.expenseCategories}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				<ExpenseCategoriesManager {companyId} />
-			</div>
-		{/if}
-	</div>
-
-	<!-- Recurring Templates Section -->
-	<div class="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-850/50 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-			on:click={() => toggle('recurring')}
-		>
-			<div class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-4 transition-transform {collapsed.recurring ? '-rotate-90' : ''}"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-				</svg>
-				<span class="text-base font-medium dark:text-gray-200">
-					{$i18n.t('Recurring Transactions')}
-				</span>
-			</div>
-		</div>
-		{#if !collapsed.recurring}
-			<div class="px-4 pb-3" transition:slide={{ duration: 200 }}>
-				<RecurringTemplates {companyId} />
-			</div>
-		{/if}
+				{:else if active === 'exchange'}
+					<ExchangeRates {companyId} />
+				{:else if active === 'assets'}
+					<FixedAssets {companyId} />
+				{:else if active === 'booking'}
+					<BookingDefaults {companyId} />
+				{:else if active === 'categorization'}
+					<CategorizationRules {companyId} />
+				{:else if active === 'recurring'}
+					<RecurringTemplates {companyId} />
+				{:else if active === 'reclassify'}
+					<ControlAccountPostings {companyId} />
+				{:else if active === 'employees'}
+					<EmployeesManager {companyId} />
+				{:else if active === 'expenseCategories'}
+					<ExpenseCategoriesManager {companyId} />
+				{/if}
+			{/key}
+		</section>
 	</div>
 </div>

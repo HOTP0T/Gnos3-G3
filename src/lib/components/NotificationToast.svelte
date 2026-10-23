@@ -109,8 +109,8 @@
 	</button>
 
 	<div class="shrink-0 self-top -translate-y-0.5">
-		<img src="{WEBUI_BASE_URL}/static/favicon.png" alt="favicon" class="size-6 rounded-full dark:hidden" />
-		<img src="{WEBUI_BASE_URL}/static/favicon-dark.png" alt="favicon" class="size-6 rounded-full hidden dark:block" />
+		<img src="{WEBUI_BASE_URL}/static/favicon.png" alt="favicon" class="size-6 dark:hidden" />
+		<img src="{WEBUI_BASE_URL}/static/favicon-dark.png" alt="favicon" class="size-6 hidden dark:block" />
 	</div>
 
 	<div>

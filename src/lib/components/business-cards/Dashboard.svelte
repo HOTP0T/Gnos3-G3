@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy, getContext } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
+
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import IdCard from '@lucide/svelte/icons/id-card';
 
 	import {
 		getBusinessCards,
@@ -10,17 +15,24 @@
 		type BusinessCard,
 		type BusinessCardStats
 	} from '$lib/apis/business-cards';
+	import { k4miDocHref } from '$lib/apis/k4mi';
 
-	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import KpiCard from '$lib/components/gnos3-ui/KpiCard.svelte';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
-	let loading = true;
-	let stats: BusinessCardStats | null = null;
-	let recentCards: BusinessCard[] = [];
-	let reviewCards: BusinessCard[] = [];
+	let loading = $state(true);
+	let stats = $state<BusinessCardStats | null>(null);
+	let recentCards = $state<BusinessCard[]>([]);
+	let reviewCards = $state<BusinessCard[]>([]);
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	const loadData = async () => {
@@ -28,11 +40,7 @@
 		try {
 			const [statsResp, recent, review] = await Promise.all([
 				getBusinessCardStats(localStorage.token),
-				getBusinessCards(localStorage.token, {
-					sort_by: 'created_at',
-					sort_dir: 'desc',
-					limit: 10
-				}),
+				getBusinessCards(localStorage.token, { sort_by: 'created_at', sort_dir: 'desc', limit: 10 }),
 				getBusinessCards(localStorage.token, {
 					needs_review: true,
 					sort_by: 'created_at',
@@ -62,147 +70,175 @@
 		if (refreshInterval) clearInterval(refreshInterval);
 	});
 
+	const maxCompany = $derived(Math.max(1, ...(stats?.by_company ?? []).map((c) => c.count)));
 </script>
 
-<div class="py-3">
-	<div class="flex items-center justify-between mb-4">
-		<h1 class="text-xl font-semibold">{$i18n.t('Business cards')}</h1>
-		<button
-			class="text-xs px-3 py-1.5 rounded-full bg-gray-50 dark:bg-gray-850 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-			on:click={loadData}
-			disabled={loading}
-		>
-			{loading ? $i18n.t('Loading...') : $i18n.t('Refresh')}
-		</button>
+<div class="flex flex-col gap-4">
+	<div class="flex items-center justify-between gap-2">
+		<h1 class="text-2xl font-semibold tracking-tight">{$i18n.t('Business cards')}</h1>
+		<Button variant="outline" size="sm" onclick={loadData} disabled={loading}>
+			{#if loading}<Spinner />{:else}<RefreshCw />{/if}
+			{$i18n.t('Refresh')}
+		</Button>
 	</div>
 
 	{#if loading && !stats}
-		<div class="flex justify-center py-16"><Spinner /></div>
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			{#each Array(4) as _}<Skeleton class="h-[118px] rounded-xl" />{/each}
+		</div>
+		<Skeleton class="h-64 rounded-xl" />
 	{:else if stats}
-		<!-- Stat tiles -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-			<div class="rounded-xl bg-gray-50 dark:bg-gray-850 px-4 py-3">
-				<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Total')}</div>
-				<div class="text-2xl font-semibold">{stats.total}</div>
-			</div>
-			<div class="rounded-xl bg-gray-50 dark:bg-gray-850 px-4 py-3">
-				<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Completed')}</div>
-				<div class="text-2xl font-semibold">{stats.completed}</div>
-			</div>
-			<button
-				class="text-left rounded-xl bg-gray-50 dark:bg-gray-850 px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-				on:click={() => goto('/business-cards/data?needs_review=true')}
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			<KpiCard label={$i18n.t('Total')} value={stats.total} />
+			<KpiCard label={$i18n.t('Completed')} value={stats.completed} />
+			<KpiCard
+				label={$i18n.t('Needs review')}
+				value={stats.needs_review}
+				href="/business-cards/data?needs_review=true"
 			>
-				<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Needs review')}</div>
-				<div class="text-2xl font-semibold">{stats.needs_review}</div>
-			</button>
-			<div class="rounded-xl bg-gray-50 dark:bg-gray-850 px-4 py-3">
-				<div class="text-xs text-gray-500 dark:text-gray-400">
-					{$i18n.t('Added in last 30 days')}
-				</div>
-				<div class="text-2xl font-semibold">{stats.recent_added_30d}</div>
-			</div>
+				{#snippet action()}
+					{#if stats && stats.needs_review > 0}<Badge variant="warning">{$i18n.t('Review')}</Badge>{/if}
+				{/snippet}
+				{#snippet footer()}
+					<span class="inline-flex items-center gap-1 text-link"
+						>{$i18n.t('Open the review list')}<ArrowRight class="size-3.5" /></span
+					>
+				{/snippet}
+			</KpiCard>
+			<KpiCard label={$i18n.t('Added in last 30 days')} value={stats.recent_added_30d} />
 		</div>
 
 		{#if stats.processing > 0}
-			<div class="mb-4 px-4 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 text-sm flex items-center gap-2">
-				<Spinner className="size-3" />
-				{stats.processing} {$i18n.t('cards still processing — refreshing every 5s')}
-			</div>
+			<Alert.Root>
+				<LoaderCircle class="animate-spin motion-reduce:animate-none" />
+				<Alert.Title>
+					{stats.processing}
+					{$i18n.t('cards still processing')}
+				</Alert.Title>
+				<Alert.Description>{$i18n.t('This page will update automatically.')}</Alert.Description>
+			</Alert.Root>
 		{/if}
 
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			<!-- Top companies -->
-			<section class="rounded-xl bg-gray-50 dark:bg-gray-850 p-4">
-				<h2 class="text-sm font-semibold mb-3">{$i18n.t('Top companies')}</h2>
-				{#if stats.by_company.length === 0}
-					<div class="text-xs text-gray-500 dark:text-gray-400 py-3">
-						{$i18n.t('No company data yet.')}
-					</div>
-				{:else}
-					{@const max = Math.max(...stats.by_company.map((c) => c.count))}
-					<ul class="space-y-1.5">
-						{#each stats.by_company as row}
-							<li class="flex items-center gap-3 text-sm">
-								<span class="flex-1 truncate">{row.company_name}</span>
-								<div class="flex-1 h-2 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
-									<div
-										class="h-full bg-gray-700 dark:bg-gray-300"
-										style="width: {(row.count / max) * 100}%"
-									></div>
-								</div>
-								<span class="w-10 text-right tabular-nums">{row.count}</span>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</section>
-
-			<!-- Recent additions -->
-			<section class="rounded-xl bg-gray-50 dark:bg-gray-850 p-4">
-				<div class="flex items-center justify-between mb-3">
-					<h2 class="text-sm font-semibold">{$i18n.t('Recent additions')}</h2>
-					<a
-						class="text-xs text-gray-500 dark:text-gray-400 hover:underline"
-						href="/business-cards/data">{$i18n.t('View all')}</a
-					>
-				</div>
-				{#if recentCards.length === 0}
-					<div class="text-xs text-gray-500 dark:text-gray-400 py-3">
-						{$i18n.t('No business cards yet. Tag a K4mi document with')} <code>business_card</code> {$i18n.t('to get started.')}
-					</div>
-				{:else}
-					<ul class="divide-y divide-gray-200/60 dark:divide-gray-800/60">
-						{#each recentCards as card}
-							<li class="py-2 flex items-center gap-3">
-								<div class="flex-1 min-w-0">
-									<div class="text-sm font-medium truncate">{card.full_name}</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400 truncate">
-										{[card.job_title, card.company_name].filter(Boolean).join(' · ') || '—'}
+		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{$i18n.t('Top companies')}</Card.Title>
+					<Card.Description>{$i18n.t('Cards per company')}</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					{#if stats.by_company.length === 0}
+						<p class="text-sm text-muted-foreground">{$i18n.t('No company data yet.')}</p>
+					{:else}
+						<ul class="grid gap-2.5">
+							{#each stats.by_company as row}
+								<li class="grid grid-cols-[minmax(0,10rem)_1fr_2.5rem] items-center gap-3 text-sm">
+									<span class="truncate" title={row.company_name}>{row.company_name}</span>
+									<div class="h-2 overflow-hidden rounded-full bg-muted">
+										<div
+											class="h-full rounded-full bg-chart-1"
+											style="width: {(row.count / maxCompany) * 100}%"
+										></div>
 									</div>
-								</div>
-								<div class="text-xs text-gray-400">
-									{card.created_at ? dayjs(card.created_at).format('MMM D') : ''}
-								</div>
+									<span class="text-right tabular-nums">{row.count}</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{$i18n.t('Recent additions')}</Card.Title>
+					<Card.Action>
+						<Button variant="link" size="sm" href="/business-cards/data">{$i18n.t('View all')}</Button>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content>
+					{#if recentCards.length === 0}
+						<Empty.Root class="p-6">
+							<Empty.Header>
+								<Empty.Media variant="icon"><IdCard /></Empty.Media>
+								<Empty.Title>{$i18n.t('No business cards yet.')}</Empty.Title>
+								<Empty.Description>
+									{$i18n.t('Tag a K4mi document with')} <code>business_card</code>
+									{$i18n.t('to get started.')}
+								</Empty.Description>
+							</Empty.Header>
+						</Empty.Root>
+					{:else}
+						<ul class="divide-y">
+							{#each recentCards as card}
+								<li class="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+									<div class="min-w-0 flex-1">
+										<div class="truncate text-sm font-medium">
+											{card.full_name || $i18n.t('Untitled card')}
+										</div>
+										<div class="truncate text-sm text-muted-foreground">
+											{[card.job_title, card.company_name].filter(Boolean).join(' · ') || '—'}
+										</div>
+									</div>
+									<span class="text-sm text-muted-foreground tabular-nums">
+										{card.created_at ? dayjs(card.created_at).format('YYYY-MM-DD') : ''}
+									</span>
+									{#if card.k4mi_document_id}
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											href={k4miDocHref(card.k4mi_document_id)}
+											target="_blank"
+											rel="noopener noreferrer"
+											aria-label={$i18n.t('Open in K4mi')}
+											title={$i18n.t('Open in K4mi')}
+										>
+											<ExternalLink />
+										</Button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</div>
+
+		{#if reviewCards.length > 0}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{$i18n.t('Needs review')}</Card.Title>
+					<Card.Description>{$i18n.t('Low-confidence extractions to check against the card')}</Card.Description>
+					<Card.Action>
+						<Button variant="link" size="sm" href="/business-cards/data?needs_review=true"
+							>{$i18n.t('Review all')}</Button
+						>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content>
+					<ul class="divide-y">
+						{#each reviewCards as card}
+							<li class="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
+								<span class="min-w-0 flex-1 truncate">{card.full_name || $i18n.t('Untitled card')}</span>
+								{#if card.confidence_score !== null && card.confidence_score !== undefined}
+									<StatusBadge kind="confidence" status={card.confidence_score} />
+								{/if}
 								{#if card.k4mi_document_id}
-									<Tooltip content={$i18n.t('Open in K4mi')}>
-										<K4miDocLink docId={card.k4mi_document_id} extraClass="text-xs text-gray-500 dark:text-gray-400 hover:underline">K4mi</K4miDocLink>
-									</Tooltip>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										href={k4miDocHref(card.k4mi_document_id)}
+										target="_blank"
+										rel="noopener noreferrer"
+										aria-label={$i18n.t('Open in K4mi')}
+										title={$i18n.t('Open in K4mi')}
+									>
+										<ExternalLink />
+									</Button>
 								{/if}
 							</li>
 						{/each}
 					</ul>
-				{/if}
-			</section>
-		</div>
-
-		{#if reviewCards.length > 0}
-			<section class="mt-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 p-4">
-				<div class="flex items-center justify-between mb-2">
-					<h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">
-						{$i18n.t('Needs review')}
-					</h2>
-					<a
-						class="text-xs text-amber-700 dark:text-amber-300 hover:underline"
-						href="/business-cards/data?needs_review=true">{$i18n.t('Review all')}</a
-					>
-				</div>
-				<ul class="divide-y divide-amber-200/40 dark:divide-amber-800/40">
-					{#each reviewCards as card}
-						<li class="py-2 flex items-center gap-3 text-sm">
-							<span class="flex-1 truncate">{card.full_name}</span>
-							<span class="text-xs text-amber-700 dark:text-amber-300">
-								{card.confidence_score !== null
-									? `${Math.round((card.confidence_score ?? 0) * 100)}%`
-									: ''}
-							</span>
-							{#if card.k4mi_document_id}
-								<K4miDocLink docId={card.k4mi_document_id} extraClass="text-xs text-amber-700 dark:text-amber-300 hover:underline">K4mi</K4miDocLink>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			</section>
+				</Card.Content>
+			</Card.Root>
 		{/if}
 	{/if}
 </div>

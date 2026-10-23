@@ -1,88 +1,121 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
+	import type { Component } from 'svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import CircleSlash from '@lucide/svelte/icons/circle-slash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Dot from '@lucide/svelte/icons/dot';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+
 	import { getAuditTrail } from '$lib/apis/accounting';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 
-	const i18n = getContext('i18n');
-	export let companyId: number;
-	export let entityType: string | undefined = undefined;
-	export let entityId: number | undefined = undefined;
-	export let limit: number = 20;
+	const i18n: any = getContext('i18n');
 
-	let entries: any[] = [];
-	let total = 0;
-	let loading = true;
+	let {
+		companyId,
+		entityType = undefined,
+		entityId = undefined,
+		limit = 20
+	}: {
+		companyId: number;
+		entityType?: string;
+		entityId?: number;
+		limit?: number;
+	} = $props();
+
+	let entries = $state<any[]>([]);
+	let total = $state(0);
+	let loading = $state(true);
+	let failed = $state(false);
 
 	const load = async () => {
 		loading = true;
+		failed = false;
 		try {
 			const res = await getAuditTrail({
 				company_id: companyId,
 				entity_type: entityType,
 				entity_id: entityId,
-				limit,
+				limit
 			});
 			entries = res.entries ?? [];
 			total = res.total ?? 0;
-		} catch (err) { console.error(err); }
+		} catch (err) {
+			console.error(err);
+			failed = true;
+		}
 		loading = false;
 	};
 
 	onMount(load);
 
-	const actionColor = (action: string) => {
-		switch (action) {
-			case 'created': return 'text-green-600 dark:text-green-400';
-			case 'posted': return 'text-blue-600 dark:text-blue-400';
-			case 'voided': return 'text-red-600 dark:text-red-400';
-			case 'deleted': return 'text-red-600 dark:text-red-400';
-			case 'updated': return 'text-yellow-600 dark:text-yellow-400';
-			default: return 'text-gray-600 dark:text-gray-400';
-		}
-	};
-
-	const actionIcon = (action: string) => {
-		switch (action) {
-			case 'created': return '+';
-			case 'posted': return '\u2713';
-			case 'voided': return '\u2715';
-			case 'deleted': return '\u2212';
-			case 'updated': return '~';
-			default: return '\u2022';
-		}
+	// Icon + word for each action (never colour alone); colour only where it carries meaning.
+	const ACTIONS: Record<string, { icon: Component; tone?: string }> = {
+		created: { icon: Plus },
+		posted: { icon: CircleCheck, tone: 'text-success' },
+		voided: { icon: CircleSlash },
+		deleted: { icon: Trash2, tone: 'text-destructive' },
+		updated: { icon: Pencil }
 	};
 
 	const formatTime = (ts: string) => {
 		if (!ts) return '';
 		const d = new Date(ts);
-		return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+		return d.toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	};
 </script>
 
 {#if loading}
-	<div class="text-xs text-gray-400">{$i18n.t('Loading...')}</div>
-{:else if entries.length === 0}
-	<div class="text-xs text-gray-400 italic">{$i18n.t('No activity yet')}</div>
-{:else}
-	<div class="space-y-1.5">
-		{#each entries as entry}
-			<div class="flex items-start gap-2 text-xs">
-				<span class="font-mono font-bold text-sm w-4 text-center {actionColor(entry.action)}">{actionIcon(entry.action)}</span>
-				<div class="flex-1 min-w-0">
-					<span class="font-medium {actionColor(entry.action)}">{entry.action}</span>
-					<span class="text-gray-500"> {entry.entity_type} #{entry.entity_id}</span>
-					{#if entry.changes}
-						<span class="text-gray-400 ml-1">
-							{#if typeof entry.changes === 'object'}
-								{Object.keys(entry.changes).join(', ')}
-							{/if}
-						</span>
-					{/if}
-				</div>
-				<span class="text-gray-400 whitespace-nowrap text-[10px]">{formatTime(entry.timestamp)}</span>
-			</div>
+	<div class="grid gap-2" aria-busy="true">
+		{#each Array(4) as _}
+			<Skeleton class="h-4 w-full" />
 		{/each}
 	</div>
+{:else if failed}
+	<div class="flex items-center gap-2 text-sm text-muted-foreground">
+		<CircleAlert class="size-4 shrink-0 text-destructive" />
+		{$i18n.t('Failed to load activity')}
+		<Button variant="link" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+	</div>
+{:else if entries.length === 0}
+	<p class="text-sm text-muted-foreground">{$i18n.t('No activity yet')}</p>
+{:else}
+	<ul class="grid gap-2">
+		{#each entries as entry}
+			{@const spec = ACTIONS[entry.action] ?? { icon: Dot }}
+			<li class="flex items-start gap-2 text-[13px] leading-5">
+				<spec.icon class="mt-0.5 size-3.5 shrink-0 {spec.tone ?? 'text-muted-foreground'}" />
+				<div class="min-w-0 flex-1">
+					<span class="font-medium {entry.action === 'voided' ? 'line-through' : ''}"
+						>{$i18n.t(entry.action)}</span
+					>
+					<span class="text-muted-foreground">
+						{entry.entity_type}
+						<span class="font-mono">#{entry.entity_id}</span>
+					</span>
+					{#if entry.changes && typeof entry.changes === 'object'}
+						<span class="text-muted-foreground">· {Object.keys(entry.changes).join(', ')}</span>
+					{/if}
+				</div>
+				<span class="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+					{formatTime(entry.timestamp)}
+				</span>
+			</li>
+		{/each}
+	</ul>
 	{#if total > entries.length}
-		<div class="text-[10px] text-gray-400 mt-2">{$i18n.t('Showing')} {entries.length} / {total}</div>
+		<p class="mt-2 text-xs text-muted-foreground tabular-nums">
+			{$i18n.t('Showing')}
+			{entries.length} / {total}
+		</p>
 	{/if}
 {/if}

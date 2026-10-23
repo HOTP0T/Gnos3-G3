@@ -2,7 +2,35 @@
 	import { onMount, onDestroy, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Eye from '@lucide/svelte/icons/eye';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Check from '@lucide/svelte/icons/check';
+	import X from '@lucide/svelte/icons/x';
+	import Luggage from '@lucide/svelte/icons/luggage';
+	import CreditCard from '@lucide/svelte/icons/credit-card';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Inbox from '@lucide/svelte/icons/inbox';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import FilePlus from '@lucide/svelte/icons/file-plus';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { badgeVariants, Badge } from '$lib/components/ui/badge/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
 	import {
 		listCompanyExpenses,
 		approveExpense,
@@ -20,6 +48,7 @@
 
 	let items: ExpenseItem[] = [];
 	let loading = true;
+	let loadError = '';
 	let busyId: number | null = null;
 	let statusFilter = 'submitted';
 
@@ -165,10 +194,6 @@
 		}
 	}
 
-	function onEditKey(e: KeyboardEvent) {
-		if (e.key === 'Escape') closeEdit();
-	}
-
 	const FILTERS = [
 		{ key: 'submitted', label: 'To review' },
 		{ key: 'approved', label: 'To reimburse' },
@@ -177,13 +202,10 @@
 		{ key: '', label: 'All' }
 	];
 
-	const badgeClass: Record<string, string> = {
-		draft: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
-		submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-		approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-		rejected: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-		reimbursed: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
-	};
+	// The status filter is a single-choice toggle group; clicking the pressed item would
+	// clear it, so an empty value snaps back to the current filter.
+	let filterValue = 'submitted';
+	$: if (!filterValue) filterValue = statusFilter || 'all';
 
 	function fmtMoney(amount: string, currency: string): string {
 		const n = Number(amount);
@@ -192,6 +214,7 @@
 
 	async function load() {
 		loading = true;
+		loadError = '';
 		try {
 			const res = await listCompanyExpenses(companyId, {
 				status: statusFilter || undefined
@@ -200,7 +223,8 @@
 			// Drop selections that are no longer selectable (bundled/paid elsewhere).
 			selected = new Set([...selected].filter((id) => items.some((i) => i.id === id)));
 		} catch (e: any) {
-			toast.error(e?.message ?? 'Failed to load submissions');
+			loadError = e?.message ?? 'Failed to load submissions';
+			toast.error(loadError);
 		} finally {
 			loading = false;
 		}
@@ -221,10 +245,6 @@
 		previewUrl = '';
 	}
 
-	function onPreviewKey(e: KeyboardEvent) {
-		if (e.key === 'Escape') closePreview();
-	}
-
 	async function doApprove(item: ExpenseItem) {
 		busyId = item.id;
 		try {
@@ -238,13 +258,24 @@
 		}
 	}
 
-	async function doReject(item: ExpenseItem) {
-		const reason = prompt('Reason for rejection:');
-		if (!reason) return;
+	// Reject asks for a reason first (a dialog; the reason is required).
+	let rejectTarget: ExpenseItem | null = null;
+	let rejectReason = '';
+
+	function doReject(item: ExpenseItem) {
+		rejectTarget = item;
+		rejectReason = '';
+	}
+
+	async function confirmReject() {
+		const item = rejectTarget;
+		const reason = rejectReason.trim();
+		if (!item || !reason) return;
 		busyId = item.id;
 		try {
 			await rejectExpense(item.id, reason);
 			toast.success('Rejected');
+			rejectTarget = null;
 			await load();
 		} catch (e: any) {
 			toast.error(e?.message ?? 'Could not reject');
@@ -265,336 +296,404 @@
 	});
 </script>
 
-<div class="flex flex-col gap-3">
-	<!-- Filter tabs -->
-	<div class="flex gap-2 overflow-x-auto pb-1">
-		{#each FILTERS as f}
-			<button
-				class="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition {statusFilter ===
-				f.key
-					? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
-					: 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
-				on:click={() => setFilter(f.key)}
-			>
-				{f.label}
-			</button>
-		{/each}
+<div class="flex flex-col gap-4">
+	<!-- Status filter -->
+	<div class="flex flex-wrap items-center gap-2">
+		<ToggleGroup.Root
+			type="single"
+			variant="outline"
+			size="sm"
+			class="max-w-full overflow-x-auto"
+			bind:value={filterValue}
+			onValueChange={(v) => {
+				if (v) setFilter(v === 'all' ? '' : v);
+			}}
+			aria-label={$i18n.t('Status')}
+		>
+			{#each FILTERS as f}
+				<ToggleGroup.Item value={f.key || 'all'} class="px-3">{$i18n.t(f.label)}</ToggleGroup.Item>
+			{/each}
+		</ToggleGroup.Root>
 	</div>
 
 	{#if statusFilter === 'approved'}
-		<p class="text-xs text-gray-500 dark:text-gray-400">
-			Select approved expenses for one employee and bundle them into a reimbursement sheet — that
-			sheet posts the journal entry when it's approved &amp; paid.
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				"Select approved expenses for one employee and bundle them into a reimbursement sheet — that sheet posts the journal entry when it's approved & paid."
+			)}
 		</p>
 	{/if}
 
-	{#if loading}
-		<div class="flex justify-center py-12"><Spinner /></div>
-	{:else if items.length === 0}
-		<div class="py-12 text-center text-gray-400">
-			{statusFilter === 'submitted' ? 'Nothing awaiting review.' : 'No expenses here.'}
+	{#if loadError && !loading}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the submissions.')}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={load}>
+					<RefreshCw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{:else if loading}
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(5) as _}<Skeleton class="h-9 w-full" />{/each}
 		</div>
+	{:else if items.length === 0}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><Inbox /></Empty.Media>
+				<Empty.Title>
+					{statusFilter === 'submitted'
+						? $i18n.t('Nothing awaiting review.')
+						: $i18n.t('No expenses here.')}
+				</Empty.Title>
+			</Empty.Header>
+		</Empty.Root>
 	{:else}
-		<div class="overflow-x-auto rounded-xl border border-gray-100 dark:border-gray-850">
-			<table class="w-full text-sm">
-				<thead class="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-850 dark:text-gray-400">
-					<tr>
-						{#if statusFilter === 'approved'}<th class="px-3 py-2"></th>{/if}
-						<th class="px-3 py-2 font-medium">Employee</th>
-						<th class="px-3 py-2 font-medium">Date</th>
-						<th class="px-3 py-2 font-medium">Merchant</th>
-						<th class="px-3 py-2 font-medium">Category</th>
-						<th class="px-3 py-2 text-right font-medium">Amount</th>
-						<th class="px-3 py-2 font-medium">Status</th>
-						<th class="px-3 py-2 text-right font-medium">Actions</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-gray-100 dark:divide-gray-850">
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						{#if statusFilter === 'approved'}
+							<Table.Head class="w-10"><span class="sr-only">{$i18n.t('Select')}</span></Table.Head>
+						{/if}
+						<Table.Head>{$i18n.t('Employee')}</Table.Head>
+						<Table.Head>{$i18n.t('Date')}</Table.Head>
+						<Table.Head>{$i18n.t('Merchant')}</Table.Head>
+						<Table.Head>{$i18n.t('Category')}</Table.Head>
+						<Table.Head class="text-right">{$i18n.t('Amount')}</Table.Head>
+						<Table.Head>{$i18n.t('Status')}</Table.Head>
+						<Table.Head class="text-right"
+							><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head
+						>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each items as item (item.id)}
-						<tr class="hover:bg-gray-50 dark:hover:bg-gray-850/50">
+						{@const selectable = item.status === 'approved' && !item.expense_sheet_id}
+						<Table.Row data-state={selected.has(item.id) ? 'selected' : undefined}>
 							{#if statusFilter === 'approved'}
-								<td class="px-3 py-2">
-									{#if item.status === 'approved' && !item.expense_sheet_id}
-										<input
-											type="checkbox"
-											class="rounded"
+								<Table.Cell>
+									{#if selectable}
+										<Checkbox
 											checked={selected.has(item.id)}
-											on:change={() => toggle(item.id)}
+											onCheckedChange={() => toggle(item.id)}
+											aria-label="{$i18n.t('Select')} {item.merchant}"
 										/>
 									{/if}
-								</td>
+								</Table.Cell>
 							{/if}
-							<td class="px-3 py-2">{item.employee_name ?? '—'}</td>
-							<td class="px-3 py-2 whitespace-nowrap text-gray-500">{item.expense_date}</td>
-							<td class="px-3 py-2">
-								<div class="font-medium text-gray-800 dark:text-gray-100">{item.merchant}</div>
-								<div class="max-w-xs truncate text-xs text-gray-400">{item.description}</div>
+							<Table.Cell>{item.employee_name ?? '—'}</Table.Cell>
+							<Table.Cell class="text-muted-foreground tabular-nums">{item.expense_date}</Table.Cell
+							>
+							<Table.Cell class="max-w-[18rem] whitespace-normal">
+								<div class="truncate font-medium">{item.merchant}</div>
+								{#if item.description}
+									<div class="truncate text-[13px] text-muted-foreground">{item.description}</div>
+								{/if}
 								{#if item.report_title}
-									{#if statusFilter === 'approved' && item.status === 'approved' && !item.expense_sheet_id}
+									{#if statusFilter === 'approved' && selectable}
 										<button
-											class="mt-0.5 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-											title="Select all in this trip"
-											on:click={() => selectTrip(item)}>🧳 {item.report_title}</button
+											type="button"
+											class="{badgeVariants({
+												variant: 'secondary'
+											})} mt-1 max-w-full cursor-pointer hover:bg-secondary/80"
+											title={$i18n.t('Select all in this trip')}
+											on:click={() => selectTrip(item)}
 										>
+											<Luggage /><span class="truncate">{item.report_title}</span>
+										</button>
 									{:else}
-										<div class="mt-0.5 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">🧳 {item.report_title}</div>
+										<Badge variant="secondary" class="mt-1 max-w-full">
+											<Luggage /><span class="truncate">{item.report_title}</span>
+										</Badge>
 									{/if}
 								{/if}
-							</td>
-							<td class="px-3 py-2 text-gray-500">{item.category_label ?? '—'}</td>
-							<td class="px-3 py-2 text-right font-semibold whitespace-nowrap">
-								{fmtMoney(item.amount, item.currency)}
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{item.category_label ?? '—'}</Table.Cell>
+							<Table.Cell class="text-right">
+								<div class="font-medium tabular-nums">{fmtMoney(item.amount, item.currency)}</div>
 								{#if item.payment_method === 'company_card'}
-									<div class="text-xs font-normal text-amber-600">company card</div>
+									<div class="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
+										<CreditCard class="size-3.5" />{$i18n.t('company card')}
+									</div>
 								{/if}
-							</td>
-							<td class="px-3 py-2">
-								<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {badgeClass[item.status]}">
-									{item.status}
-								</span>
-							</td>
-							<td class="px-3 py-2">
-								<div class="flex items-center justify-end gap-1.5">
+							</Table.Cell>
+							<Table.Cell>
+								<StatusBadge kind="expense" status={item.status} />
+							</Table.Cell>
+							<Table.Cell>
+								<div class="flex items-center justify-end gap-1">
 									{#if item.has_receipt}
-										<button
-											class="rounded-md border border-gray-200 px-2 py-1 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-											on:click={() => viewReceipt(item)}>Receipt</button
-										>
+										<Tip content={$i18n.t('Receipt')}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Receipt')}
+												onclick={() => viewReceipt(item)}
+											>
+												<Eye />
+											</Button>
+										</Tip>
 									{:else}
-										<span class="text-xs text-amber-600">no receipt</span>
+										<span
+											class="inline-flex items-center gap-1 px-1 text-[13px] whitespace-nowrap text-muted-foreground"
+										>
+											<TriangleAlert class="size-3.5 text-warning" />{$i18n.t('no receipt')}
+										</span>
 									{/if}
 									{#if canEdit(item)}
-										<button
-											class="rounded-md border border-gray-200 px-2 py-1 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-											title="Correct this claim"
-											on:click={() => openEdit(item)}>Edit</button
-										>
+										<Tip content={$i18n.t('Correct this claim')}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Correct this claim')}
+												onclick={() => openEdit(item)}
+											>
+												<Pencil />
+											</Button>
+										</Tip>
 									{/if}
 									{#if item.status === 'submitted'}
-										<button
+										<Button
+											variant="outline"
+											size="xs"
 											disabled={busyId === item.id}
-											class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-900/20"
-											on:click={() => doReject(item)}>Reject</button
+											onclick={() => doReject(item)}
 										>
-										<button
+											<X />{$i18n.t('Reject')}
+										</Button>
+										<Button
+											variant="outline"
+											size="xs"
 											disabled={busyId === item.id}
-											class="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-											on:click={() => doApprove(item)}>Approve</button
+											onclick={() => doApprove(item)}
 										>
+											{#if busyId === item.id}<Spinner />{:else}<Check />{/if}{$i18n.t('Approve')}
+										</Button>
 									{:else if item.status === 'approved' && item.expense_sheet_id}
-										<a
-											class="rounded-md border border-gray-200 px-2 py-1 text-xs text-blue-600 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+										<Button
+											variant="ghost"
+											size="xs"
+											class="text-link"
 											href={`/accounting/company/${companyId}/expenses/${item.expense_sheet_id}`}
-											>On sheet →</a
 										>
+											{$i18n.t('On sheet')}<ArrowRight />
+										</Button>
 									{/if}
 								</div>
-							</td>
-						</tr>
+							</Table.Cell>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
+		</div>
+	{/if}
+
+	<!-- Bulk bar: bundle the selected expenses -->
+	{#if selected.size > 0}
+		<div
+			class="sticky bottom-4 z-10 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-lg border bg-card py-1.5 pr-1.5 pl-3 text-sm shadow-md"
+		>
+			<span>
+				<span class="font-semibold tabular-nums">{selected.size}</span>
+				{$i18n.t('selected')}
+				{#if mixedEmployees}
+					<span class="ml-1 inline-flex items-center gap-1 text-destructive">
+						<CircleAlert class="size-3.5" />{$i18n.t('select one employee only')}
+					</span>
+				{:else if selectedItems.length}
+					· {selectedItems[0].employee_name}
+				{/if}
+			</span>
+			<Button size="xs" disabled={bundling || mixedEmployees} onclick={bundle}>
+				{#if bundling}<Spinner />{:else}<FilePlus />{/if}
+				{bundling ? $i18n.t('Bundling…') : $i18n.t('Bundle into reimbursement sheet')}
+			</Button>
+			<Tip content={$i18n.t('Clear')}>
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					aria-label={$i18n.t('Clear')}
+					onclick={() => (selected = new Set())}
+				>
+					<X />
+				</Button>
+			</Tip>
 		</div>
 	{/if}
 </div>
 
-<!-- Bundle action bar -->
-{#if selected.size > 0}
-	<div
-		class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95"
-	>
-		<div class="mx-auto flex max-w-4xl items-center justify-between gap-3">
-			<div class="text-sm text-gray-700 dark:text-gray-200">
-				<span class="font-semibold">{selected.size}</span> selected
-				{#if mixedEmployees}
-					<span class="ml-2 text-red-600">— select one employee only</span>
-				{:else if selectedItems.length}
-					· {selectedItems[0].employee_name}
-				{/if}
-			</div>
-			<div class="flex gap-2">
-				<button
-					class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700 dark:text-gray-200"
-					on:click={() => (selected = new Set())}>Clear</button
-				>
-				<button
-					class="rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-white dark:text-gray-900"
-					disabled={bundling || mixedEmployees}
-					on:click={bundle}>{bundling ? 'Bundling…' : 'Bundle into reimbursement sheet'}</button
-				>
-			</div>
-		</div>
-	</div>
-{/if}
+<!-- Correct an expense -->
+<Dialog.Root
+	open={!!editing}
+	onOpenChange={(v) => {
+		if (!v) closeEdit();
+	}}
+>
+	<Dialog.Content class="sm:max-w-lg">
+		{#if editing}
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t('Correct expense')}</Dialog.Title>
+				<Dialog.Description>
+					{editing.employee_name ?? $i18n.t('Employee')} · {$i18n.t(editing.status)}
+					{#if editing.expense_sheet_id}· {$i18n.t('on a reimbursement sheet')}{/if}
+				</Dialog.Description>
+			</Dialog.Header>
 
-{#if editing}
-	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-		on:click={closeEdit}
-		on:keydown={onEditKey}
-		role="dialog"
-		aria-modal="true"
-		aria-label="Edit expense"
-		tabindex="-1"
-	>
-		<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-		<div
-			class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl dark:bg-gray-900"
-			on:click|stopPropagation
-		>
-			<div class="mb-4 flex items-start justify-between gap-3">
-				<div>
-					<h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Correct expense</h3>
-					<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-						{editing.employee_name ?? 'Employee'} · {editing.status}
-						{#if editing.expense_sheet_id}· on a reimbursement sheet{/if}
-					</p>
+			<div class="grid grid-cols-2 gap-4">
+				<div class="grid gap-1.5">
+					<Label for="exp-edit-date">{$i18n.t('Date')}</Label>
+					<Input id="exp-edit-date" type="date" bind:value={form.expense_date} />
 				</div>
-				<button
-					class="rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-					on:click={closeEdit}
-					aria-label="Close">✕</button
-				>
-			</div>
-
-			<div class="grid grid-cols-2 gap-3">
-				<label class="col-span-1 text-xs text-gray-500 dark:text-gray-400">
-					Date
-					<input
-						type="date"
-						bind:value={form.expense_date}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
-					/>
-				</label>
-				<label class="col-span-1 text-xs text-gray-500 dark:text-gray-400">
-					Category
-					<select
-						bind:value={form.category_id}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
-					>
-						<option value="">— none —</option>
+				<div class="grid gap-1.5">
+					<Label for="exp-edit-category">{$i18n.t('Category')}</Label>
+					<NativeSelect.Root id="exp-edit-category" class="w-full" bind:value={form.category_id}>
+						<NativeSelect.Option value="">— {$i18n.t('none')} —</NativeSelect.Option>
 						{#each categories as c}
-							<option value={String(c.id)}>{c.label}</option>
+							<NativeSelect.Option value={String(c.id)}>{c.label}</NativeSelect.Option>
 						{/each}
-					</select>
-				</label>
-				<label class="col-span-2 text-xs text-gray-500 dark:text-gray-400">
-					Merchant
-					<input
-						type="text"
-						bind:value={form.merchant}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
-					/>
-				</label>
-				<label class="col-span-2 text-xs text-gray-500 dark:text-gray-400">
-					Description
-					<input
-						type="text"
-						bind:value={form.description}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
-					/>
-				</label>
-				<label class="text-xs text-gray-500 dark:text-gray-400">
-					Currency
-					<input
-						type="text"
-						maxlength="3"
+					</NativeSelect.Root>
+				</div>
+				<div class="col-span-2 grid gap-1.5">
+					<Label for="exp-edit-merchant">{$i18n.t('Merchant')}</Label>
+					<Input id="exp-edit-merchant" bind:value={form.merchant} />
+				</div>
+				<div class="col-span-2 grid gap-1.5">
+					<Label for="exp-edit-desc">{$i18n.t('Description')}</Label>
+					<Input id="exp-edit-desc" bind:value={form.description} />
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="exp-edit-currency">{$i18n.t('Currency')}</Label>
+					<Input
+						id="exp-edit-currency"
+						class="uppercase"
+						maxlength={3}
 						bind:value={form.currency}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm uppercase text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
 					/>
-				</label>
-				<label class="text-xs text-gray-500 dark:text-gray-400">
-					Payment
-					<select
-						bind:value={form.payment_method}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
-					>
-						<option value="personal">Personal</option>
-						<option value="company_card">Company card</option>
-					</select>
-				</label>
-				<label class="text-xs text-gray-500 dark:text-gray-400">
-					Total amount
-					<input
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="exp-edit-payment">{$i18n.t('Payment')}</Label>
+					<NativeSelect.Root id="exp-edit-payment" class="w-full" bind:value={form.payment_method}>
+						<NativeSelect.Option value="personal">{$i18n.t('Personal')}</NativeSelect.Option>
+						<NativeSelect.Option value="company_card">{$i18n.t('Company card')}</NativeSelect.Option
+						>
+					</NativeSelect.Root>
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="exp-edit-amount">{$i18n.t('Total amount')}</Label>
+					<Input
+						id="exp-edit-amount"
 						type="number"
 						step="0.01"
 						min="0"
+						class="text-right tabular-nums"
 						bind:value={form.amount}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
 					/>
-				</label>
-				<label class="text-xs text-gray-500 dark:text-gray-400">
-					Tax amount
-					<input
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="exp-edit-tax">{$i18n.t('Tax amount')}</Label>
+					<Input
+						id="exp-edit-tax"
 						type="number"
 						step="0.01"
 						min="0"
+						class="text-right tabular-nums"
 						bind:value={form.tax_amount}
-						class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100"
 					/>
-				</label>
-				<label class="col-span-2 mt-1 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-					<input type="checkbox" class="rounded" bind:checked={form.reimbursable} />
-					Reimbursable to the employee
-				</label>
+				</div>
+				<div class="col-span-2 flex items-center gap-2">
+					<Checkbox
+						id="exp-edit-reimbursable"
+						checked={form.reimbursable}
+						onCheckedChange={(v) => (form.reimbursable = v === true)}
+					/>
+					<Label for="exp-edit-reimbursable" class="font-normal">
+						{$i18n.t('Reimbursable to the employee')}
+					</Label>
+				</div>
 			</div>
 
 			{#if editing.expense_sheet_id}
-				<p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-					This expense is bundled on a reimbursement sheet — saving re-calculates that sheet's
-					totals.
-				</p>
+				<Alert.Root variant="warning">
+					<TriangleAlert />
+					<Alert.Description>
+						{$i18n.t(
+							"This expense is bundled on a reimbursement sheet — saving re-calculates that sheet's totals."
+						)}
+					</Alert.Description>
+				</Alert.Root>
 			{/if}
 
-			<div class="mt-5 flex justify-end gap-2">
-				<button
-					class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700 dark:text-gray-200"
-					on:click={closeEdit}>Cancel</button
-				>
-				<button
-					class="rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-white dark:text-gray-900"
-					disabled={saving}
-					on:click={saveEdit}>{saving ? 'Saving…' : 'Save changes'}</button
-				>
-			</div>
-		</div>
-	</div>
-{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={closeEdit}>{$i18n.t('Cancel')}</Button>
+				<Button disabled={saving} onclick={saveEdit}>
+					{#if saving}<Spinner />{/if}
+					{saving ? $i18n.t('Saving…') : $i18n.t('Save changes')}
+				</Button>
+			</Dialog.Footer>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
-{#if previewUrl}
-	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-		on:click={closePreview}
-		on:keydown={onPreviewKey}
-		role="dialog"
-		aria-modal="true"
-		aria-label="Receipt preview"
-		tabindex="-1"
-	>
-		<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-		<div class="relative max-h-[90vh] w-full max-w-3xl" on:click|stopPropagation>
-			<button
-				class="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-700 shadow-md hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-200"
-				on:click={closePreview}
-				aria-label="Close"
-			>
-				✕
-			</button>
+<!-- Reject: a reason is required -->
+<Dialog.Root
+	open={!!rejectTarget}
+	onOpenChange={(v) => {
+		if (!v) rejectTarget = null;
+	}}
+>
+	<Dialog.Content class="sm:max-w-lg">
+		{#if rejectTarget}
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t('Reject this expense?')}</Dialog.Title>
+				<Dialog.Description>
+					{rejectTarget.merchant} · {fmtMoney(rejectTarget.amount, rejectTarget.currency)} · {rejectTarget.employee_name ??
+						''}
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="grid gap-1.5">
+				<Label for="exp-reject-reason">{$i18n.t('Reason for rejection:')}</Label>
+				<Textarea id="exp-reject-reason" rows={3} bind:value={rejectReason} />
+			</div>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (rejectTarget = null)}>{$i18n.t('Cancel')}</Button>
+				<Button
+					disabled={!rejectReason.trim() || busyId === rejectTarget.id}
+					onclick={confirmReject}
+				>
+					{#if busyId === rejectTarget.id}<Spinner />{/if}
+					{$i18n.t('Reject')}
+				</Button>
+			</Dialog.Footer>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Receipt preview -->
+<Dialog.Root
+	open={!!previewUrl}
+	onOpenChange={(v) => {
+		if (!v) closePreview();
+	}}
+>
+	<Dialog.Content class="max-h-[95vh] gap-3 sm:max-w-3xl">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Receipt')}</Dialog.Title>
+			<Dialog.Description class="sr-only">{$i18n.t('Receipt preview')}</Dialog.Description>
+		</Dialog.Header>
+		{#if previewUrl}
 			{#if previewIsPdf}
-				<iframe
-					src={previewUrl}
-					title="Receipt"
-					class="h-[85vh] w-full rounded-lg border-0 bg-white"
+				<iframe src={previewUrl} title={$i18n.t('Receipt')} class="h-[80vh] w-full rounded-md border bg-muted"
 				></iframe>
 			{:else}
 				<img
 					src={previewUrl}
-					alt="Receipt"
-					class="mx-auto max-h-[85vh] max-w-full rounded-lg object-contain"
+					alt={$i18n.t('Receipt')}
+					class="mx-auto max-h-[80vh] max-w-full rounded-md object-contain"
 				/>
 			{/if}
-		</div>
-	</div>
-{/if}
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>

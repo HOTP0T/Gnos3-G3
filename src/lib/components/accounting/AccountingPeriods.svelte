@@ -3,18 +3,45 @@
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 
-	import { getPeriods, createPeriod, closePeriod, reopenPeriod } from '$lib/apis/accounting';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Upload from '@lucide/svelte/icons/upload';
+	import Download from '@lucide/svelte/icons/download';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Lock from '@lucide/svelte/icons/lock';
+	import LockOpen from '@lucide/svelte/icons/lock-open';
+	import CalendarRange from '@lucide/svelte/icons/calendar-range';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import Badge from '$lib/components/common/Badge.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import {
+		getPeriods,
+		createPeriod,
+		closePeriod,
+		reopenPeriod,
+		downloadPeriodImportTemplate
+	} from '$lib/apis/accounting';
 
-	const i18n = getContext('i18n');
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
+	import ExcelImportModal from '$lib/components/accounting/ExcelImportModal.svelte';
+
+	const i18n: any = getContext('i18n');
 
 	export let companyId: number;
 
 	let loading = true;
+	let loadError = '';
 	let periods: any[] = [];
 
 	// Create form
@@ -30,18 +57,29 @@
 	let showReopenConfirm = false;
 	let reopenTarget: any = null;
 
+	let showImportModal = false;
+
 	const loadPeriods = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			const res = await getPeriods({ company_id: companyId });
-			periods = Array.isArray(res) ? res : res?.items ?? [];
-		} catch (err) {
-			toast.error(`${$i18n.t('Failed to load periods')}: ${err}`);
+			periods = Array.isArray(res) ? res : (res?.items ?? []);
+		} catch (err: any) {
+			loadError = err?.detail ?? `${err}`;
 		}
 		loading = false;
 	};
 
-	const handleCreate = async () => {
+	const openCreateForm = () => {
+		newName = '';
+		newStartDate = '';
+		newEndDate = '';
+		showCreateForm = true;
+	};
+
+	const handleCreate = async (e?: Event) => {
+		e?.preventDefault();
 		if (!newName || !newStartDate || !newEndDate) {
 			toast.error($i18n.t('Please fill in all fields'));
 			return;
@@ -53,11 +91,14 @@
 
 		creating = true;
 		try {
-			await createPeriod({
-				name: newName,
-				start_date: newStartDate,
-				end_date: newEndDate
-			}, companyId);
+			await createPeriod(
+				{
+					name: newName,
+					start_date: newStartDate,
+					end_date: newEndDate
+				},
+				companyId
+			);
 			toast.success($i18n.t('Period created'));
 			showCreateForm = false;
 			newName = '';
@@ -114,201 +155,222 @@
 		}
 	};
 
+	const handleImported = async () => {
+		toast.success($i18n.t('Periods imported successfully'));
+		await loadPeriods();
+	};
+
 	onMount(() => {
 		loadPeriods();
 	});
 </script>
 
 <ConfirmDialog
-	bind:show={showCloseConfirm}
-	on:confirm={handleClose}
+	bind:open={showCloseConfirm}
 	title={$i18n.t('Close Period')}
-	message={$i18n.t(
+	description={$i18n.t(
 		'Closing this period will prevent any new transactions from being posted within its date range. Continue?'
 	)}
+	confirmLabel={$i18n.t('Close')}
+	onconfirm={handleClose}
 />
 
 <ConfirmDialog
-	bind:show={showReopenConfirm}
-	on:confirm={handleReopen}
+	bind:open={showReopenConfirm}
 	title={$i18n.t('Reopen Period')}
-	message={$i18n.t(
+	description={$i18n.t(
 		'Reopening this period will allow transactions to be posted within its date range again. Continue?'
 	)}
+	confirmLabel={$i18n.t('Reopen')}
+	onconfirm={handleReopen}
 />
 
-<div class="py-2">
-	<!-- Header -->
-	<div
-		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900"
-	>
-		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
-			<div class="flex-shrink-0 dark:text-gray-200">{$i18n.t('Accounting Periods')}</div>
-			<div class="text-lg font-medium text-gray-500 dark:text-gray-500">
-				{periods.length}
-			</div>
-		</div>
+<ExcelImportModal
+	bind:show={showImportModal}
+	type="period"
+	{companyId}
+	on:imported={handleImported}
+/>
 
-		<div class="flex gap-2">
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition"
-				on:click={() => {
-					showCreateForm = !showCreateForm;
-				}}
-			>
-				{showCreateForm ? $i18n.t('Cancel') : $i18n.t('New Period')}
-			</button>
-		</div>
-	</div>
-
-	<!-- Create Form -->
-	{#if showCreateForm}
-		<div
-			class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-blue-200/50 dark:border-blue-800/30 mb-3"
-		>
-			<div class="text-sm font-medium dark:text-gray-200 mb-3">
-				{$i18n.t('Create New Period')}
-			</div>
-			<div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-				<div>
-					<label
-						for="period-name"
-						class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-					>
-						{$i18n.t('Name')} *
-					</label>
-					<input
-						id="period-name"
-						type="text"
-						bind:value={newName}
-						placeholder={$i18n.t('e.g. March 2026')}
-						class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-					/>
-				</div>
-				<div>
-					<label
-						for="period-start"
-						class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-					>
-						{$i18n.t('Start Date')} *
-					</label>
-					<input
-						id="period-start"
-						type="date"
-						bind:value={newStartDate}
-						on:change={suggestName}
-						class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-					/>
-				</div>
-				<div>
-					<label
-						for="period-end"
-						class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-					>
-						{$i18n.t('End Date')} *
-					</label>
-					<input
-						id="period-end"
-						type="date"
-						bind:value={newEndDate}
-						class="w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-					/>
-				</div>
-				<button
-					class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
-					on:click={handleCreate}
-					disabled={creating || !newName || !newStartDate || !newEndDate}
-				>
-					{creating ? $i18n.t('Creating...') : $i18n.t('Create')}
-				</button>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Periods Table -->
-	{#if loading}
-		<div class="flex justify-center my-10">
-			<Spinner className="size-5" />
-		</div>
-	{:else if periods.length === 0}
-		<div
-			class="bg-white dark:bg-gray-900 rounded-xl p-8 border border-gray-100/30 dark:border-gray-850/30 text-center"
-		>
-			<div class="text-gray-400 dark:text-gray-500 text-sm mb-3">
-				{$i18n.t('No accounting periods defined yet.')}
-			</div>
-			<div class="text-gray-400 dark:text-gray-500 text-xs">
+<!-- New period -->
+<Dialog.Root bind:open={showCreateForm}>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Create New Period')}</Dialog.Title>
+			<Dialog.Description>
 				{$i18n.t(
 					'Create periods to control when transactions can be posted. Closing a period prevents changes to transactions in that date range.'
 				)}
+			</Dialog.Description>
+		</Dialog.Header>
+		<form id="period-form" class="grid gap-4" onsubmit={handleCreate}>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid gap-2">
+					<Label for="period-start">{$i18n.t('Start Date')} *</Label>
+					<Input
+						id="period-start"
+						type="date"
+						class="tabular-nums dark:scheme-dark"
+						bind:value={newStartDate}
+						onchange={suggestName}
+					/>
+				</div>
+				<div class="grid gap-2">
+					<Label for="period-end">{$i18n.t('End Date')} *</Label>
+					<Input
+						id="period-end"
+						type="date"
+						class="tabular-nums dark:scheme-dark"
+						bind:value={newEndDate}
+					/>
+				</div>
 			</div>
+			<div class="grid gap-2">
+				<Label for="period-name">{$i18n.t('Name', { context: 'gnos3' })} *</Label>
+				<Input
+					id="period-name"
+					type="text"
+					bind:value={newName}
+					placeholder={$i18n.t('e.g. March 2026')}
+				/>
+			</div>
+		</form>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showCreateForm = false)}>{$i18n.t('Cancel')}</Button
+			>
+			<Button
+				type="submit"
+				form="period-form"
+				disabled={creating || !newName || !newStartDate || !newEndDate}
+			>
+				{#if creating}<Spinner />{/if}
+				{creating ? $i18n.t('Creating...') : $i18n.t('Create')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<div class="flex flex-col gap-4">
+	<!-- Header -->
+	<div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+		<div class="min-w-0 space-y-1">
+			<h2 class="text-lg font-semibold">
+				{$i18n.t('Accounting Periods')}
+				<span class="ml-1 font-normal text-muted-foreground tabular-nums">{periods.length}</span>
+			</h2>
+			<p class="text-sm text-muted-foreground">
+				{$i18n.t('A closed period accepts no new postings in its date range.')}
+			</p>
 		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="outline" size="sm">
+							<FileSpreadsheet />{$i18n.t('Excel')}<ChevronDown class="text-muted-foreground" />
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-52">
+					<DropdownMenu.Item onSelect={() => (showImportModal = true)}>
+						<Upload />{$i18n.t('Import from Excel')}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onSelect={() => downloadPeriodImportTemplate()}>
+						<Download />{$i18n.t('Download Template')}
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+			<Button size="sm" onclick={openCreateForm}><Plus />{$i18n.t('New Period')}</Button>
+		</div>
+	</div>
+
+	<!-- Periods Table -->
+	{#if loading}
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(4) as _}
+				<Skeleton class="h-8 w-full" />
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Failed to load periods')}</Alert.Title>
+			<Alert.Description>{loadError}</Alert.Description>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={loadPeriods}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
+	{:else if periods.length === 0}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><CalendarRange /></Empty.Media>
+				<Empty.Title>{$i18n.t('No accounting periods defined yet.')}</Empty.Title>
+				<Empty.Description>
+					{$i18n.t(
+						'Create periods to control when transactions can be posted. Closing a period prevents changes to transactions in that date range.'
+					)}
+				</Empty.Description>
+			</Empty.Header>
+			<Empty.Content>
+				<Button size="sm" onclick={openCreateForm}><Plus />{$i18n.t('New Period')}</Button>
+			</Empty.Content>
+		</Empty.Root>
 	{:else}
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-				<thead
-					class="text-xs text-gray-900 dark:text-gray-100 font-bold uppercase bg-gray-100 dark:bg-gray-800"
-				>
-					<tr class="border-b-[1.5px] border-gray-200 dark:border-gray-700">
-						<th class="px-3 py-2">{$i18n.t('Name')}</th>
-						<th class="px-3 py-2">{$i18n.t('Start Date')}</th>
-						<th class="px-3 py-2">{$i18n.t('End Date')}</th>
-						<th class="px-3 py-2">{$i18n.t('Status')}</th>
-						<th class="px-3 py-2">{$i18n.t('Closed At')}</th>
-						<th class="px-3 py-2 text-right">{$i18n.t('Actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each periods as period (period.id)}
-						<tr
-							class="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-850 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Name', { context: 'gnos3' })}</Table.Head>
+						<Table.Head>{$i18n.t('Start Date')}</Table.Head>
+						<Table.Head>{$i18n.t('End Date')}</Table.Head>
+						<Table.Head>{$i18n.t('Status')}</Table.Head>
+						<Table.Head>{$i18n.t('Closed At')}</Table.Head>
+						<Table.Head class="text-right"
+							><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head
 						>
-							<td class="px-3 py-2 font-medium dark:text-gray-200">
-								{period.name}
-							</td>
-							<td class="px-3 py-2">
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each periods as period (period.id)}
+						<Table.Row>
+							<Table.Cell class="font-medium">{period.name}</Table.Cell>
+							<Table.Cell class="tabular-nums">
 								{dayjs(period.start_date).format('YYYY-MM-DD')}
-							</td>
-							<td class="px-3 py-2">
+							</Table.Cell>
+							<Table.Cell class="tabular-nums">
 								{dayjs(period.end_date).format('YYYY-MM-DD')}
-							</td>
-							<td class="px-3 py-2">
+							</Table.Cell>
+							<Table.Cell>
 								{#if period.is_closed}
-									<Badge type="error" content={$i18n.t('Closed')} />
+									<Badge variant="status"><Lock aria-hidden="true" />{$i18n.t('Closed')}</Badge>
 								{:else}
-									<Badge type="success" content={$i18n.t('Open')} />
+									<Badge variant="status">
+										<LockOpen class="text-success" aria-hidden="true" />{$i18n.t('Open')}
+									</Badge>
 								{/if}
-							</td>
-							<td class="px-3 py-2 text-gray-400">
-								{period.closed_at
-									? dayjs(period.closed_at).format('YYYY-MM-DD HH:mm')
-									: '-'}
-							</td>
-							<td class="px-3 py-2 text-right">
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground tabular-nums">
+								{period.closed_at ? dayjs(period.closed_at).format('YYYY-MM-DD HH:mm') : '—'}
+							</Table.Cell>
+							<Table.Cell class="text-right">
 								{#if period.is_closed}
-									<Tooltip content={$i18n.t('Reopen this period')}>
-										<button
-											class="px-3 py-1 text-xs font-medium rounded-lg bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:text-yellow-300 dark:hover:bg-yellow-900/40 transition"
-											on:click={() => confirmReopen(period)}
-										>
-											{$i18n.t('Reopen')}
-										</button>
-									</Tooltip>
+									<Tip content={$i18n.t('Reopen this period')}>
+										<Button variant="outline" size="xs" onclick={() => confirmReopen(period)}>
+											<LockOpen />{$i18n.t('Reopen')}
+										</Button>
+									</Tip>
 								{:else}
-									<Tooltip content={$i18n.t('Close this period to prevent changes')}>
-										<button
-											class="px-3 py-1 text-xs font-medium rounded-lg bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40 transition"
-											on:click={() => confirmClose(period)}
-										>
-											{$i18n.t('Close')}
-										</button>
-									</Tooltip>
+									<Tip content={$i18n.t('Close this period to prevent changes')}>
+										<Button variant="outline" size="xs" onclick={() => confirmClose(period)}>
+											<Lock />{$i18n.t('Close')}
+										</Button>
+									</Tip>
 								{/if}
-							</td>
-						</tr>
+							</Table.Cell>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
 		</div>
 	{/if}
 </div>

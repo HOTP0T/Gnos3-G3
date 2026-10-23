@@ -2,16 +2,38 @@
 	import { onMount, getContext } from 'svelte';
 	import { buildMonthOptions, type MonthOption } from '$lib/utils/fiscalYear';
 	import { toast } from 'svelte-sonner';
-	import { getBalanceSheet, getPeriods, getCompany, exportBalanceSheet } from '$lib/apis/accounting';
+	import {
+		getBalanceSheet,
+		getPeriods,
+		getCompany,
+		exportBalanceSheet
+	} from '$lib/apis/accounting';
 	import type { Writable } from 'svelte/store';
 	import { convertAmount } from '$lib/utils/currency';
 	import ReportAmount from '$lib/components/accounting/ReportAmount.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	const i18n = getContext('i18n');
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import Download from '@lucide/svelte/icons/download';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Scale from '@lucide/svelte/icons/scale';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+
+	const i18n: any = getContext('i18n');
 	export let companyId: number;
 
 	let loading = false;
+	let loadError = '';
 	let rawData: any = null;
 	let isFrench = false;
 
@@ -23,9 +45,10 @@
 
 	$: baseCcy = rawData?.currency || $companyCurrency || 'EUR';
 	$: converting = !!($displayCurrency && baseCcy && $displayCurrency !== baseCcy);
-	$: fx = converting && rawData
-		? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], rawData?.as_of)
-		: null;
+	$: fx =
+		converting && rawData
+			? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], rawData?.as_of)
+			: null;
 	$: factor = converting ? (fx?.hasRate ? fx.rate : null) : 1;
 	$: noRate = converting && !fx?.hasRate;
 	$: displayCcy = converting ? $displayCurrency : baseCcy;
@@ -55,7 +78,7 @@
 
 			const now = new Date();
 			const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-			const match = monthOptions.find(o => o.value === curKey);
+			const match = monthOptions.find((o) => o.value === curKey);
 			if (match) {
 				selectedMonth = match.value;
 			} else if (monthOptions.length > 0) {
@@ -67,23 +90,30 @@
 	});
 
 	const load = async () => {
-		const opt = monthOptions.find(o => o.value === selectedMonth);
-		if (!opt) { toast.error($i18n.t('Please select a period')); return; }
+		const opt = monthOptions.find((o) => o.value === selectedMonth);
+		if (!opt) {
+			toast.error($i18n.t('Please select a period'));
+			return;
+		}
 		loading = true;
+		loadError = '';
 		try {
 			rawData = await getBalanceSheet({
 				company_id: companyId,
 				as_of: opt.asOf,
 				period_start: opt.fiscalStart
 			});
-		} catch (err) { toast.error(`${err}`); }
+		} catch (err) {
+			loadError = `${err}`;
+			toast.error(`${err}`);
+		}
 		loading = false;
 	};
 
-	const fmt = (v: any): string => {
-		const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
-		if (n === 0) return '—';
-		return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	const doExport = () => {
+		const opt = monthOptions.find((o) => o.value === selectedMonth);
+		if (opt)
+			exportBalanceSheet({ company_id: companyId, as_of: opt.asOf, period_start: opt.fiscalStart });
 	};
 
 	const isCurrentAsset = (code: string): boolean => {
@@ -106,7 +136,7 @@
 	$: equity = data ? (data.equity ?? []).filter((i: any) => !i.is_parent) : [];
 	$: assetGroups = data ? groupAssets(assets) : { current: [], nonCurrent: [] };
 	$: liabGroups = data ? groupLiabilities(liabilities) : { current: [], nonCurrent: [] };
-	$: selectedLabel = monthOptions.find(o => o.value === selectedMonth)?.label ?? '';
+	$: selectedLabel = monthOptions.find((o) => o.value === selectedMonth)?.label ?? '';
 
 	function groupAssets(items: any[]) {
 		const current = items.filter((i: any) => isCurrentAsset(i.account_code));
@@ -120,8 +150,10 @@
 		return { current, nonCurrent };
 	}
 
-	const sumBeg = (items: any[]): number => items.reduce((s: number, i: any) => s + (parseFloat(i.beginning_balance) || 0), 0);
-	const sumEnd = (items: any[]): number => items.reduce((s: number, i: any) => s + (parseFloat(i.balance) || 0), 0);
+	const sumBeg = (items: any[]): number =>
+		items.reduce((s: number, i: any) => s + (parseFloat(i.beginning_balance) || 0), 0);
+	const sumEnd = (items: any[]): number =>
+		items.reduce((s: number, i: any) => s + (parseFloat(i.balance) || 0), 0);
 
 	// === French Bilan grouping ===
 
@@ -145,13 +177,6 @@
 		return items
 			.filter((i: any) => isAmortAccount(i.account_code))
 			.reduce((s: number, i: any) => s + Math.abs(parseFloat(i.balance) || 0), 0);
-	};
-
-	// French number formatting: space as thousands separator, blank for zero
-	const fmtFr = (v: any): string => {
-		const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
-		if (n === 0) return '';
-		return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	};
 
 	// Collapsible sections
@@ -181,9 +206,15 @@
 
 	function buildFrenchActifGroups(items: any[]): FrenchActifGroups {
 		const groups: FrenchActifGroups = {
-			immoIncorporelles: [], immoCorporelles: [], immoFinancieres: [],
-			stocks: [], creances: [], valeursMob: [], disponibilites: [],
-			chargesConstatees: [], otherAssets: []
+			immoIncorporelles: [],
+			immoCorporelles: [],
+			immoFinancieres: [],
+			stocks: [],
+			creances: [],
+			valeursMob: [],
+			disponibilites: [],
+			chargesConstatees: [],
+			otherAssets: []
 		};
 		for (const item of items) {
 			const p2 = frPcgPrefix(item.account_code);
@@ -226,8 +257,11 @@
 
 	function buildFrenchPassifGroups(liabilities: any[], equity: any[]): FrenchPassifGroups {
 		const groups: FrenchPassifGroups = {
-			capitauxPropres: [], autresFondsPropres: [], provisions: [],
-			empruntsEtDettes: [], otherPassif: []
+			capitauxPropres: [],
+			autresFondsPropres: [],
+			provisions: [],
+			empruntsEtDettes: [],
+			otherPassif: []
 		};
 		// Equity items
 		for (const item of equity) {
@@ -254,563 +288,648 @@
 		return groups;
 	}
 
-	$: frActif = (data && isFrench) ? buildFrenchActifGroups(assets) : null;
-	$: frPassif = (data && isFrench) ? buildFrenchPassifGroups(liabilities, equity) : null;
+	$: frActif = data && isFrench ? buildFrenchActifGroups(assets) : null;
+	$: frPassif = data && isFrench ? buildFrenchPassifGroups(liabilities, equity) : null;
 
 	// Helper: all fixed asset items
-	$: frFixedItems = frActif ? [...frActif.immoIncorporelles, ...frActif.immoCorporelles, ...frActif.immoFinancieres] : [];
-	$: frCurrentItems = frActif ? [...frActif.stocks, ...frActif.creances, ...frActif.valeursMob, ...frActif.disponibilites, ...frActif.chargesConstatees, ...frActif.otherAssets] : [];
+	$: frFixedItems = frActif
+		? [...frActif.immoIncorporelles, ...frActif.immoCorporelles, ...frActif.immoFinancieres]
+		: [];
+	$: frCurrentItems = frActif
+		? [
+				...frActif.stocks,
+				...frActif.creances,
+				...frActif.valeursMob,
+				...frActif.disponibilites,
+				...frActif.chargesConstatees,
+				...frActif.otherAssets
+			]
+		: [];
 
 	let lineNo = 0;
-	function nextLine(): number { return ++lineNo; }
-	function resetLines() { lineNo = 0; }
+	function nextLine(): number {
+		return ++lineNo;
+	}
+	function resetLines() {
+		lineNo = 0;
+	}
+
+	// Dense report table: 13px, 6px row padding, 12px at the outer edges (design system → Reports).
+	const TABLE =
+		'text-[13px] [&_td]:py-1.5 [&_td:first-child]:pl-3 [&_th:first-child]:pl-3 [&_td:last-child]:pr-3 [&_th:last-child]:pr-3';
 </script>
 
-<div class="space-y-3">
-	<div class="flex flex-wrap gap-3 items-end">
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('As of end of')}</label>
-			{#if monthOptions.length > 0}
-				<select
+{#snippet balanceBadge()}
+	{#if data.is_balanced}
+		<Badge variant="status">
+			<Scale class="text-success" aria-hidden="true" />{$i18n.t('Balanced')}
+		</Badge>
+	{:else}
+		<Badge variant="danger"><CircleAlert aria-hidden="true" />{$i18n.t('Unbalanced')}</Badge>
+	{/if}
+{/snippet}
+
+<!-- French Bilan: a section bar (collapsible when it has a key), account lines, subtotals -->
+{#snippet frSection(key: string | null, label: string, colspan: number, total: number | null)}
+	{#if key}
+		{@const collapsed = collapsedSections.has(key)}
+		<Table.Row class="cursor-pointer bg-muted/50 font-medium" onclick={() => toggleSection(key)}>
+			<Table.Cell {colspan}>
+				<div class="flex items-center justify-between gap-4">
+					<button
+						type="button"
+						class="-ml-1 inline-flex items-center gap-1.5 rounded-sm px-1 text-left focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+						aria-expanded={!collapsed}
+						onclick={(e) => {
+							e.stopPropagation();
+							toggleSection(key);
+						}}
+					>
+						<ChevronDown
+							class="size-3.5 text-muted-foreground transition-transform motion-reduce:transition-none {collapsed
+								? '-rotate-90'
+								: ''}"
+							aria-hidden="true"
+						/>
+						{label}
+					</button>
+					{#if collapsed && total !== null}
+						<span class="tabular-nums"><ReportAmount value={total} {...fxPropsFr} /></span>
+					{/if}
+				</div>
+			</Table.Cell>
+		</Table.Row>
+	{:else}
+		<Table.Row class="bg-muted/50 font-medium hover:bg-muted/50">
+			<Table.Cell {colspan}>{label}</Table.Cell>
+		</Table.Row>
+	{/if}
+{/snippet}
+
+{#snippet frGroup(label: string, colspan: number)}
+	<Table.Row class="hover:bg-transparent">
+		<Table.Cell {colspan} class="pt-3 font-medium" style="padding-left: 24px">{label}</Table.Cell>
+	</Table.Row>
+{/snippet}
+
+{#snippet actifRow(item: any, pad: number, brut: any, amort: any, net: any)}
+	<Table.Row>
+		<Table.Cell style="padding-left: {pad}px">{item.account_name}</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={brut} {...fxPropsFr} /></Table.Cell
+		>
+		<Table.Cell class="text-right tabular-nums"
+			>{#if amort !== null}<ReportAmount value={amort} {...fxPropsFr} />{/if}</Table.Cell
+		>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={net} {...fxPropsFr} /></Table.Cell
+		>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></Table.Cell
+		>
+	</Table.Row>
+{/snippet}
+
+{#snippet passifRow(item: any)}
+	<Table.Row>
+		<Table.Cell style="padding-left: 24px">{item.account_name}</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={item.balance} {...fxPropsFr} /></Table.Cell
+		>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></Table.Cell
+		>
+	</Table.Row>
+{/snippet}
+
+<!-- Default format: one account line, a group label, a sub-total -->
+{#snippet bsItem(item: any)}
+	<Table.Row>
+		<Table.Cell style="padding-left: {12 + item.level * 10}px">{item.account_name}</Table.Cell>
+		<Table.Cell class="text-center text-muted-foreground tabular-nums">{nextLine()}</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={item.beginning_balance} {...fxProps} /></Table.Cell
+		>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={item.balance} {...fxProps} /></Table.Cell
+		>
+	</Table.Row>
+{/snippet}
+
+{#snippet bsGroup(label: string)}
+	<Table.Row class="hover:bg-transparent">
+		<Table.Cell colspan={4} class="pt-3 text-xs font-medium text-muted-foreground"
+			>{label}</Table.Cell
+		>
+	</Table.Row>
+{/snippet}
+
+{#snippet bsSubtotal(label: string, beg: any, end: any, strong: boolean)}
+	<Table.Row class="border-t {strong ? 'font-semibold' : 'font-medium'}">
+		<Table.Cell colspan={2}>{label}</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={beg} {...fxProps} /></Table.Cell
+		>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={end} {...fxProps} /></Table.Cell
+		>
+	</Table.Row>
+{/snippet}
+
+{#snippet bsHead()}
+	<Table.Header class="bg-muted/50">
+		<Table.Row class="hover:bg-transparent">
+			<Table.Head><span class="sr-only">{$i18n.t('Account', { context: 'gnos3' })}</span></Table.Head>
+			<Table.Head class="w-8 text-center">#</Table.Head>
+			<Table.Head class="w-32 min-w-28 text-right">{$i18n.t('Beg. Balance')}</Table.Head>
+			<Table.Head class="w-32 min-w-28 text-right">{$i18n.t('End. Balance')}</Table.Head>
+		</Table.Row>
+	</Table.Header>
+{/snippet}
+
+<div class="flex min-w-0 flex-col gap-4">
+	<div class="flex flex-wrap items-center gap-2">
+		{#if monthOptions.length > 0}
+			<div class="relative">
+				<CalendarDays
+					class="pointer-events-none absolute top-1/2 left-2.5 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<NativeSelect.Root
+					size="sm"
+					class="[&>select]:pl-8"
 					bind:value={selectedMonth}
-					class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden"
+					aria-label={$i18n.t('As of end of')}
+					title={$i18n.t('As of end of')}
 				>
 					{#each monthOptions as opt}
-						<option value={opt.value}>{opt.label}</option>
+						<NativeSelect.Option value={opt.value}>{opt.label}</NativeSelect.Option>
 					{/each}
-				</select>
-			{:else}
-				<span class="text-xs text-gray-400 italic">{$i18n.t('No accounting periods defined')}</span>
-			{/if}
-		</div>
-		<button
-			class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
-			disabled={!selectedMonth}
-			on:click={load}
-		>{$i18n.t('Generate')}</button>
+				</NativeSelect.Root>
+			</div>
+		{:else}
+			<span class="text-sm text-muted-foreground">{$i18n.t('No accounting periods defined')}</span>
+		{/if}
+		<Button size="sm" disabled={loading || !selectedMonth} onclick={load}>
+			{#if loading}<Spinner />{/if}
+			{$i18n.t('Generate', { context: 'gnos3' })}
+		</Button>
 		{#if data}
-			<button
-				class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1.5"
-				on:click={() => {
-					const opt = monthOptions.find(o => o.value === selectedMonth);
-					if (opt) exportBalanceSheet({ company_id: companyId, as_of: opt.asOf, period_start: opt.fiscalStart });
-				}}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+			<Button variant="outline" size="sm" onclick={doExport}>
+				<Download />
 				{$i18n.t('Export Excel')}
-			</button>
+			</Button>
 		{/if}
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
+		<div class="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
+			{#each [0, 1] as _}
+				<div class="flex flex-col gap-2 rounded-md border p-3">
+					{#each Array(8) as __}
+						<Skeleton class="h-6 w-full" />
+					{/each}
+				</div>
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the report.')}</Alert.Title>
+			<Alert.Description>{loadError}</Alert.Description>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
 	{:else if data}
 		{@const _ = resetLines()}
-		<div class="text-[11px] text-gray-400 dark:text-gray-500 px-0.5 flex gap-3">
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
 			{#if displayCcy}<span>{$i18n.t('Currency')}: {displayCcy}</span>{/if}
-			{#if noRate}<span class="text-amber-600 dark:text-amber-400">({$i18n.t('no rate for')} {$displayCurrency}, {$i18n.t('showing')} {baseCcy})</span>{/if}
-			{#if data.opening_balance_date}<span>{$i18n.t('Opening balances as of')} {data.opening_balance_date}</span>{/if}
+			{#if noRate}
+				<span class="inline-flex items-center gap-1 text-foreground">
+					<TriangleAlert class="size-4 text-warning" />
+					({$i18n.t('no rate for')}
+					{$displayCurrency}, {$i18n.t('showing')}
+					{baseCcy})
+				</span>
+			{/if}
+			{#if data.opening_balance_date}<span class="tabular-nums"
+					>{$i18n.t('Opening balances as of')} {data.opening_balance_date}</span
+				>{/if}
 		</div>
 
 		{#if isFrench && frActif && frPassif}
 			<!-- ========== FRENCH FORMAT: Bilan Actif + Bilan Passif (HACANTHE reference) ========== -->
-			{@const fixedGross = sumEnd(frFixedItems.filter(i => !isAmortAccount(i.account_code)))}
+			{@const fixedGross = sumEnd(frFixedItems.filter((i) => !isAmortAccount(i.account_code)))}
 			{@const fixedAmort = sumAmort(frFixedItems)}
 			{@const fixedNet = fixedGross - fixedAmort}
-			{@const currentGross = sumEnd(frCurrentItems.filter(i => !isAmortAccount(i.account_code)))}
+			{@const currentGross = sumEnd(frCurrentItems.filter((i) => !isAmortAccount(i.account_code)))}
 			{@const currentAmort = sumAmort(frCurrentItems)}
 			{@const currentNet = currentGross - currentAmort}
 			{@const totalPassif = parseFloat(data.total_liabilities) + parseFloat(data.total_equity)}
 
 			<!-- ===== BILAN ACTIF ===== -->
-			<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 overflow-hidden mb-4">
-				<div class="px-3 py-2 text-center font-bold text-sm dark:text-gray-200 bg-gray-50 dark:bg-gray-850/50 border-b border-gray-200 dark:border-gray-700">
-					{$i18n.t('Bilan Actif')}
-					<span class="text-[10px] font-normal text-gray-500 ml-2">({$i18n.t('As of')} {data.as_of})</span>
+			<section class="min-w-0 overflow-hidden rounded-md border">
+				<div class="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5">
+					<h3 class="text-sm font-semibold">{$i18n.t('Balance sheet — Assets')}</h3>
+					<span class="text-xs text-muted-foreground tabular-nums"
+						>{$i18n.t('As of')} {data.as_of}</span
+					>
 				</div>
-				<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-					<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-						<tr>
-							<th class="px-2 py-1.5">{$i18n.t('Bilan Actif')}</th>
-							<th class="px-2 py-1.5 text-right w-28">{$i18n.t('Brut')}</th>
-							<th class="px-2 py-1.5 text-right w-28">{$i18n.t('Amort. Prov.')}</th>
-							<th class="px-2 py-1.5 text-right w-28">{$i18n.t('Net')}</th>
-							<th class="px-2 py-1.5 text-right w-28">{$i18n.t('Net (N-1)')}</th>
-						</tr>
-					</thead>
-					<tbody>
+				<Table.Root class={TABLE}>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head><span class="sr-only">{$i18n.t('Balance sheet — Assets')}</span></Table.Head>
+							<Table.Head class="w-28 min-w-28 text-right">{$i18n.t('Gross')}</Table.Head>
+							<Table.Head class="w-28 min-w-28 text-right">{$i18n.t('Depr. & prov.')}</Table.Head>
+							<Table.Head class="w-28 min-w-28 text-right">{$i18n.t('Net')}</Table.Head>
+							<Table.Head class="w-28 min-w-28 text-right">{$i18n.t('Net (prior year)')}</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
 						<!-- ── Actif immobilise ── -->
-						<tr
-							class="bg-green-600 text-white text-xs font-semibold cursor-pointer select-none"
-							on:click={() => toggleSection('actif-immobilise')}
-						>
-							<td class="px-2 py-1.5" colspan="5">
-								<span class="mr-1 inline-block text-[10px]">{collapsedSections.has('actif-immobilise') ? '\u25B6' : '\u25BC'}</span>
-								{$i18n.t('Actif immobilise')}
-								{#if collapsedSections.has('actif-immobilise')}
-									<span class="float-right font-mono"><ReportAmount value={fixedNet} {...fxPropsFr} /></span>
-								{/if}
-							</td>
-						</tr>
+						{@render frSection('actif-immobilise', $i18n.t('Fixed assets'), 5, fixedNet)}
 						{#if !collapsedSections.has('actif-immobilise')}
 							<!-- Immobilisations incorporelles -->
 							{#if frActif.immoIncorporelles.length > 0}
-								<tr class="bg-gray-50/50 dark:bg-gray-850/20">
-									<td class="px-2 py-1 font-bold text-gray-700 dark:text-gray-300" colspan="5" style="padding-left: 16px">{$i18n.t('Immobilisations incorporelles')}</td>
-								</tr>
+								{@render frGroup($i18n.t('Intangible assets'), 5)}
 								{#each frActif.immoIncorporelles as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 28px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? 0 : item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? Math.abs(parseFloat(item.balance) || 0) : 0} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
+									{@render actifRow(
+										item,
+										36,
+										isAmortAccount(item.account_code) ? 0 : item.balance,
+										isAmortAccount(item.account_code) ? Math.abs(parseFloat(item.balance) || 0) : 0,
+										item.balance
+									)}
 								{/each}
 							{/if}
 
 							<!-- Immobilisations corporelles -->
 							{#if frActif.immoCorporelles.length > 0}
-								<tr class="bg-gray-50/50 dark:bg-gray-850/20">
-									<td class="px-2 py-1 font-bold text-gray-700 dark:text-gray-300" colspan="5" style="padding-left: 16px">{$i18n.t('Immobilisations corporelles')}</td>
-								</tr>
+								{@render frGroup($i18n.t('Tangible assets'), 5)}
 								{#each frActif.immoCorporelles as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 28px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? 0 : item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? Math.abs(parseFloat(item.balance) || 0) : 0} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? 0 : (parseFloat(item.balance) || 0)} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
+									{@render actifRow(
+										item,
+										36,
+										isAmortAccount(item.account_code) ? 0 : item.balance,
+										isAmortAccount(item.account_code) ? Math.abs(parseFloat(item.balance) || 0) : 0,
+										isAmortAccount(item.account_code) ? 0 : parseFloat(item.balance) || 0
+									)}
 								{/each}
 							{/if}
 
 							<!-- Immobilisations financieres -->
 							{#if frActif.immoFinancieres.length > 0}
-								<tr class="bg-gray-50/50 dark:bg-gray-850/20">
-									<td class="px-2 py-1 font-bold text-gray-700 dark:text-gray-300" colspan="5" style="padding-left: 16px">{$i18n.t('Immobilisations financieres')}</td>
-								</tr>
+								{@render frGroup($i18n.t('Financial assets'), 5)}
 								{#each frActif.immoFinancieres as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 28px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? 0 : item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={isAmortAccount(item.account_code) ? Math.abs(parseFloat(item.balance) || 0) : 0} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
+									{@render actifRow(
+										item,
+										36,
+										isAmortAccount(item.account_code) ? 0 : item.balance,
+										isAmortAccount(item.account_code) ? Math.abs(parseFloat(item.balance) || 0) : 0,
+										item.balance
+									)}
 								{/each}
 							{/if}
 
 							<!-- Subtotal: ACTIF IMMOBILISE -->
-							<tr class="border-t border-gray-300 dark:border-gray-600">
-								<td class="px-2 py-1.5 text-right text-green-700 dark:text-green-400 font-bold">{$i18n.t('ACTIF IMMOBILISE')}</td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={fixedGross} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={fixedAmort} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={fixedNet} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={sumBeg(frFixedItems)} {...fxPropsFr} /></td>
-							</tr>
+							<Table.Row class="border-t font-medium">
+								<Table.Cell class="text-right">{$i18n.t('TOTAL FIXED ASSETS')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={fixedGross} {...fxPropsFr} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={fixedAmort} {...fxPropsFr} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={fixedNet} {...fxPropsFr} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={sumBeg(frFixedItems)} {...fxPropsFr} /></Table.Cell
+								>
+							</Table.Row>
 						{/if}
 
 						<!-- ── Actif circulant ── -->
-						<tr
-							class="bg-green-600 text-white text-xs font-semibold cursor-pointer select-none"
-							on:click={() => toggleSection('actif-circulant')}
-						>
-							<td class="px-2 py-1.5" colspan="5">
-								<span class="mr-1 inline-block text-[10px]">{collapsedSections.has('actif-circulant') ? '\u25B6' : '\u25BC'}</span>
-								{$i18n.t('Actif circulant')}
-								{#if collapsedSections.has('actif-circulant')}
-									<span class="float-right font-mono"><ReportAmount value={currentNet} {...fxPropsFr} /></span>
-								{/if}
-							</td>
-						</tr>
+						{@render frSection('actif-circulant', $i18n.t('Current assets'), 5, currentNet)}
 						{#if !collapsedSections.has('actif-circulant')}
 							<!-- Stocks et en-cours -->
 							{#if frActif.stocks.length > 0}
-								<tr class="bg-gray-50/50 dark:bg-gray-850/20">
-									<td class="px-2 py-1 font-bold text-gray-700 dark:text-gray-300" colspan="5" style="padding-left: 16px">{$i18n.t('Stocks et en-cours')}</td>
-								</tr>
+								{@render frGroup($i18n.t('Inventories and work in progress'), 5)}
 								{#each frActif.stocks as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 28px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
+									{@render actifRow(item, 36, item.balance, null, item.balance)}
 								{/each}
 							{/if}
 
 							<!-- Creances -->
 							{#if frActif.creances.length > 0}
-								<tr class="bg-gray-50/50 dark:bg-gray-850/20">
-									<td class="px-2 py-1 font-bold text-gray-700 dark:text-gray-300" colspan="5" style="padding-left: 16px">{$i18n.t('Creances')}</td>
-								</tr>
+								{@render frGroup($i18n.t('Receivables'), 5)}
 								{#each frActif.creances as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 28px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
+									{@render actifRow(item, 36, item.balance, null, item.balance)}
 								{/each}
 							{/if}
 
 							<!-- Valeurs mobilieres de placement -->
 							{#if frActif.valeursMob.length > 0}
-								<tr class="bg-gray-50/50 dark:bg-gray-850/20">
-									<td class="px-2 py-1 font-bold text-gray-700 dark:text-gray-300" colspan="5" style="padding-left: 16px">{$i18n.t('Valeurs mobilieres de placement')}</td>
-								</tr>
+								{@render frGroup($i18n.t('Marketable securities'), 5)}
 								{#each frActif.valeursMob as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 28px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
+									{@render actifRow(item, 36, item.balance, null, item.balance)}
 								{/each}
 							{/if}
 
-							<!-- Disponibilites -->
-							{#if frActif.disponibilites.length > 0}
-								{#each frActif.disponibilites as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
-								{/each}
-							{/if}
-
-							<!-- Charges constatees d'avance -->
-							{#if frActif.chargesConstatees.length > 0}
-								{#each frActif.chargesConstatees as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
-								{/each}
-							{/if}
-
-							<!-- Other assets -->
-							{#if frActif.otherAssets.length > 0}
-								{#each frActif.otherAssets as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-									</tr>
-								{/each}
-							{/if}
+							<!-- Disponibilites, charges constatees d'avance, other assets -->
+							{#each frActif.disponibilites as item}
+								{@render actifRow(item, 24, item.balance, null, item.balance)}
+							{/each}
+							{#each frActif.chargesConstatees as item}
+								{@render actifRow(item, 24, item.balance, null, item.balance)}
+							{/each}
+							{#each frActif.otherAssets as item}
+								{@render actifRow(item, 24, item.balance, null, item.balance)}
+							{/each}
 
 							<!-- Subtotal: ACTIF CIRCULANT -->
-							<tr class="border-t border-gray-300 dark:border-gray-600">
-								<td class="px-2 py-1.5 text-right text-green-700 dark:text-green-400 font-bold">{$i18n.t('ACTIF CIRCULANT')}</td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={currentGross} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={currentAmort} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={currentNet} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={sumBeg(frCurrentItems)} {...fxPropsFr} /></td>
-							</tr>
+							<Table.Row class="border-t font-medium">
+								<Table.Cell class="text-right">{$i18n.t('TOTAL CURRENT ASSETS')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={currentGross} {...fxPropsFr} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={currentAmort} {...fxPropsFr} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={currentNet} {...fxPropsFr} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={sumBeg(frCurrentItems)} {...fxPropsFr} /></Table.Cell
+								>
+							</Table.Row>
 						{/if}
-					</tbody>
-					<tfoot>
-						<tr class="bg-green-600/15 text-green-700 dark:text-green-400 font-bold border-t-2 border-green-300 dark:border-green-700">
-							<td class="px-2 py-2">{$i18n.t('TOTAL ACTIF')}</td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={fixedGross + currentGross} {...fxPropsFr} /></td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={fixedAmort + currentAmort} {...fxPropsFr} /></td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={data.total_assets} {...fxPropsFr} /></td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={sumBeg(assets)} {...fxPropsFr} /></td>
-						</tr>
-					</tfoot>
-				</table>
-			</div>
+					</Table.Body>
+					<Table.Footer class="font-semibold">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell>{$i18n.t('TOTAL ASSETS')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={fixedGross + currentGross} {...fxPropsFr} /></Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={fixedAmort + currentAmort} {...fxPropsFr} /></Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={data.total_assets} {...fxPropsFr} /></Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={sumBeg(assets)} {...fxPropsFr} /></Table.Cell
+							>
+						</Table.Row>
+					</Table.Footer>
+				</Table.Root>
+			</section>
 
 			<!-- ===== BILAN PASSIF ===== -->
-			<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 overflow-hidden">
-				<div class="px-3 py-2 text-center font-bold text-sm dark:text-gray-200 bg-gray-50 dark:bg-gray-850/50 border-b border-gray-200 dark:border-gray-700">
-					{$i18n.t('Bilan Passif')}
-					<span class="text-xs font-medium ml-2 px-2 py-0.5 rounded-lg {data.is_balanced ? 'bg-green-500/20 text-green-700 dark:text-green-300' : 'bg-red-500/20 text-red-700 dark:text-red-300'}">{data.is_balanced ? $i18n.t('Balanced') : $i18n.t('Unbalanced')}</span>
+			<section class="min-w-0 overflow-hidden rounded-md border">
+				<div class="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5">
+					<h3 class="text-sm font-semibold">{$i18n.t('Balance sheet — Liabilities and equity')}</h3>
+					{@render balanceBadge()}
 				</div>
-				<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-					<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-						<tr>
-							<th class="px-2 py-1.5">{$i18n.t('Bilan Passif')}</th>
-							<th class="px-2 py-1.5 text-right w-32">{$i18n.t('Exercice N')}</th>
-							<th class="px-2 py-1.5 text-right w-32">{$i18n.t('Exercice N-1')}</th>
-						</tr>
-					</thead>
-					<tbody>
+				<Table.Root class={TABLE}>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head><span class="sr-only">{$i18n.t('Balance sheet — Liabilities and equity')}</span></Table.Head>
+							<Table.Head class="w-32 min-w-28 text-right">{$i18n.t('Current year')}</Table.Head>
+							<Table.Head class="w-32 min-w-28 text-right">{$i18n.t('Prior year')}</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
 						<!-- ── Capitaux propres ── -->
-						<tr
-							class="bg-green-600 text-white text-xs font-semibold cursor-pointer select-none"
-							on:click={() => toggleSection('capitaux-propres')}
-						>
-							<td class="px-2 py-1.5" colspan="3">
-								<span class="mr-1 inline-block text-[10px]">{collapsedSections.has('capitaux-propres') ? '\u25B6' : '\u25BC'}</span>
-								{$i18n.t('Capitaux propres')}
-								{#if collapsedSections.has('capitaux-propres')}
-									<span class="float-right font-mono"><ReportAmount value={sumEnd(frPassif.capitauxPropres)} {...fxPropsFr} /></span>
-								{/if}
-							</td>
-						</tr>
+						{@render frSection(
+							'capitaux-propres',
+							$i18n.t('Equity'),
+							3,
+							sumEnd(frPassif.capitauxPropres)
+						)}
 						{#if !collapsedSections.has('capitaux-propres')}
 							{#each frPassif.capitauxPropres as item}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-									<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-								</tr>
+								{@render passifRow(item)}
 							{/each}
-							<!-- Subtotal -->
-							<tr class="border-t border-gray-300 dark:border-gray-600">
-								<td class="px-2 py-1.5 text-right text-green-700 dark:text-green-400 font-bold">{$i18n.t('CAPITAUX PROPRES')}</td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={sumEnd(frPassif.capitauxPropres)} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={sumBeg(frPassif.capitauxPropres)} {...fxPropsFr} /></td>
-							</tr>
+							<Table.Row class="border-t font-medium">
+								<Table.Cell class="text-right">{$i18n.t('TOTAL EQUITY')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount
+										value={sumEnd(frPassif.capitauxPropres)}
+										{...fxPropsFr}
+									/></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount
+										value={sumBeg(frPassif.capitauxPropres)}
+										{...fxPropsFr}
+									/></Table.Cell
+								>
+							</Table.Row>
 						{/if}
 
 						<!-- ── Autres fonds propres ── -->
 						{#if frPassif.autresFondsPropres.length > 0}
-							<tr class="bg-green-600 text-white text-xs font-semibold">
-								<td class="px-2 py-1.5" colspan="3">{$i18n.t('Autres fonds propres')}</td>
-							</tr>
+							{@render frSection(null, $i18n.t('Other equity'), 3, null)}
 							{#each frPassif.autresFondsPropres as item}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-									<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-								</tr>
+								{@render passifRow(item)}
 							{/each}
 						{/if}
 
 						<!-- ── Provisions pour risques et charges ── -->
 						{#if frPassif.provisions.length > 0}
-							<tr class="bg-green-600 text-white text-xs font-semibold">
-								<td class="px-2 py-1.5" colspan="3">{$i18n.t('Provisions pour risques et charges')}</td>
-							</tr>
+							{@render frSection(null, $i18n.t('Provisions for liabilities and charges'), 3, null)}
 							{#each frPassif.provisions as item}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-									<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-								</tr>
+								{@render passifRow(item)}
 							{/each}
 						{/if}
 
 						<!-- ── Emprunts et dettes ── -->
-						<tr
-							class="bg-green-600 text-white text-xs font-semibold cursor-pointer select-none"
-							on:click={() => toggleSection('emprunts-dettes')}
-						>
-							<td class="px-2 py-1.5" colspan="3">
-								<span class="mr-1 inline-block text-[10px]">{collapsedSections.has('emprunts-dettes') ? '\u25B6' : '\u25BC'}</span>
-								{$i18n.t('Emprunts et dettes')}
-								{#if collapsedSections.has('emprunts-dettes')}
-									<span class="float-right font-mono"><ReportAmount value={sumEnd(frPassif.empruntsEtDettes)} {...fxPropsFr} /></span>
-								{/if}
-							</td>
-						</tr>
+						{@render frSection(
+							'emprunts-dettes',
+							$i18n.t('Borrowings and payables'),
+							3,
+							sumEnd(frPassif.empruntsEtDettes)
+						)}
 						{#if !collapsedSections.has('emprunts-dettes')}
 							{#each frPassif.empruntsEtDettes as item}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-									<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-								</tr>
+								{@render passifRow(item)}
 							{/each}
-							<!-- Subtotal -->
-							<tr class="border-t border-gray-300 dark:border-gray-600">
-								<td class="px-2 py-1.5 text-right text-green-700 dark:text-green-400 font-bold">{$i18n.t('EMPRUNTS ET DETTES')}</td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={sumEnd(frPassif.empruntsEtDettes)} {...fxPropsFr} /></td>
-								<td class="px-2 py-1.5 text-right font-mono font-bold"><ReportAmount value={sumBeg(frPassif.empruntsEtDettes)} {...fxPropsFr} /></td>
-							</tr>
+							<Table.Row class="border-t font-medium">
+								<Table.Cell class="text-right">{$i18n.t('TOTAL BORROWINGS AND PAYABLES')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount
+										value={sumEnd(frPassif.empruntsEtDettes)}
+										{...fxPropsFr}
+									/></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount
+										value={sumBeg(frPassif.empruntsEtDettes)}
+										{...fxPropsFr}
+									/></Table.Cell
+								>
+							</Table.Row>
 						{/if}
 
 						<!-- Other passif -->
-						{#if frPassif.otherPassif.length > 0}
-							{#each frPassif.otherPassif as item}
-								<tr class="border-b border-gray-50 dark:border-gray-850/30 hover:bg-gray-50 dark:hover:bg-gray-850/30">
-									<td class="px-2 py-1" style="padding-left: 16px">{item.account_name}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxPropsFr} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxPropsFr} /></td>
-								</tr>
-							{/each}
-						{/if}
-					</tbody>
-					<tfoot>
-						<tr class="bg-green-600/15 text-green-700 dark:text-green-400 font-bold border-t-2 border-green-300 dark:border-green-700">
-							<td class="px-2 py-2">{$i18n.t('TOTAL PASSIF')}</td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={totalPassif} {...fxPropsFr} /></td>
-							<td class="px-2 py-2 text-right font-mono"><ReportAmount value={sumBeg(liabilities) + sumBeg(equity)} {...fxPropsFr} /></td>
-						</tr>
-					</tfoot>
-				</table>
-			</div>
+						{#each frPassif.otherPassif as item}
+							{@render passifRow(item)}
+						{/each}
+					</Table.Body>
+					<Table.Footer class="font-semibold">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell>{$i18n.t('TOTAL LIABILITIES AND EQUITY')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount value={totalPassif} {...fxPropsFr} /></Table.Cell
+							>
+							<Table.Cell class="text-right tabular-nums"
+								><ReportAmount
+									value={sumBeg(liabilities) + sumBeg(equity)}
+									{...fxPropsFr}
+								/></Table.Cell
+							>
+						</Table.Row>
+					</Table.Footer>
+				</Table.Root>
+			</section>
 		{:else}
-			<!-- ========== DEFAULT FORMAT (US/other) ========== -->
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+			<!-- ========== DEFAULT FORMAT (US/other): Assets left, Liabilities + Equity right ========== -->
+			<div class="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2">
 				<!-- LEFT: Assets -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 overflow-hidden">
-					<div class="px-3 py-2 bg-blue-50/50 dark:bg-blue-900/20 font-semibold text-sm dark:text-gray-200 flex justify-between items-center">
-						<span>{$i18n.t('Assets')}</span>
-						<span class="text-[10px] font-normal text-gray-500 uppercase">{$i18n.t('As of')} {data.as_of}</span>
+				<section class="min-w-0 overflow-hidden rounded-md border">
+					<div class="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5">
+						<h3 class="text-sm font-semibold">{$i18n.t('Assets')}</h3>
+						<span class="text-xs text-muted-foreground tabular-nums"
+							>{$i18n.t('As of')} {data.as_of}</span
+						>
 					</div>
-					<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-						<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-							<tr>
-								<th class="px-2 py-1.5"></th>
-								<th class="px-2 py-1.5 w-8">#</th>
-								<th class="px-2 py-1.5 text-right">{$i18n.t('Beg. Balance')}</th>
-								<th class="px-2 py-1.5 text-right">{$i18n.t('End. Balance')}</th>
-							</tr>
-						</thead>
-						<tbody>
+					<Table.Root class={TABLE}>
+						{@render bsHead()}
+						<Table.Body>
 							{#if assetGroups.current.length > 0}
-								<tr class="bg-blue-50/20 dark:bg-blue-900/5">
-									<td class="px-2 py-1 font-medium text-gray-600 dark:text-gray-400 italic" colspan="4">{$i18n.t('Current assets:')}</td>
-								</tr>
+								{@render bsGroup($i18n.t('Current assets:'))}
 								{#each assetGroups.current as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: {8 + item.level * 10}px">{item.account_name}</td>
-										<td class="px-2 py-1 text-gray-400 text-center">{nextLine()}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxProps} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxProps} /></td>
-									</tr>
+									{@render bsItem(item)}
 								{/each}
-								<tr class="font-medium border-t border-gray-200 dark:border-gray-700 text-[10px]">
-									<td class="px-2 py-1 italic" colspan="2">{$i18n.t('Sub-total current assets')}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumBeg(assetGroups.current)} {...fxProps} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumEnd(assetGroups.current)} {...fxProps} /></td>
-								</tr>
+								{@render bsSubtotal(
+									$i18n.t('Sub-total current assets'),
+									sumBeg(assetGroups.current),
+									sumEnd(assetGroups.current),
+									false
+								)}
 							{/if}
 
 							{#if assetGroups.nonCurrent.length > 0}
-								<tr class="bg-blue-50/20 dark:bg-blue-900/5">
-									<td class="px-2 py-1 font-medium text-gray-600 dark:text-gray-400 italic" colspan="4">{$i18n.t('Non-current assets:')}</td>
-								</tr>
+								{@render bsGroup($i18n.t('Non-current assets:'))}
 								{#each assetGroups.nonCurrent as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: {8 + item.level * 10}px">{item.account_name}</td>
-										<td class="px-2 py-1 text-gray-400 text-center">{nextLine()}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxProps} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxProps} /></td>
-									</tr>
+									{@render bsItem(item)}
 								{/each}
-								<tr class="font-medium border-t border-gray-200 dark:border-gray-700 text-[10px]">
-									<td class="px-2 py-1 italic" colspan="2">{$i18n.t('Sub-total non-current assets')}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumBeg(assetGroups.nonCurrent)} {...fxProps} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumEnd(assetGroups.nonCurrent)} {...fxProps} /></td>
-								</tr>
+								{@render bsSubtotal(
+									$i18n.t('Sub-total non-current assets'),
+									sumBeg(assetGroups.nonCurrent),
+									sumEnd(assetGroups.nonCurrent),
+									false
+								)}
 							{/if}
-						</tbody>
-						<tfoot class="font-bold bg-blue-50/30 dark:bg-blue-900/10">
-							<tr class="border-t-2 border-blue-200 dark:border-blue-800">
-								<td class="px-2 py-2" colspan="2">{$i18n.t('Total Assets')}</td>
-								<td class="px-2 py-2 text-right font-mono"><ReportAmount value={sumBeg(assets)} {...fxProps} /></td>
-								<td class="px-2 py-2 text-right font-mono"><ReportAmount value={data.total_assets} {...fxProps} /></td>
-							</tr>
-						</tfoot>
-					</table>
-				</div>
+						</Table.Body>
+						<Table.Footer class="font-semibold">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell colspan={2}>{$i18n.t('Total Assets')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={sumBeg(assets)} {...fxProps} /></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount value={data.total_assets} {...fxProps} /></Table.Cell
+								>
+							</Table.Row>
+						</Table.Footer>
+					</Table.Root>
+				</section>
 
 				<!-- RIGHT: Liabilities & Equity -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 overflow-hidden">
-					<div class="px-3 py-2 bg-orange-50/50 dark:bg-orange-900/20 font-semibold text-sm dark:text-gray-200 flex justify-between items-center">
-						<span>{$i18n.t("Liabilities & Owners' Equity")}</span>
-						<span class="text-xs font-medium px-2 py-0.5 rounded-lg {data.is_balanced ? 'bg-green-500/20 text-green-700 dark:text-green-300' : 'bg-red-500/20 text-red-700 dark:text-red-300'}">{data.is_balanced ? $i18n.t('Balanced') : $i18n.t('Unbalanced')}</span>
+				<section class="min-w-0 overflow-hidden rounded-md border">
+					<div class="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5">
+						<h3 class="text-sm font-semibold">{$i18n.t("Liabilities & Owners' Equity")}</h3>
+						{@render balanceBadge()}
 					</div>
-					<table class="w-full text-xs text-left text-gray-700 dark:text-gray-300">
-						<thead class="text-[10px] uppercase bg-gray-50 dark:bg-gray-850/50 text-gray-600 dark:text-gray-400">
-							<tr>
-								<th class="px-2 py-1.5"></th>
-								<th class="px-2 py-1.5 w-8">#</th>
-								<th class="px-2 py-1.5 text-right">{$i18n.t('Beg. Balance')}</th>
-								<th class="px-2 py-1.5 text-right">{$i18n.t('End. Balance')}</th>
-							</tr>
-						</thead>
-						<tbody>
+					<Table.Root class={TABLE}>
+						{@render bsHead()}
+						<Table.Body>
 							{#if liabGroups.current.length > 0}
-								<tr class="bg-orange-50/20 dark:bg-orange-900/5">
-									<td class="px-2 py-1 font-medium text-gray-600 dark:text-gray-400 italic" colspan="4">{$i18n.t('Current liabilities:')}</td>
-								</tr>
+								{@render bsGroup($i18n.t('Current liabilities:'))}
 								{#each liabGroups.current as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: {8 + item.level * 10}px">{item.account_name}</td>
-										<td class="px-2 py-1 text-gray-400 text-center">{nextLine()}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxProps} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxProps} /></td>
-									</tr>
+									{@render bsItem(item)}
 								{/each}
-								<tr class="font-medium border-t border-gray-200 dark:border-gray-700 text-[10px]">
-									<td class="px-2 py-1 italic" colspan="2">{$i18n.t('Sub-total current liabilities')}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumBeg(liabGroups.current)} {...fxProps} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumEnd(liabGroups.current)} {...fxProps} /></td>
-								</tr>
+								{@render bsSubtotal(
+									$i18n.t('Sub-total current liabilities'),
+									sumBeg(liabGroups.current),
+									sumEnd(liabGroups.current),
+									false
+								)}
 							{/if}
 
 							{#if liabGroups.nonCurrent.length > 0}
-								<tr class="bg-orange-50/20 dark:bg-orange-900/5">
-									<td class="px-2 py-1 font-medium text-gray-600 dark:text-gray-400 italic" colspan="4">{$i18n.t('Non-current liabilities:')}</td>
-								</tr>
+								{@render bsGroup($i18n.t('Non-current liabilities:'))}
 								{#each liabGroups.nonCurrent as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: {8 + item.level * 10}px">{item.account_name}</td>
-										<td class="px-2 py-1 text-gray-400 text-center">{nextLine()}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxProps} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxProps} /></td>
-									</tr>
+									{@render bsItem(item)}
 								{/each}
-								<tr class="font-medium border-t border-gray-200 dark:border-gray-700 text-[10px]">
-									<td class="px-2 py-1 italic" colspan="2">{$i18n.t('Sub-total non-current liabilities')}</td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumBeg(liabGroups.nonCurrent)} {...fxProps} /></td>
-									<td class="px-2 py-1 text-right font-mono"><ReportAmount value={sumEnd(liabGroups.nonCurrent)} {...fxProps} /></td>
-								</tr>
+								{@render bsSubtotal(
+									$i18n.t('Sub-total non-current liabilities'),
+									sumBeg(liabGroups.nonCurrent),
+									sumEnd(liabGroups.nonCurrent),
+									false
+								)}
 							{/if}
 
-							<tr class="font-semibold border-t border-gray-300 dark:border-gray-600">
-								<td class="px-2 py-1.5" colspan="2">{$i18n.t('Total Liabilities')}</td>
-								<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={sumBeg(liabilities)} {...fxProps} /></td>
-								<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={data.total_liabilities} {...fxProps} /></td>
-							</tr>
+							{@render bsSubtotal(
+								$i18n.t('Total Liabilities'),
+								sumBeg(liabilities),
+								data.total_liabilities,
+								true
+							)}
 
 							{#if equity.length > 0}
-								<tr class="bg-purple-50/20 dark:bg-purple-900/5">
-									<td class="px-2 py-1 font-medium text-gray-600 dark:text-gray-400 italic" colspan="4">{$i18n.t("Owner's equity:")}</td>
-								</tr>
+								{@render bsGroup($i18n.t("Owner's equity:"))}
 								{#each equity as item}
-									<tr class="border-b border-gray-50 dark:border-gray-850/30">
-										<td class="px-2 py-1" style="padding-left: {8 + item.level * 10}px">{item.account_name}</td>
-										<td class="px-2 py-1 text-gray-400 text-center">{nextLine()}</td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.beginning_balance} {...fxProps} /></td>
-										<td class="px-2 py-1 text-right font-mono"><ReportAmount value={item.balance} {...fxProps} /></td>
-									</tr>
+									{@render bsItem(item)}
 								{/each}
-								<tr class="font-semibold border-t border-gray-300 dark:border-gray-600">
-									<td class="px-2 py-1.5" colspan="2">{$i18n.t("Total Owner's Equity")}</td>
-									<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={sumBeg(equity)} {...fxProps} /></td>
-									<td class="px-2 py-1.5 text-right font-mono"><ReportAmount value={data.total_equity} {...fxProps} /></td>
-								</tr>
+								{@render bsSubtotal(
+									$i18n.t("Total Owner's Equity"),
+									sumBeg(equity),
+									data.total_equity,
+									true
+								)}
 							{/if}
-						</tbody>
-						<tfoot class="font-bold bg-orange-50/30 dark:bg-orange-900/10">
-							<tr class="border-t-2 border-orange-200 dark:border-orange-800">
-								<td class="px-2 py-2" colspan="2">{$i18n.t("Total Liabilities & Equity")}</td>
-								<td class="px-2 py-2 text-right font-mono"><ReportAmount value={sumBeg(liabilities) + sumBeg(equity)} {...fxProps} /></td>
-								<td class="px-2 py-2 text-right font-mono"><ReportAmount value={parseFloat(data.total_liabilities) + parseFloat(data.total_equity)} {...fxProps} /></td>
-							</tr>
-						</tfoot>
-					</table>
-				</div>
+						</Table.Body>
+						<Table.Footer class="font-semibold">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell colspan={2}>{$i18n.t('Total Liabilities & Equity')}</Table.Cell>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount
+										value={sumBeg(liabilities) + sumBeg(equity)}
+										{...fxProps}
+									/></Table.Cell
+								>
+								<Table.Cell class="text-right tabular-nums"
+									><ReportAmount
+										value={parseFloat(data.total_liabilities) + parseFloat(data.total_equity)}
+										{...fxProps}
+									/></Table.Cell
+								>
+							</Table.Row>
+						</Table.Footer>
+					</Table.Root>
+				</section>
 			</div>
 		{/if}
+	{:else}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><FileSpreadsheet /></Empty.Media>
+				<Empty.Title>{$i18n.t('Balance Sheet')}</Empty.Title>
+				<Empty.Description>{$i18n.t('Choose a period, then Generate.')}</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{/if}
 </div>

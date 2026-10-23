@@ -11,10 +11,31 @@
 		getPendingReimbursableInvoices,
 		downloadExpenseSheetsPdf
 	} from '$lib/apis/accounting';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import dayjs from 'dayjs';
+
+	import Plus from '@lucide/svelte/icons/plus';
+	import FileDown from '@lucide/svelte/icons/file-down';
+	import Search from '@lucide/svelte/icons/search';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import TablePagination from '$lib/components/gnos3-ui/TablePagination.svelte';
 	import ExpenseSheetStatusBadge from './ExpenseSheetStatusBadge.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 	export let companyId: number;
 
 	let sheets: any[] = [];
@@ -22,6 +43,7 @@
 	let pendingGroups: any[] = [];
 	let pendingTotal = 0;
 	let loading = true;
+	let loadError = '';
 	let showGenerate = false;
 	let generating = false;
 	let exporting = false;
@@ -59,6 +81,7 @@
 
 	const load = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			const [sheetData, empData, pendingData] = await Promise.all([
 				getExpenseSheets(companyId, {
@@ -76,10 +99,14 @@
 			pendingGroups = pendingData?.groups ?? [];
 			pendingTotal = pendingData?.total_invoices ?? 0;
 		} catch (err: any) {
-			toast.error(err?.detail ?? `${err}`);
+			loadError = err?.detail ?? `${err}`;
+			toast.error(loadError);
 		}
 		loading = false;
 	};
+
+	const openSheet = (id: number) => goto(`/accounting/company/${companyId}/expenses/${id}`);
+	const valueOf = (e: Event) => (e.currentTarget as HTMLInputElement).value;
 
 	const generateForEmployee = async (group: any) => {
 		const periodStart = group.earliest_date ?? defaultPeriod().start;
@@ -191,319 +218,344 @@
 	};
 </script>
 
-<div class="py-2 space-y-3">
-	<div class="flex items-center justify-between flex-wrap gap-2">
-		<div>
-			<h2 class="text-lg font-semibold dark:text-gray-200">{$i18n.t('Expense Sheets')}</h2>
-			<p class="text-xs text-gray-500 dark:text-gray-400">
+<div class="flex flex-col gap-4">
+	<!-- Header with the primary action -->
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div class="min-w-0">
+			<h2 class="text-lg font-semibold">{$i18n.t('Expense Sheets')}</h2>
+			<p class="text-sm text-muted-foreground">
 				{$i18n.t(
 					'Employee expense reports. Generate a sheet, submit for approval, then mark as paid.'
 				)}
 			</p>
 		</div>
 		<div class="flex items-center gap-2">
-			<button
-				class="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition disabled:opacity-60"
+			<Button
+				variant="outline"
+				size="sm"
 				disabled={exporting || loading || sheets.length === 0}
 				title={$i18n.t('Export the sheets matching the current filters as a PDF')}
-				on:click={exportPdf}
+				onclick={exportPdf}
 			>
+				{#if exporting}<Spinner />{:else}<FileDown />{/if}
 				{exporting ? $i18n.t('Exporting...') : $i18n.t('Export PDF')}
-			</button>
-			<button
-				class="px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
-				on:click={openGenerate}
-			>
-				+ {$i18n.t('New Sheet')}
-			</button>
+			</Button>
+			<Button size="sm" onclick={openGenerate}>
+				<Plus />{$i18n.t('New Sheet')}
+			</Button>
 		</div>
 	</div>
 
 	<!-- Pending receipts -->
 	{#if pendingTotal > 0}
-		<div
-			class="p-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20"
-		>
-			<div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-				<div>
-					<div class="text-sm font-semibold text-amber-800 dark:text-amber-300">
-						{pendingTotal}
-						{$i18n.t('reimbursable receipt(s) waiting to be sheeted')}
-					</div>
-					<div class="text-xs text-amber-700/80 dark:text-amber-400/80">
-						{$i18n.t(
-							'These have an employee assigned but are not on any active expense sheet yet.'
-						)}
-					</div>
-				</div>
-			</div>
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-				{#each pendingGroups as g}
-					<div
-						class="flex items-center justify-between p-2 rounded bg-white dark:bg-gray-900 border border-amber-100 dark:border-amber-900/30"
-					>
-						<div class="min-w-0">
-							<div class="text-sm font-medium dark:text-gray-200 truncate">
-								{g.employee_name}
-								<span class="text-xs text-gray-400">({g.employee_code})</span>
+		<Alert.Root variant="warning">
+			<TriangleAlert />
+			<Alert.Title>
+				{pendingTotal}
+				{$i18n.t('reimbursable receipt(s) waiting to be sheeted')}
+			</Alert.Title>
+			<Alert.Description>
+				<p>
+					{$i18n.t('These have an employee assigned but are not on any active expense sheet yet.')}
+				</p>
+				<ul class="mt-2 grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-3">
+					{#each pendingGroups as g}
+						<li class="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
+							<div class="min-w-0">
+								<div class="truncate text-sm font-medium text-foreground">
+									{g.employee_name}
+									<span class="font-normal text-muted-foreground">({g.employee_code})</span>
+								</div>
+								<div class="text-[13px] text-muted-foreground tabular-nums">
+									{g.count}
+									{$i18n.t('receipts')} · {money(g.total, g.currency || 'USD')}
+									{#if g.earliest_date && g.latest_date}
+										· {g.earliest_date} → {g.latest_date}
+									{/if}
+								</div>
 							</div>
-							<div class="text-xs text-gray-500 dark:text-gray-400">
-								{g.count} {$i18n.t('receipts')} · {money(g.total, g.currency || 'USD')}
-								{#if g.earliest_date && g.latest_date}
-									<span class="text-gray-400"
-										>· {g.earliest_date} → {g.latest_date}</span
-									>
-								{/if}
-							</div>
-						</div>
-						<button
-							class="ml-2 px-2.5 py-1 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-60 whitespace-nowrap"
-							disabled={generating}
-							on:click={() => generateForEmployee(g)}
-						>
-							{$i18n.t('Generate')}
-						</button>
-					</div>
-				{/each}
-			</div>
-		</div>
+							<Button
+								variant="outline"
+								size="xs"
+								disabled={generating}
+								onclick={() => generateForEmployee(g)}
+							>
+								{$i18n.t('Generate', { context: 'gnos3' })}
+							</Button>
+						</li>
+					{/each}
+				</ul>
+			</Alert.Description>
+		</Alert.Root>
 	{/if}
 
-	<!-- Filters -->
-	<div
-		class="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-850 border border-gray-200 dark:border-gray-800"
-	>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-				>{$i18n.t('Status')}</label
-			>
-			<select
-				bind:value={statusFilter}
-				on:change={load}
-				class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-			>
-				<option value="">{$i18n.t('Any')}</option>
-				<option value="draft">{$i18n.t('Draft')}</option>
-				<option value="submitted">{$i18n.t('Submitted')}</option>
-				<option value="approved">{$i18n.t('Approved')}</option>
-				<option value="paid">{$i18n.t('Paid')}</option>
-				<option value="rejected">{$i18n.t('Rejected')}</option>
-			</select>
-		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-				>{$i18n.t('Employee')}</label
-			>
-			<select
-				bind:value={employeeFilter}
-				on:change={load}
-				class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-			>
-				<option value="">{$i18n.t('Any')}</option>
-				{#each employees as emp}
-					<option value={emp.id}>{emp.full_name}</option>
-				{/each}
-			</select>
-		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-				>{$i18n.t('From')}</label
-			>
-			<input
-				type="date"
-				bind:value={dateFrom}
-				on:change={load}
-				class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
+	<!-- Toolbar: search and filters -->
+	<div class="flex flex-wrap items-center gap-2">
+		<div class="relative w-full sm:w-56">
+			<Search
+				class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
 			/>
-		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-				>{$i18n.t('To')}</label
-			>
-			<input
-				type="date"
-				bind:value={dateTo}
-				on:change={load}
-				class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-			/>
-		</div>
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-				>{$i18n.t('Search')}</label
-			>
-			<input
-				type="text"
-				bind:value={search}
-				on:input={load}
+			<Input
+				type="search"
+				class="h-8 pl-8"
+				aria-label={$i18n.t('Search')}
 				placeholder="ES-2026-0001"
-				class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
+				value={search}
+				oninput={(e) => {
+					search = valueOf(e);
+					load();
+				}}
+			/>
+		</div>
+		<NativeSelect.Root
+			size="sm"
+			aria-label={$i18n.t('Status')}
+			value={statusFilter}
+			onchange={(e: Event) => {
+				statusFilter = valueOf(e);
+				load();
+			}}
+		>
+			<NativeSelect.Option value="">{$i18n.t('Any status')}</NativeSelect.Option>
+			<NativeSelect.Option value="draft">{$i18n.t('Draft')}</NativeSelect.Option>
+			<NativeSelect.Option value="submitted">{$i18n.t('Submitted')}</NativeSelect.Option>
+			<NativeSelect.Option value="approved">{$i18n.t('Approved')}</NativeSelect.Option>
+			<NativeSelect.Option value="paid">{$i18n.t('Paid')}</NativeSelect.Option>
+			<NativeSelect.Option value="rejected">{$i18n.t('Rejected')}</NativeSelect.Option>
+		</NativeSelect.Root>
+		<NativeSelect.Root
+			size="sm"
+			class="max-w-56"
+			aria-label={$i18n.t('Employee')}
+			value={String(employeeFilter)}
+			onchange={(e: Event) => {
+				const v = valueOf(e);
+				employeeFilter = v === '' ? '' : Number(v);
+				load();
+			}}
+		>
+			<NativeSelect.Option value="">{$i18n.t('All employees')}</NativeSelect.Option>
+			{#each employees as emp}
+				<NativeSelect.Option value={String(emp.id)}>{emp.full_name}</NativeSelect.Option>
+			{/each}
+		</NativeSelect.Root>
+		<div class="flex items-center gap-1.5">
+			<Label for="es-filter-from" class="font-normal text-muted-foreground">{$i18n.t('From')}</Label
+			>
+			<Input
+				id="es-filter-from"
+				type="date"
+				class="h-8 w-auto"
+				value={dateFrom}
+				onchange={(e) => {
+					dateFrom = valueOf(e);
+					load();
+				}}
+			/>
+		</div>
+		<div class="flex items-center gap-1.5">
+			<Label for="es-filter-to" class="font-normal text-muted-foreground">{$i18n.t('To')}</Label>
+			<Input
+				id="es-filter-to"
+				type="date"
+				class="h-8 w-auto"
+				value={dateTo}
+				onchange={(e) => {
+					dateTo = valueOf(e);
+					load();
+				}}
 			/>
 		</div>
 	</div>
 
-	{#if showGenerate}
-		<div
-			class="p-4 rounded-lg border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/20 space-y-3"
-		>
-			<h3 class="text-sm font-semibold dark:text-gray-200">{$i18n.t('Generate Sheet')}</h3>
-			<div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-				<div>
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-						>{$i18n.t('Employee')}</label
-					>
-					<select
-						bind:value={genForm.employee_id}
-						on:change={() => (candidatePreview = null)}
-						class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-					>
-						<option value={0}>{$i18n.t('Select...')}</option>
-						{#each employees as emp}
-							<option value={emp.id}>{emp.full_name}</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-						>{$i18n.t('From')}</label
-					>
-					<input
-						type="date"
-						bind:value={genForm.period_start}
-						on:change={() => (candidatePreview = null)}
-						class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-					/>
-				</div>
-				<div>
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-						>{$i18n.t('To')}</label
-					>
-					<input
-						type="date"
-						bind:value={genForm.period_end}
-						on:change={() => (candidatePreview = null)}
-						class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-					/>
-				</div>
-				<div>
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-						>{$i18n.t('Title (optional)')}</label
-					>
-					<input
-						type="text"
-						bind:value={genForm.title}
-						class="w-full text-sm rounded-lg px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-200 border border-gray-200 dark:border-gray-700 outline-hidden"
-					/>
-				</div>
-			</div>
-			<label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
-				<input
-					type="checkbox"
-					bind:checked={genForm.include_uncategorized}
-					disabled={genForm.start_empty}
-					class="rounded disabled:opacity-50"
-				/>
-				<span class={genForm.start_empty ? 'opacity-50' : ''}>
-					{$i18n.t('Include uncategorized invoices')}
-				</span>
-			</label>
-			<label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
-				<input
-					type="checkbox"
-					bind:checked={genForm.start_empty}
-					on:change={() => (candidatePreview = null)}
-					class="rounded"
-				/>
-				{$i18n.t('Start empty — add receipts after creating the sheet')}
-			</label>
-			<div class="flex items-center gap-3">
-				{#if !genForm.start_empty}
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-						on:click={previewCandidates}
-					>
-						{$i18n.t('Preview Candidates')}
-					</button>
-				{/if}
-				{#if candidatePreview && !genForm.start_empty}
-					<span class="text-xs text-gray-600 dark:text-gray-400">
-						{candidatePreview.total}
-						{$i18n.t('invoice(s) will be included')}
-					</span>
-				{/if}
-				<div class="flex-1"></div>
-				<button
-					class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-					on:click={() => (showGenerate = false)}
-				>
-					{$i18n.t('Cancel')}
-				</button>
-				<button
-					class="px-4 py-1.5 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-60"
-					disabled={generating}
-					on:click={handleGenerate}
-				>
-					{generating
-						? $i18n.t('Generating...')
-						: genForm.start_empty
-							? $i18n.t('Create empty sheet')
-							: $i18n.t('Generate')}
-				</button>
-			</div>
+	{#if loadError && !loading}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the expense sheets.')}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={load}>
+					<RefreshCw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{:else if loading && sheets.length === 0}
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(5) as _}<Skeleton class="h-8 w-full" />{/each}
 		</div>
-	{/if}
-
-	{#if loading}
-		<div class="flex justify-center my-8"><Spinner className="size-5" /></div>
 	{:else if sheets.length === 0}
-		<div class="text-sm text-gray-400 italic py-6 text-center">
-			{$i18n.t('No expense sheets yet. Click New Sheet to create one.')}
-		</div>
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><FileSpreadsheet /></Empty.Media>
+				<Empty.Title>{$i18n.t('No expense sheets yet. Click New Sheet to create one.')}</Empty.Title
+				>
+			</Empty.Header>
+			<Empty.Content>
+				<Button size="sm" onclick={openGenerate}><Plus />{$i18n.t('New Sheet')}</Button>
+			</Empty.Content>
+		</Empty.Root>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-			<table class="w-full text-sm">
-				<thead class="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-850">
-					<tr>
-						<th class="text-left py-2 px-3">{$i18n.t('Reference')}</th>
-						<th class="text-left py-2 px-3">{$i18n.t('Employee')}</th>
-						<th class="text-left py-2 px-3">{$i18n.t('Period')}</th>
-						<th class="text-right py-2 px-3">{$i18n.t('Total')}</th>
-						<th class="text-center py-2 px-3">{$i18n.t('Lines')}</th>
-						<th class="text-left py-2 px-3">{$i18n.t('Status')}</th>
-						<th class="text-left py-2 px-3">{$i18n.t('Created')}</th>
-					</tr>
-				</thead>
-				<tbody>
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Reference')}</Table.Head>
+						<Table.Head>{$i18n.t('Employee')}</Table.Head>
+						<Table.Head>{$i18n.t('Period')}</Table.Head>
+						<Table.Head class="text-right">{$i18n.t('Total')}</Table.Head>
+						<Table.Head class="text-right">{$i18n.t('Lines')}</Table.Head>
+						<Table.Head>{$i18n.t('Status')}</Table.Head>
+						<Table.Head>{$i18n.t('Created')}</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					{#each sheets as s}
-						<!-- svelte-ignore a11y-click-events-have-key-events -->
-						<!-- svelte-ignore a11y-no-static-element-interactions -->
-						<tr
-							class="border-t border-gray-100 dark:border-gray-850 hover:bg-gray-50 dark:hover:bg-gray-900/50 cursor-pointer"
-							on:click={() => goto(`/accounting/company/${companyId}/expenses/${s.id}`)}
+						<Table.Row
+							class="cursor-pointer"
+							tabindex={0}
+							onclick={() => openSheet(s.id)}
+							onkeydown={(e: KeyboardEvent) => {
+								if (e.key === 'Enter') openSheet(s.id);
+							}}
 						>
-							<td class="py-2 px-3 font-mono text-xs dark:text-gray-200">{s.reference}</td>
-							<td class="py-2 px-3 dark:text-gray-200">
+							<Table.Cell class="font-mono text-[13px]">{s.reference}</Table.Cell>
+							<Table.Cell>
 								{s.employee_name ?? `#${s.employee_id}`}
 								{#if s.employee_code}
-									<span class="text-xs text-gray-400 ml-1">({s.employee_code})</span>
+									<span class="ml-1 text-muted-foreground">({s.employee_code})</span>
 								{/if}
-							</td>
-							<td class="py-2 px-3 text-gray-600 dark:text-gray-400">
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground tabular-nums">
 								{s.period_start} → {s.period_end}
-							</td>
-							<td class="py-2 px-3 text-right font-medium dark:text-gray-200"
-								>{money(s.total_amount, s.currency)}</td
+							</Table.Cell>
+							<Table.Cell class="text-right font-medium tabular-nums"
+								>{money(s.total_amount, s.currency) || '—'}</Table.Cell
 							>
-							<td class="py-2 px-3 text-center text-gray-500">{s.line_count}</td>
-							<td class="py-2 px-3">
+							<Table.Cell class="text-right tabular-nums">{s.line_count}</Table.Cell>
+							<Table.Cell>
 								<ExpenseSheetStatusBadge status={s.status} />
-							</td>
-							<td class="py-2 px-3 text-xs text-gray-500"
-								>{new Date(s.created_at).toLocaleDateString()}</td
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground tabular-nums"
+								>{s.created_at ? dayjs(s.created_at).format('YYYY-MM-DD') : '—'}</Table.Cell
 							>
-						</tr>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
 		</div>
+		<TablePagination page={1} count={sheets.length} perPage={Math.max(1, sheets.length)} />
 	{/if}
 </div>
+
+<!-- New sheet -->
+<Dialog.Root bind:open={showGenerate}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>{$i18n.t('Generate Sheet')}</Dialog.Title>
+			<Dialog.Description
+				>{$i18n.t('Create a sheet for one employee and period.')}</Dialog.Description
+			>
+		</Dialog.Header>
+
+		<div class="grid gap-4">
+			<div class="grid gap-1.5">
+				<Label for="es-gen-employee">{$i18n.t('Employee')}</Label>
+				<NativeSelect.Root
+					id="es-gen-employee"
+					class="w-full"
+					value={String(genForm.employee_id)}
+					onchange={(e: Event) => {
+						genForm.employee_id = Number(valueOf(e));
+						candidatePreview = null;
+					}}
+				>
+					<NativeSelect.Option value="0">{$i18n.t('Select...')}</NativeSelect.Option>
+					{#each employees as emp}
+						<NativeSelect.Option value={String(emp.id)}>{emp.full_name}</NativeSelect.Option>
+					{/each}
+				</NativeSelect.Root>
+			</div>
+			<div class="grid grid-cols-2 gap-3">
+				<div class="grid gap-1.5">
+					<Label for="es-gen-from">{$i18n.t('From')}</Label>
+					<Input
+						id="es-gen-from"
+						type="date"
+						value={genForm.period_start}
+						onchange={(e) => {
+							genForm.period_start = valueOf(e);
+							candidatePreview = null;
+						}}
+					/>
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="es-gen-to">{$i18n.t('To')}</Label>
+					<Input
+						id="es-gen-to"
+						type="date"
+						value={genForm.period_end}
+						onchange={(e) => {
+							genForm.period_end = valueOf(e);
+							candidatePreview = null;
+						}}
+					/>
+				</div>
+			</div>
+			<div class="grid gap-1.5">
+				<Label for="es-gen-title">{$i18n.t('Title (optional)')}</Label>
+				<Input id="es-gen-title" bind:value={genForm.title} />
+			</div>
+			<div class="grid gap-3">
+				<div class="flex items-center gap-2">
+					<Checkbox
+						id="es-gen-uncat"
+						checked={genForm.include_uncategorized}
+						disabled={genForm.start_empty}
+						onCheckedChange={(v) => (genForm.include_uncategorized = v === true)}
+					/>
+					<Label for="es-gen-uncat" class="font-normal {genForm.start_empty ? 'opacity-50' : ''}">
+						{$i18n.t('Include uncategorized invoices')}
+					</Label>
+				</div>
+				<div class="flex items-center gap-2">
+					<Checkbox
+						id="es-gen-empty"
+						checked={genForm.start_empty}
+						onCheckedChange={(v) => {
+							genForm.start_empty = v === true;
+							candidatePreview = null;
+						}}
+					/>
+					<Label for="es-gen-empty" class="font-normal">
+						{$i18n.t('Start empty — add receipts after creating the sheet')}
+					</Label>
+				</div>
+			</div>
+			{#if !genForm.start_empty}
+				<div class="flex flex-wrap items-center gap-3">
+					<Button variant="outline" size="sm" onclick={previewCandidates}>
+						{$i18n.t('Preview Candidates')}
+					</Button>
+					{#if candidatePreview}
+						<span class="text-sm text-muted-foreground tabular-nums">
+							{candidatePreview.total}
+							{$i18n.t('invoice(s) will be included')}
+						</span>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showGenerate = false)}>{$i18n.t('Cancel')}</Button>
+			<Button disabled={generating} onclick={handleGenerate}>
+				{#if generating}<Spinner />{/if}
+				{generating
+					? $i18n.t('Generating...')
+					: genForm.start_empty
+						? $i18n.t('Create empty sheet')
+						: $i18n.t('Generate', { context: 'gnos3' })}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

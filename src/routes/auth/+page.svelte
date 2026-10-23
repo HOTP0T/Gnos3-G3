@@ -25,6 +25,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import OnBoarding from '$lib/components/OnBoarding.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
+	import Gnos3Wordmark from '$lib/components/common/Gnos3Wordmark.svelte';
 	import { redirect } from '@sveltejs/kit';
 
 	const i18n = getContext('i18n');
@@ -209,7 +210,7 @@
 />
 
 <div class="w-full h-screen max-h-[100dvh] text-white relative" id="auth-page">
-	<div class="w-full h-full absolute top-0 left-0 bg-white dark:bg-black"></div>
+	<div class="w-full h-full absolute top-0 left-0 auth-backdrop"></div>
 
 	<div class="w-full absolute top-0 left-0 right-0 h-8 drag-region" />
 
@@ -242,7 +243,7 @@
 										id="logo"
 										crossorigin="anonymous"
 										src="{WEBUI_BASE_URL}/static/favicon.png"
-										class="size-24 rounded-full"
+										class="size-24"
 										alt="{$WEBUI_NAME} logo"
 									/>
 								</div>
@@ -588,18 +589,31 @@
 
 		{#if !$config?.metadata?.auth_logo_position}
 			<div class="fixed m-10 z-50">
-				<div class="flex space-x-2">
-					<div class=" self-center">
-						<img
-							id="logo"
-							crossorigin="anonymous"
-							src="{WEBUI_BASE_URL}/static/favicon.png"
-							class=" w-6 rounded-full"
-							alt=""
-						/>
-					</div>
+				<div class="flex items-center gap-2 text-gray-900 dark:text-white">
+					<img
+						id="logo"
+						crossorigin="anonymous"
+						src="{WEBUI_BASE_URL}/static/favicon.png"
+						class=" w-7"
+						alt=""
+					/>
+					{#if $WEBUI_NAME === 'Gnos3'}
+						<Gnos3Wordmark className="h-5 mt-1" />
+					{/if}
 				</div>
 			</div>
 		{/if}
 	{/if}
 </div>
+
+<style>
+	/* Brand ground (brand/G3/login-background-*.png): night sky in dark mode, Mist in light. */
+	.auth-backdrop {
+		background:
+			radial-gradient(60% 50% at 25% 0%, rgb(18 72 154 / 0.1), transparent 70%),
+			var(--color-gray-50);
+	}
+	:global(.dark) .auth-backdrop {
+		background: #0a1019 url('/assets/images/login-background.png') center / cover no-repeat;
+	}
+</style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
+	import { uiLocale } from '$lib/utils/uiLocale';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -11,10 +12,25 @@
 		getPeriods
 	} from '$lib/apis/accounting';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import TaxFilingsList from './TaxFilingsList.svelte';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import Download from '@lucide/svelte/icons/download';
+	import Save from '@lucide/svelte/icons/save';
+	import Calculator from '@lucide/svelte/icons/calculator';
 
-	const i18n = getContext('i18n');
+	import TaxFilingsList from './TaxFilingsList.svelte';
+	import { taxTerm } from '$lib/utils/taxTerms';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import KpiCard from '$lib/components/gnos3-ui/KpiCard.svelte';
+
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let companyId: number;
@@ -28,7 +44,7 @@
 	let declaration: any = null;
 	let filingsList: any;
 
-	// Credit brought forward from the previous return (上期留抵 / crédit reporté).
+	// Credit brought forward from the previous return.
 	// Blank = taken from the previous filing (or recomputed); a value overrides it.
 	let openingCreditInput: string | number | null = '';
 	// A number input yields a number (or null) once typed into — never call string methods on it.
@@ -75,7 +91,7 @@
 				const label =
 					step === 3
 						? `Q${m / 3 + 1} ${y}`
-						: cursor.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+						: cursor.toLocaleDateString(uiLocale(), { year: 'numeric', month: 'long' });
 				const value = step === 3 ? `${y}-Q${m / 3 + 1}` : `${y}-${pad(m + 1)}`;
 				options.push({ value, label, from, to });
 				cursor = new Date(y, m + step, 1);
@@ -124,7 +140,9 @@
 				company_id: companyId,
 				period_start: opt.from,
 				period_end: opt.to,
-				opening_credit: blank(openingCreditInput) ? undefined : parseFloat(String(openingCreditInput)) || 0
+				opening_credit: blank(openingCreditInput)
+					? undefined
+					: parseFloat(String(openingCreditInput)) || 0
 			});
 		} catch (err: any) {
 			const msg = err?.detail ?? err?.message ?? String(err);
@@ -150,7 +168,8 @@
 			});
 			const txId = result?.transaction_id ?? '';
 			toast.success(
-				$i18n.t('Settlement entry created as Draft and linked to the filing') + (txId ? ` (ID: ${txId})` : '')
+				$i18n.t('Settlement entry created as Draft and linked to the filing') +
+					(txId ? ` (ID: ${txId})` : '')
 			);
 			filingsList?.reload();
 		} catch (err: any) {
@@ -190,17 +209,21 @@
 				tax_type: 'vat',
 				period_start: declaration.period_start,
 				period_end: declaration.period_end,
-				opening_credit: blank(openingCreditInput) ? undefined : parseFloat(String(openingCreditInput)) || 0
+				opening_credit: blank(openingCreditInput)
+					? undefined
+					: parseFloat(String(openingCreditInput)) || 0
 			});
 		} catch (err: any) {
 			toast.error(`${$i18n.t('Failed to export')}: ${err?.detail ?? err}`);
 		}
 	};
 
-	$: taxName = taxConfig?.tax_name ?? 'Tax';
-	$: collectedLabel = taxConfig?.collected_label ?? $i18n.t('Tax Collected');
-	$: deductibleLabel = taxConfig?.deductible_label ?? $i18n.t('Tax Deductible');
-	$: payableLabel = taxConfig?.payable_label ?? $i18n.t('Tax Payable');
+	// Named in the UI language from the kind of tax (VAT, GST…), never with the
+	// country's own labels.
+	$: taxName = taxTerm($i18n.t, taxConfig);
+	$: collectedLabel = $i18n.t('Output {{tax}}', { tax: taxName });
+	$: deductibleLabel = $i18n.t('Input {{tax}}', { tax: taxName });
+	$: payableLabel = $i18n.t('{{tax}} payable', { tax: taxName });
 	$: hasSurcharges = !!declaration && (declaration.surcharges ?? []).length > 0;
 	$: periodLabel =
 		taxConfig?.filing_frequency === 'quarterly'
@@ -212,373 +235,364 @@
 		const src: string = declaration?.opening_credit_source ?? 'none';
 		if (src === 'manual') return $i18n.t('entered manually');
 		if (src.startsWith('filing:')) return `${$i18n.t('from the filing ending')} ${src.slice(7)}`;
-		if (src.startsWith('computed:')) return `${$i18n.t('recomputed from the period ending')} ${src.slice(9)} (${$i18n.t('no filing saved')})`;
+		if (src.startsWith('computed:'))
+			return `${$i18n.t('recomputed from the period ending')} ${src.slice(9)} (${$i18n.t('no filing saved')})`;
 		return $i18n.t('no previous period');
 	})();
+	$: ccy = declaration?.currency ?? '';
+	$: hasEntry =
+		(declaration?.entry_blockers ?? []).length === 0 &&
+		declaration?.suggested_entry?.lines?.length > 0;
+	const sum = (lines: any[], key: 'debit' | 'credit') =>
+		(lines ?? []).reduce((t, l) => t + (Number(l?.[key]) || 0), 0);
 </script>
 
-<div class="py-2">
-	<!-- Header -->
-	<div
-		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900"
-	>
-		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
-			<div class="flex-shrink-0 dark:text-gray-200">
-				{$i18n.t('VAT Declaration')}
-			</div>
-			{#if taxConfig}
-				<div class="text-lg font-medium text-gray-500 dark:text-gray-500">
-					{taxConfig.tax_name_full ?? taxName}
-				</div>
-			{/if}
-		</div>
-	</div>
-
-	<!-- Description -->
-	<div class="text-xs text-gray-400 dark:text-gray-500 px-0.5 mb-3">
-		{$i18n.t('Calculate VAT (and surcharges) for a period, save it as a filing, and export the worksheet.')}
+<div class="flex flex-col gap-4">
+	<div class="flex flex-col gap-1">
+		<h2 class="text-lg font-semibold">{$i18n.t('{{tax}} return', { tax: taxName })}</h2>
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				'Calculate {{tax}} (and surcharges) for a period, save it as a filing, and export the worksheet.',
+				{ tax: taxName }
+			)}
+		</p>
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center my-10">
-			<Spinner className="size-5" />
+		<div class="flex flex-wrap items-end gap-3">
+			<Skeleton class="h-9 w-44" />
+			<Skeleton class="h-9 w-44" />
+			<Skeleton class="h-9 w-28" />
 		</div>
 	{:else}
-		<!-- Month selector + Calculate -->
-		<div class="flex flex-wrap gap-3 items-end mb-4">
-			<div>
-				<label
-					for="tax-month"
-					class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
-				>
-					{periodLabel}
-				</label>
+		<!-- Period + credit brought forward + Calculate -->
+		<div class="flex flex-wrap items-end gap-3">
+			<div class="grid gap-2">
+				<Label for="tax-month">{periodLabel}</Label>
 				{#if monthOptions.length > 0}
-					<select
-						id="tax-month"
-						bind:value={selectedMonth}
-						class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden"
-					>
+					<NativeSelect.Root id="tax-month" class="min-w-44" bind:value={selectedMonth}>
 						{#each monthOptions as opt}
-							<option value={opt.value}>{opt.label}</option>
+							<NativeSelect.Option value={opt.value}>{opt.label}</NativeSelect.Option>
 						{/each}
-					</select>
+					</NativeSelect.Root>
 				{:else}
-					<span class="text-xs text-gray-400 italic">
+					<span class="flex h-9 items-center text-sm text-muted-foreground">
 						{$i18n.t('No accounting periods defined')}
 					</span>
 				{/if}
 			</div>
-			<div>
-				<label for="tax-opening-credit" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Credit brought forward')}
-				</label>
-				<input
+			<div class="grid gap-2">
+				<Label for="tax-opening-credit">{$i18n.t('Credit brought forward')}</Label>
+				<Input
 					id="tax-opening-credit"
 					type="number"
 					step="0.01"
+					class="w-44 text-right tabular-nums"
 					bind:value={openingCreditInput}
 					placeholder={$i18n.t('from previous filing')}
-					class="text-sm rounded-lg px-3 py-1.5 w-44 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden"
 				/>
 			</div>
-			<button
-				class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-50"
+			<Button
+				variant={hasEntry ? 'outline' : 'default'}
 				disabled={!selectedMonth || calculating}
-				on:click={handleCalculate}
+				onclick={handleCalculate}
 			>
+				{#if calculating}<Spinner />{:else}<Calculator />{/if}
 				{$i18n.t('Calculate')}
-			</button>
+			</Button>
 		</div>
 
-		<!-- Loading banner -->
 		{#if calculating}
 			<div
-				class="relative overflow-hidden rounded-xl border border-blue-200/50 dark:border-blue-800/30 bg-blue-50 dark:bg-blue-900/20 p-4 mb-4"
+				class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4"
+				aria-busy="true"
 			>
-				<div class="absolute top-0 left-0 h-1 bg-blue-500 animate-pulse" style="width: 100%;"></div>
-				<div class="flex items-center gap-3">
-					<Spinner className="size-5 text-blue-600 dark:text-blue-400" />
-					<span class="text-sm font-medium text-blue-700 dark:text-blue-300">
-						{taxName}
-						{$i18n.t('declaration loading...')}
-					</span>
-				</div>
+				{#each Array(4) as _}<Skeleton class="h-[104px] rounded-xl" />{/each}
 			</div>
+			<Skeleton class="h-64 w-full rounded-xl" />
+			<span class="sr-only">{taxName} {$i18n.t('declaration loading...')}</span>
 		{/if}
 
-		<!-- Results -->
 		{#if declaration && !calculating}
 			{#if (declaration.warnings ?? []).length > 0}
-				<div
-					class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200/50 dark:border-amber-800/30 rounded-xl p-3 mb-4 text-xs text-amber-800 dark:text-amber-200 space-y-1"
-				>
-					{#each declaration.warnings as w}
-						<div>{w}</div>
-					{/each}
-					<button class="underline" on:click={() => dispatch('gotoAccounts')}>{$i18n.t('Open Tax accounts')}</button>
-				</div>
+				<Alert.Root variant="warning">
+					<TriangleAlert />
+					<Alert.Description>
+						{#each declaration.warnings as w}<p>{$i18n.t(w)}</p>{/each}
+						<Button variant="link" size="sm" onclick={() => dispatch('gotoAccounts')}
+							>{$i18n.t('Open Tax accounts')}</Button
+						>
+					</Alert.Description>
+				</Alert.Root>
 			{/if}
 
-			<!-- Summary Card -->
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30 mb-4"
-			>
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">
-					{$i18n.t('Summary')}
-				</div>
-				<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-					<div
-						class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center border border-green-200/30 dark:border-green-800/30"
-					>
-						<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{collectedLabel}</div>
-						<div class="text-lg font-bold text-green-700 dark:text-green-400">
-							{fmt(declaration.collected ?? 0)}
-						</div>
-					</div>
-					<div
-						class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center border border-blue-200/30 dark:border-blue-800/30"
-					>
-						<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{deductibleLabel}</div>
-						<div class="text-lg font-bold text-blue-700 dark:text-blue-400">
-							{fmt(declaration.deductible ?? 0)}
-						</div>
-					</div>
-					<div
-						class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 text-center border border-purple-200/30 dark:border-purple-800/30"
-					>
-						<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Credit brought forward')}</div>
-						<div class="text-lg font-bold text-purple-700 dark:text-purple-400">
-							{fmt(declaration.opening_credit ?? 0)}
-						</div>
-					</div>
-					<div
-						class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center border border-gray-200/30 dark:border-gray-700/30"
-					>
-						<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-							{hasSurcharges ? $i18n.t('Total VAT and surcharges') : payableLabel}
-						</div>
-						<div class="text-lg font-bold dark:text-gray-200">
-							{fmt(hasSurcharges ? declaration.grand_total : declaration.payable ?? 0)}
-							<span class="text-xs font-normal text-gray-400">{declaration.currency ?? ''}</span>
-						</div>
-					</div>
-				</div>
+			<!-- Summary -->
+			<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+				<KpiCard label={collectedLabel} value={fmt(declaration.collected ?? 0)} />
+				<KpiCard label={deductibleLabel} value={fmt(declaration.deductible ?? 0)} />
+				<KpiCard
+					label={$i18n.t('Credit brought forward')}
+					value={fmt(declaration.opening_credit ?? 0)}
+				/>
+				<KpiCard
+					label={hasSurcharges
+						? $i18n.t('Total {{tax}} and surcharges', { tax: taxName })
+						: payableLabel}
+					value={`${ccy ? `${ccy} ` : ''}${fmt(hasSurcharges ? declaration.grand_total : (declaration.payable ?? 0))}`}
+				/>
 			</div>
 
-			<!-- VAT computation (the return's own arithmetic) -->
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-4 overflow-x-auto"
-			>
-				<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850 text-sm font-medium dark:text-gray-200">
-					{$i18n.t('VAT computation')}
-				</div>
-				<table class="w-full text-sm text-left">
-					<tbody class="text-gray-900 dark:text-gray-100">
-						<tr class="border-b border-gray-100 dark:border-gray-850">
-							<td class="px-4 py-2">{collectedLabel}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.collected)}</td>
-						</tr>
-						<tr class="border-b border-gray-100 dark:border-gray-850">
-							<td class="px-4 py-2">{$i18n.t('Less')}: {deductibleLabel}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.deductible)}</td>
-						</tr>
-						<tr class="border-b border-gray-100 dark:border-gray-850 font-medium">
-							<td class="px-4 py-2">{$i18n.t('Net for the period')}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.net)}</td>
-						</tr>
-						<tr class="border-b border-gray-100 dark:border-gray-850">
-							<td class="px-4 py-2">
-								{$i18n.t('Credit brought forward')}
-								<span class="text-xs text-gray-400">({creditSourceText})</span>
-							</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.opening_credit)}</td>
-						</tr>
-						<tr class="border-b border-gray-100 dark:border-gray-850">
-							<td class="px-4 py-2">{$i18n.t('Less')}: {$i18n.t('credit used this period')}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.credit_used)}</td>
-						</tr>
-						<tr class="border-b border-gray-100 dark:border-gray-850 font-bold bg-blue-50/50 dark:bg-blue-900/20">
-							<td class="px-4 py-2">{payableLabel}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.payable)} {declaration.currency ?? ''}</td>
-						</tr>
-						<tr class="font-medium">
-							<td class="px-4 py-2">{taxConfig?.receivable_label ?? $i18n.t('Credit carried forward')} → {$i18n.t('next period')}</td>
-							<td class="px-4 py-2 text-right font-mono">{fmt(declaration.credit)}</td>
-						</tr>
-					</tbody>
-				</table>
+			<div class="grid gap-4 lg:grid-cols-2">
+				<!-- VAT computation (the return's own arithmetic) -->
+				<Card.Root class="gap-4">
+					<Card.Header>
+						<Card.Title>{$i18n.t('{{tax}} computation', { tax: taxName })}</Card.Title>
+					</Card.Header>
+					<Card.Content>
+						<Table.Root class="text-[13px]">
+							<Table.Body>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="whitespace-normal">{collectedLabel}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{fmt(declaration.collected)}</Table.Cell
+									>
+								</Table.Row>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="whitespace-normal"
+										>{$i18n.t('Less')}: {deductibleLabel}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums"
+										>{fmt(declaration.deductible)}</Table.Cell
+									>
+								</Table.Row>
+								<Table.Row class="font-semibold hover:bg-transparent">
+									<Table.Cell class="whitespace-normal">{$i18n.t('Net for the period')}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(declaration.net)}</Table.Cell>
+								</Table.Row>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="whitespace-normal">
+										{$i18n.t('Credit brought forward')}
+										<span class="text-muted-foreground">({creditSourceText})</span>
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{fmt(declaration.opening_credit)}</Table.Cell
+									>
+								</Table.Row>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell class="whitespace-normal"
+										>{$i18n.t('Less')}: {$i18n.t('credit used this period')}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums"
+										>{fmt(declaration.credit_used)}</Table.Cell
+									>
+								</Table.Row>
+								<Table.Row class="bg-muted/50 font-semibold hover:bg-muted/50">
+									<Table.Cell class="whitespace-normal">{payableLabel}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">
+										{ccy}
+										{fmt(declaration.payable)}
+									</Table.Cell>
+								</Table.Row>
+								<Table.Row class="border-b-0 font-medium hover:bg-transparent">
+									<Table.Cell class="whitespace-normal">
+										{$i18n.t('Credit carried forward')} → {$i18n.t('next period')}
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(declaration.credit)}</Table.Cell>
+								</Table.Row>
+							</Table.Body>
+						</Table.Root>
+					</Card.Content>
+				</Card.Root>
+
+				<!-- VAT & Surcharges (only when the country levies surcharges) -->
+				{#if hasSurcharges}
+					<Card.Root class="gap-4">
+						<Card.Header>
+							<Card.Title>{$i18n.t('{{tax}} and surcharges', { tax: taxName })}</Card.Title>
+						</Card.Header>
+						<Card.Content>
+							<Table.Root class="text-[13px]">
+								<Table.Body>
+									<Table.Row class="hover:bg-transparent">
+										<Table.Cell class="whitespace-normal">{payableLabel}</Table.Cell>
+										<Table.Cell class="text-right tabular-nums"
+											>{fmt(declaration.payable)}</Table.Cell
+										>
+									</Table.Row>
+									{#each declaration.surcharges as s}
+										<Table.Row class="hover:bg-transparent">
+											<Table.Cell class="whitespace-normal">
+												{$i18n.t(s.label)}
+												<span class="text-muted-foreground tabular-nums"
+													>({(s.rate * 100).toFixed(2)}%)</span
+												>
+												{#if s.payable_account}
+													<span class="ml-1 font-mono text-xs text-muted-foreground"
+														>→ {s.payable_account.code}</span
+													>
+												{/if}
+											</Table.Cell>
+											<Table.Cell class="text-right tabular-nums">{fmt(s.amount)}</Table.Cell>
+										</Table.Row>
+									{/each}
+									<Table.Row class="font-semibold hover:bg-transparent">
+										<Table.Cell class="whitespace-normal">{$i18n.t('Total surcharges')}</Table.Cell>
+										<Table.Cell class="text-right tabular-nums"
+											>{fmt(declaration.surcharge_total)}</Table.Cell
+										>
+									</Table.Row>
+									<Table.Row class="border-b-0 bg-muted/50 font-semibold hover:bg-muted/50">
+										<Table.Cell class="whitespace-normal"
+											>{$i18n.t('Total {{tax}} and surcharges', { tax: taxName })}</Table.Cell
+										>
+										<Table.Cell class="text-right tabular-nums">
+											{ccy}
+											{fmt(declaration.grand_total)}
+										</Table.Cell>
+									</Table.Row>
+								</Table.Body>
+							</Table.Root>
+						</Card.Content>
+					</Card.Root>
+				{/if}
 			</div>
 
 			<!-- Per-account breakdown -->
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-4 overflow-x-auto"
-			>
-				<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850 text-sm font-medium dark:text-gray-200">
-					{$i18n.t('By account')}
+			<div class="flex flex-col gap-2">
+				<h3 class="text-sm font-medium">{$i18n.t('By account')}</h3>
+				<div class="overflow-hidden rounded-md border">
+					<Table.Root class="text-[13px]">
+						<Table.Header class="bg-muted/50">
+							<Table.Row class="hover:bg-transparent">
+								<Table.Head>{$i18n.t('Account', { context: 'gnos3' })}</Table.Head>
+								<Table.Head>{$i18n.t('Role', { context: 'gnos3' })}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Debit')}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Credit')}</Table.Head>
+								<Table.Head class="text-right">{$i18n.t('Amount')}</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each declaration.detail_collectee ?? [] as d}
+								<Table.Row>
+									<Table.Cell>
+										<span class="font-mono">{d.account_code}</span>
+										<span class="text-muted-foreground">{d.account_name}</span>
+									</Table.Cell>
+									<Table.Cell>{collectedLabel}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(d.debit)}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(d.credit)}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(d.amount)}</Table.Cell>
+								</Table.Row>
+							{/each}
+							{#each declaration.detail_deductible ?? [] as d}
+								<Table.Row>
+									<Table.Cell>
+										<span class="font-mono">{d.account_code}</span>
+										<span class="text-muted-foreground">{d.account_name}</span>
+									</Table.Cell>
+									<Table.Cell>{deductibleLabel}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(d.debit)}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(d.credit)}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{fmt(d.amount)}</Table.Cell>
+								</Table.Row>
+							{/each}
+							{#if (declaration.detail_collectee ?? []).length + (declaration.detail_deductible ?? []).length === 0}
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell colspan={5} class="py-6 text-center text-muted-foreground">
+										{$i18n.t('No {{tax}} accounts mapped for this company.', { tax: taxName })}
+										<Button variant="link" size="sm" onclick={() => dispatch('gotoAccounts')}
+											>{$i18n.t('Open Tax accounts')}</Button
+										>
+									</Table.Cell>
+								</Table.Row>
+							{/if}
+						</Table.Body>
+					</Table.Root>
 				</div>
-				<table class="w-full text-sm text-left">
-					<thead class="text-xs text-gray-900 dark:text-gray-100 font-bold uppercase bg-gray-100 dark:bg-gray-800">
-						<tr class="border-b-[1.5px] border-gray-200 dark:border-gray-700">
-							<th class="px-3 py-2">{$i18n.t('Account')}</th>
-							<th class="px-3 py-2">{$i18n.t('Role')}</th>
-							<th class="px-3 py-2 text-right">{$i18n.t('Debit')}</th>
-							<th class="px-3 py-2 text-right">{$i18n.t('Credit')}</th>
-							<th class="px-3 py-2 text-right">{$i18n.t('Amount')}</th>
-						</tr>
-					</thead>
-					<tbody class="text-gray-900 dark:text-gray-100 text-xs">
-						{#each declaration.detail_collectee ?? [] as d}
-							<tr class="border-b border-gray-100 dark:border-gray-850">
-								<td class="px-3 py-2 font-mono">{d.account_code} <span class="font-sans text-gray-500">{d.account_name}</span></td>
-								<td class="px-3 py-2 text-green-700 dark:text-green-400">{collectedLabel}</td>
-								<td class="px-3 py-2 text-right font-mono">{fmt(d.debit)}</td>
-								<td class="px-3 py-2 text-right font-mono">{fmt(d.credit)}</td>
-								<td class="px-3 py-2 text-right font-mono">{fmt(d.amount)}</td>
-							</tr>
-						{/each}
-						{#each declaration.detail_deductible ?? [] as d}
-							<tr class="border-b border-gray-100 dark:border-gray-850">
-								<td class="px-3 py-2 font-mono">{d.account_code} <span class="font-sans text-gray-500">{d.account_name}</span></td>
-								<td class="px-3 py-2 text-blue-700 dark:text-blue-400">{deductibleLabel}</td>
-								<td class="px-3 py-2 text-right font-mono">{fmt(d.debit)}</td>
-								<td class="px-3 py-2 text-right font-mono">{fmt(d.credit)}</td>
-								<td class="px-3 py-2 text-right font-mono">{fmt(d.amount)}</td>
-							</tr>
-						{/each}
-						{#if (declaration.detail_collectee ?? []).length + (declaration.detail_deductible ?? []).length === 0}
-							<tr><td colspan="5" class="px-3 py-4 text-center text-gray-400">{$i18n.t('No VAT accounts mapped for this company.')}</td></tr>
-						{/if}
-					</tbody>
-				</table>
 			</div>
 
-			<!-- VAT & Surcharges breakdown (only when the country levies surcharges) -->
-			{#if hasSurcharges}
-				<div
-					class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-4 overflow-x-auto"
-				>
-					<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850 text-sm font-medium dark:text-gray-200">
-						{$i18n.t('VAT & Surcharges')}
+			<!-- Settlement entry: what is missing, or what it will book -->
+			{#if (declaration.entry_blockers ?? []).length > 0}
+				<Alert.Root variant="warning">
+					<TriangleAlert />
+					<Alert.Title>{$i18n.t('Settlement entry not available')}</Alert.Title>
+					<Alert.Description>
+						<ul class="list-disc pl-4">
+							{#each declaration.entry_blockers as b}<li>{$i18n.t(b)}</li>{/each}
+						</ul>
+						<Button
+							variant="outline"
+							size="sm"
+							class="mt-2"
+							onclick={() => dispatch('gotoAccounts')}
+						>
+							{$i18n.t('Open Tax accounts')}
+						</Button>
+					</Alert.Description>
+				</Alert.Root>
+			{:else if declaration.suggested_entry?.lines?.length > 0}
+				<div class="flex flex-col gap-2">
+					<h3 class="text-sm font-medium">{$i18n.t('Suggested Settlement Entry')}</h3>
+					<div class="overflow-hidden rounded-md border">
+						<Table.Root class="text-[13px]">
+							<Table.Header class="bg-muted/50">
+								<Table.Row class="hover:bg-transparent">
+									<Table.Head>{$i18n.t('Account Code')}</Table.Head>
+									<Table.Head>{$i18n.t('Description')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Debit')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Credit')}</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each declaration.suggested_entry.lines as line}
+									<Table.Row>
+										<Table.Cell class="font-mono">{line.account_code ?? ''}</Table.Cell>
+										<Table.Cell class="whitespace-normal"
+											>{line.description ?? line.account_name ?? ''}</Table.Cell
+										>
+										<Table.Cell class="text-right tabular-nums"
+											>{line.debit ? fmt(line.debit) : ''}</Table.Cell
+										>
+										<Table.Cell class="text-right tabular-nums"
+											>{line.credit ? fmt(line.credit) : ''}</Table.Cell
+										>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+							<Table.Footer>
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell colspan={2}>{$i18n.t('Total')}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums"
+										>{fmt(sum(declaration.suggested_entry.lines, 'debit'))}</Table.Cell
+									>
+									<Table.Cell class="text-right tabular-nums"
+										>{fmt(sum(declaration.suggested_entry.lines, 'credit'))}</Table.Cell
+									>
+								</Table.Row>
+							</Table.Footer>
+						</Table.Root>
 					</div>
-					<table class="w-full text-sm text-left">
-						<tbody class="text-gray-900 dark:text-gray-100">
-							<tr class="border-b border-gray-100 dark:border-gray-850">
-								<td class="px-4 py-2">{payableLabel}</td>
-								<td class="px-4 py-2 text-right font-mono">{fmt(declaration.payable)}</td>
-							</tr>
-							{#each declaration.surcharges as s}
-								<tr class="border-b border-gray-100 dark:border-gray-850">
-									<td class="px-4 py-2">
-										{$i18n.t(s.label)}
-										<span class="text-xs text-gray-400">({(s.rate * 100).toFixed(2)}%)</span>
-										{#if s.payable_account}
-											<span class="text-[10px] font-mono text-gray-400 ml-1">→ {s.payable_account.code}</span>
-										{/if}
-									</td>
-									<td class="px-4 py-2 text-right font-mono">{fmt(s.amount)}</td>
-								</tr>
-							{/each}
-							<tr class="border-b border-gray-100 dark:border-gray-850 font-medium">
-								<td class="px-4 py-2">{$i18n.t('Total surcharges')}</td>
-								<td class="px-4 py-2 text-right font-mono">{fmt(declaration.surcharge_total)}</td>
-							</tr>
-							<tr class="font-bold bg-blue-50/50 dark:bg-blue-900/20">
-								<td class="px-4 py-2">{$i18n.t('Total VAT and surcharges')}</td>
-								<td class="px-4 py-2 text-right font-mono">{fmt(declaration.grand_total)} {declaration.currency ?? ''}</td>
-							</tr>
-						</tbody>
-					</table>
 				</div>
 			{/if}
 
 			<!-- Actions -->
-			<div class="flex flex-wrap gap-2 mb-4">
-				<button
-					class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition disabled:opacity-50"
-					disabled={saving}
-					on:click={handleSaveFiling}
-				>
+			<div class="flex flex-wrap gap-2">
+				{#if hasEntry}
+					<Button disabled={creating} onclick={handleCreateEntry}>
+						{#if creating}<Spinner />{/if}
+						{creating ? $i18n.t('Creating...') : $i18n.t('Create Settlement Entry (Draft)')}
+					</Button>
+				{/if}
+				<Button variant="outline" disabled={saving} onclick={handleSaveFiling}>
+					{#if saving}<Spinner />{:else}<Save />{/if}
 					{saving ? $i18n.t('Saving...') : $i18n.t('Save as Filing')}
-				</button>
-				<button
-					class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition"
-					on:click={handleExport}
-				>
-					{$i18n.t('Export Excel')}
-				</button>
+				</Button>
+				<Button variant="outline" onclick={handleExport}>
+					<Download />{$i18n.t('Export Excel')}
+				</Button>
 			</div>
-
-			<!-- Suggested Entry Table -->
-			{#if (declaration.entry_blockers ?? []).length > 0}
-				<div
-					class="bg-white dark:bg-gray-900 rounded-xl border border-red-200/50 dark:border-red-800/30 mb-4 p-4"
-				>
-					<div class="text-sm font-medium dark:text-gray-200 mb-1">{$i18n.t('Settlement entry not available')}</div>
-					<ul class="text-xs text-red-700 dark:text-red-300 list-disc pl-4 space-y-0.5">
-						{#each declaration.entry_blockers as b}
-							<li>{b}</li>
-						{/each}
-					</ul>
-					<button
-						class="mt-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition"
-						on:click={() => dispatch('gotoAccounts')}
-					>
-						{$i18n.t('Open Tax accounts')}
-					</button>
-				</div>
-			{:else if declaration.suggested_entry?.lines?.length > 0}
-				<div
-					class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-4"
-				>
-					<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850">
-						<div class="text-sm font-medium dark:text-gray-200">
-							{$i18n.t('Suggested Settlement Entry')}
-						</div>
-					</div>
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-							<thead
-								class="text-xs text-gray-900 dark:text-gray-100 font-bold uppercase bg-gray-100 dark:bg-gray-800"
-							>
-								<tr class="border-b-[1.5px] border-gray-200 dark:border-gray-700">
-									<th class="px-3 py-2">{$i18n.t('Account Code')}</th>
-									<th class="px-3 py-2">{$i18n.t('Description')}</th>
-									<th class="px-3 py-2 text-right">{$i18n.t('Debit')}</th>
-									<th class="px-3 py-2 text-right">{$i18n.t('Credit')}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each declaration.suggested_entry.lines as line}
-									<tr
-										class="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-850 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
-									>
-										<td class="px-3 py-2 font-mono font-medium dark:text-gray-200">
-											{line.account_code ?? ''}
-										</td>
-										<td class="px-3 py-2">{line.description ?? line.account_name ?? ''}</td>
-										<td class="px-3 py-2 text-right font-mono">{line.debit ? fmt(line.debit) : ''}</td>
-										<td class="px-3 py-2 text-right font-mono">{line.credit ? fmt(line.credit) : ''}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-					<div class="px-4 py-3 border-t border-gray-100 dark:border-gray-850">
-						<button
-							class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition disabled:opacity-50"
-							disabled={creating}
-							on:click={handleCreateEntry}
-						>
-							{creating
-								? $i18n.t('Creating...')
-								: $i18n.t('Create Settlement Entry (Draft)')}
-						</button>
-					</div>
-				</div>
-			{/if}
 		{/if}
 
-		<TaxFilingsList {companyId} taxType="vat" bind:this={filingsList} />
+		<TaxFilingsList {companyId} taxType="vat" bind:this={filingsList} on:gotoAccounts />
 	{/if}
 </div>

@@ -1,28 +1,30 @@
 <script lang="ts">
-	// Quick action buttons.
+	// Quick action links: outline buttons with an icon, wrapping to the card width.
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Wallet from '@lucide/svelte/icons/wallet';
+	import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+	import { Button } from '$lib/components/ui/button/index.js';
+
 	export let companyId: number;
 	export let options: Record<string, any> = {}; // unused; part of widget contract
 	const i18n: any = getContext('i18n');
-	const T = (k: string) => (i18n?.t ? i18n.t(k) : k);
+	const T = (k: string) => ($i18n?.t ? $i18n.t(k) : k);
+
+	$: base = `/accounting/company/${companyId}`;
+	$: actions = [
+		{ href: `${base}/entries`, label: 'New Journal Entry', icon: Plus },
+		{ href: `${base}/payments`, label: 'Record Payment', icon: Wallet },
+		{ href: `${base}/bank`, label: 'Reconcile Bank', icon: ArrowLeftRight },
+		{ href: `${base}/reports`, label: 'Reports', icon: FileSpreadsheet }
+	];
 </script>
 
-<div class="h-full flex flex-wrap items-center gap-2 content-center">
-	<button class="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition"
-		on:click={() => goto(`/accounting/company/${companyId}/entries`)}>
-		{T('New Journal Entry')}
-	</button>
-	<button class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 transition"
-		on:click={() => goto(`/accounting/company/${companyId}/payments`)}>
-		{T('Record Payment')}
-	</button>
-	<button class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-		on:click={() => goto(`/accounting/company/${companyId}/reports`)}>
-		{T('Reports')}
-	</button>
-	<button class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-		on:click={() => goto(`/accounting/company/${companyId}/bank`)}>
-		{T('Reconcile Bank')}
-	</button>
+<div class="flex h-full flex-wrap content-start gap-2 overflow-y-auto">
+	{#each actions as a}
+		<Button variant="outline" size="sm" href={a.href}>
+			<svelte:component this={a.icon} />{T(a.label)}
+		</Button>
+	{/each}
 </div>

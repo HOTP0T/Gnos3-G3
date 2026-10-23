@@ -2,15 +2,38 @@
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import { getTaxAccounts, updateTaxAccounts, getAccounts } from '$lib/apis/accounting';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import Info from '@lucide/svelte/icons/info';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import X from '@lucide/svelte/icons/x';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 
-	const i18n = getContext('i18n');
+	import { getTaxAccounts, updateTaxAccounts, getAccounts } from '$lib/apis/accounting';
+	import { CIT_KIND_TERMS, TAX_KIND_TERMS } from '$lib/utils/taxTerms';
+
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let companyId: number;
 
-	type Acct = { id: number; code: string; name: string; account_type?: string; parent_id?: number | null };
+	type Acct = {
+		id: number;
+		code: string;
+		name: string;
+		account_type?: string;
+		parent_id?: number | null;
+	};
 	type Role = {
 		role: string;
 		label: string;
@@ -23,8 +46,12 @@
 	};
 
 	let loading = true;
+	let loadError = '';
 	let saving = false;
 	let country = '';
+	// i18n keys for the group titles, from what the taxes are (VAT / GST…,
+	// corporate income tax / Profits Tax) — never the country's own labels.
+	let taxLabel = 'VAT';
 	let citLabel = 'Corporate income tax';
 	let roles: Role[] = [];
 	let accounts: Acct[] = [];
@@ -35,11 +62,27 @@
 	let adder: Record<string, number | ''> = {};
 
 	$: GROUPS = [
-		{ id: 'vat', label: 'VAT', hint: 'Accounts the VAT declaration reads (output / input) and the settlement entry posts to.' },
-		{ id: 'surcharges', label: 'VAT surcharges', hint: 'Only used when the country config levies surcharges on VAT payable (e.g. China 城建税 / 教育费附加).' },
-		{ id: 'cit', label: citLabel, hint: 'Accrual entry (expense / payable), the account the tax payment debits, and — where the tax office bills prepayments — the prepaid-tax asset.' },
+		{
+			id: 'vat',
+			label: taxLabel,
+			hint: 'Accounts the return reads (output / input) and the settlement entry posts to.'
+		},
+		{
+			id: 'surcharges',
+			label: 'VAT surcharges',
+			hint: "Only used where the country levies surcharges on VAT payable (e.g. China's urban construction tax and education surcharges)."
+		},
+		{
+			id: 'cit',
+			label: citLabel,
+			hint: 'Accrual entry (expense / payable), the account the tax payment debits, and — where the tax office bills prepayments — the prepaid-tax asset.'
+		},
 		{ id: 'iit', label: 'Individual income tax', hint: 'Account the IIT payment debits.' },
-		{ id: 'payroll', label: 'MPF (Mandatory Provident Fund)', hint: 'Payable to the trustee by the 10th of the following month (employee 5% withheld + employer 5%), and the employer contribution expense.' }
+		{
+			id: 'payroll',
+			label: 'MPF (Mandatory Provident Fund)',
+			hint: 'Payable to the trustee by the 10th of the following month (employee 5% withheld + employer 5%), and the employer contribution expense.'
+		}
 	] as Array<{ id: string; label: string; hint: string }>;
 
 	$: parentIds = new Set(accounts.map((a) => a.parent_id).filter(Boolean));
@@ -48,16 +91,23 @@
 
 	const candidates = (role: Role): Acct[] => {
 		// Prefer the role's account type; fall back to every leaf so an unusual chart still works.
-		const typed = role.account_type ? leafAccounts.filter((a) => a.account_type === role.account_type) : [];
+		const typed = role.account_type
+			? leafAccounts.filter((a) => a.account_type === role.account_type)
+			: [];
 		return typed.length ? typed : leafAccounts;
 	};
 
 	const load = async () => {
 		loading = true;
+		loadError = '';
 		try {
-			const [map, accts] = await Promise.all([getTaxAccounts(companyId), getAccounts({ company_id: companyId, active: true })]);
+			const [map, accts] = await Promise.all([
+				getTaxAccounts(companyId),
+				getAccounts({ company_id: companyId, active: true })
+			]);
 			country = map.country ?? '';
-			citLabel = map.cit_label || 'Corporate income tax';
+			taxLabel = TAX_KIND_TERMS[map.tax_kind] ?? 'VAT';
+			citLabel = CIT_KIND_TERMS[map.cit_kind] ?? 'Corporate income tax';
 			// Roles that do not exist in this jurisdiction are not offered at all.
 			roles = (map.roles ?? []).filter((r: Role) => r.applicable !== false);
 			accounts = Array.isArray(accts) ? accts : (accts?.items ?? accts?.accounts ?? []);
@@ -65,7 +115,7 @@
 			dirty = new Set();
 			adder = {};
 		} catch (err: any) {
-			toast.error(`${$i18n.t('Failed to load tax accounts')}: ${err?.detail ?? err}`);
+			loadError = `${$i18n.t('Failed to load tax accounts')}: ${err?.detail ?? err}`;
 		}
 		loading = false;
 	};
@@ -117,19 +167,6 @@
 		saving = false;
 	};
 
-	const sourceBadge = (r: Role, d: Set<string>) => {
-		if (d.has(r.role)) return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
-		if (r.source === 'mapped') return 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300';
-		if (r.source === 'default') return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300';
-		return 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300';
-	};
-	const sourceText = (r: Role, d: Set<string>) => {
-		if (d.has(r.role)) return $i18n.t('unsaved');
-		if (r.source === 'mapped') return $i18n.t('mapped');
-		if (r.source === 'default') return $i18n.t('default');
-		return $i18n.t('missing');
-	};
-
 	$: missingCount = roles.filter((r) => r.source === 'missing').length;
 	$: defaultCount = roles.filter((r) => r.source === 'default').length;
 
@@ -137,7 +174,8 @@
 	// accounts. One click turns every current default into an explicit mapping.
 	const confirmDefaults = async () => {
 		const mappings: Record<string, number[]> = {};
-		for (const r of roles) if (r.source === 'default') mappings[r.role] = r.accounts.map((a) => a.id);
+		for (const r of roles)
+			if (r.source === 'default') mappings[r.role] = r.accounts.map((a) => a.id);
 		if (Object.keys(mappings).length === 0) return;
 		saving = true;
 		try {
@@ -150,134 +188,201 @@
 		}
 		saving = false;
 	};
-
-	const selectCls =
-		'text-xs rounded-lg px-2 py-1.5 bg-white dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden max-w-full';
 </script>
 
-<div class="py-2">
-	<div class="flex md:self-center text-lg font-medium px-0.5 gap-2 mb-1">
-		<div class="flex-shrink-0 dark:text-gray-200">{$i18n.t('Tax accounts')}</div>
-		{#if country}
-			<div class="text-lg font-medium text-gray-500 dark:text-gray-500">{country}</div>
-		{/if}
-	</div>
-	<div class="text-xs text-gray-400 dark:text-gray-500 px-0.5 mb-3">
-		{$i18n.t(
-			'Which GL accounts play each tax role for this company. "default" is resolved from the country config and the chart; map an account to override it. Only detail (leaf) accounts can be mapped.'
-		)}
+<!-- Where the role's account comes from: mapped ✓, a default to confirm, or missing -->
+{#snippet sourceBadge(r: Role, isDirty: boolean)}
+	{#if isDirty}
+		<Badge variant="status"><Pencil aria-hidden="true" />{$i18n.t('unsaved')}</Badge>
+	{:else if r.source === 'mapped'}
+		<Badge variant="status">
+			<CircleCheck class="text-success" aria-hidden="true" />{$i18n.t('mapped')}
+		</Badge>
+	{:else if r.source === 'default'}
+		<Badge variant="info"><Info aria-hidden="true" />{$i18n.t('Default — confirm')}</Badge>
+	{:else}
+		<Badge variant="warning"><TriangleAlert aria-hidden="true" />{$i18n.t('missing')}</Badge>
+	{/if}
+{/snippet}
+
+<div class="flex flex-col gap-4">
+	<div class="space-y-1">
+		<h2 class="flex flex-wrap items-center gap-2 text-lg font-semibold">
+			{$i18n.t('Tax accounts')}
+			{#if country}
+				<Badge variant="outline">{country}</Badge>
+			{/if}
+		</h2>
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				'Which GL accounts play each tax role for this company. "default" is resolved from the country config and the chart; map an account to override it. Only detail (leaf) accounts can be mapped.'
+			)}
+		</p>
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
+		<Card.Root>
+			<Card.Content class="grid gap-4">
+				{#each Array(5) as _}
+					<div class="flex items-center justify-between gap-6">
+						<Skeleton class="h-4 w-56" />
+						<Skeleton class="h-9 w-80" />
+					</div>
+				{/each}
+			</Card.Content>
+		</Card.Root>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{loadError}</Alert.Title>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
 	{:else}
-		{#if defaultCount > 0}
-			<div
-				class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200/50 dark:border-amber-800/30 rounded-xl p-3 mb-3 text-xs text-amber-800 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2"
-			>
-				<span>{$i18n.t('{{count}} role(s) are resolved from the country defaults but not confirmed. Automatic booking (rules, expense sheets) only uses confirmed accounts.', { count: defaultCount })}</span>
-				<button
-					class="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50"
-					disabled={saving}
-					on:click={confirmDefaults}
-				>
-					{$i18n.t('Confirm all defaults')}
-				</button>
-			</div>
-		{/if}
 		{#if missingCount > 0}
-			<div
-				class="bg-red-50 dark:bg-red-900/20 border border-red-200/50 dark:border-red-800/30 rounded-xl p-3 mb-3 text-xs text-red-800 dark:text-red-200"
-			>
-				{$i18n.t('{{count}} role(s) have no account. Declarations still compute, but settlement entries and payments that need them are blocked until mapped.', { count: missingCount })}
-			</div>
+			<Alert.Root variant="warning">
+				<TriangleAlert />
+				<Alert.Title>
+					{$i18n.t(
+						'{{count}} role(s) have no account. Declarations still compute, but settlement entries and payments that need them are blocked until mapped.',
+						{ count: missingCount }
+					)}
+				</Alert.Title>
+			</Alert.Root>
+		{/if}
+		{#if defaultCount > 0}
+			<Alert.Root variant="info">
+				<Info />
+				<Alert.Title>
+					{$i18n.t(
+						'{{count}} role(s) are resolved from the country defaults but not confirmed. Automatic booking (rules, expense sheets) only uses confirmed accounts.',
+						{ count: defaultCount }
+					)}
+				</Alert.Title>
+				<Alert.Description>
+					<Button
+						variant="outline"
+						size="sm"
+						class="mt-2"
+						disabled={saving}
+						onclick={confirmDefaults}
+					>
+						<CircleCheck />{$i18n.t('Confirm all defaults')}
+					</Button>
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
 
 		{#each GROUPS as g}
 			{@const groupRoles = roles.filter((r) => r.group === g.id)}
 			{#if groupRoles.length}
-				<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 mb-3">
-					<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-850">
-						<div class="text-sm font-medium dark:text-gray-200">{$i18n.t(g.label)}</div>
-						<div class="text-[11px] text-gray-400 dark:text-gray-500">{$i18n.t(g.hint)}</div>
-					</div>
-					<div class="divide-y divide-gray-100 dark:divide-gray-850">
+				<Card.Root>
+					<Card.Header>
+						<Card.Title>{$i18n.t(g.label)}</Card.Title>
+						<Card.Description>{$i18n.t(g.hint)}</Card.Description>
+					</Card.Header>
+					<Card.Content class="divide-y">
 						{#each groupRoles as r (r.role)}
-							<div class="px-4 py-2.5 flex flex-col md:flex-row md:items-center gap-2">
-								<div class="md:w-72 shrink-0">
-									<div class="text-xs font-medium dark:text-gray-200">{$i18n.t(r.label)}</div>
-									<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium {sourceBadge(r, dirty)}">
-										{sourceText(r, dirty)}
-									</span>
+							{@const ids = draft[r.role] ?? []}
+							<div
+								class="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 md:flex-row md:items-start md:justify-between md:gap-6"
+							>
+								<div class="grid min-w-0 gap-1.5 md:pt-1.5">
+									<label for="tax-role-{r.role}" class="text-sm font-medium"
+										>{$i18n.t(r.label)}</label
+									>
+									{@render sourceBadge(r, dirty.has(r.role))}
 								</div>
-								<div class="flex-1 flex flex-wrap items-center gap-2 min-w-0">
+								<div class="flex w-full min-w-0 flex-col gap-2 md:w-96 md:shrink-0">
 									{#if r.multi}
-										{#each draft[r.role] ?? [] as id (id)}
-											{@const a = byId.get(id)}
-											<span
-												class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-mono dark:text-gray-200"
+										{#if ids.length}
+											<div class="flex flex-wrap gap-1.5">
+												{#each ids as id (id)}
+													{@const a = byId.get(id)}
+													<Badge variant="outline" class="h-7 gap-1.5 pr-0.5 text-sm font-normal">
+														{#if a}
+															<span class="font-mono text-[13px]">{a.code}</span>
+															<span class="truncate">{a.name}</span>
+														{:else}
+															<span class="font-mono text-[13px]">#{id}</span>
+														{/if}
+														<Tip content={$i18n.t('Remove')}>
+															<Button
+																variant="ghost"
+																size="icon-xs"
+																class="size-6"
+																aria-label="{$i18n.t('Remove')} {a?.code ?? id}"
+																onclick={() => removeMulti(r.role, id)}
+															>
+																<X />
+															</Button>
+														</Tip>
+													</Badge>
+												{/each}
+											</div>
+										{/if}
+										<NativeSelect.Root
+											id="tax-role-{r.role}"
+											class="w-full"
+											bind:value={adder[r.role]}
+											onchange={() => addMulti(r.role)}
+										>
+											<NativeSelect.Option value="">{$i18n.t('Add account...')}</NativeSelect.Option
 											>
-												{a ? `${a.code} ${a.name}` : `#${id}`}
-												<button
-													class="text-gray-400 hover:text-red-600 ml-1"
-													title={$i18n.t('Remove')}
-													on:click={() => removeMulti(r.role, id)}>×</button
-												>
-											</span>
-										{/each}
-										<select class={selectCls} bind:value={adder[r.role]} on:change={() => addMulti(r.role)}>
-											<option value="">{$i18n.t('Add account...')}</option>
 											{#each candidates(r) as a}
-												{#if !(draft[r.role] ?? []).includes(a.id)}
-													<option value={a.id}>{a.code} - {a.name}</option>
+												{#if !ids.includes(a.id)}
+													<NativeSelect.Option value={a.id}>{a.code} - {a.name}</NativeSelect.Option
+													>
 												{/if}
 											{/each}
-										</select>
+										</NativeSelect.Root>
 									{:else}
-										<select
-											class={selectCls}
-											value={(draft[r.role] ?? [])[0] ?? ''}
-											on:change={(e) => setSingle(r.role, (e.currentTarget as HTMLSelectElement).value === '' ? '' : Number((e.currentTarget as HTMLSelectElement).value))}
+										<NativeSelect.Root
+											id="tax-role-{r.role}"
+											class="w-full"
+											value={ids[0] ?? ''}
+											onchange={(e: Event) => {
+												const v = (e.currentTarget as HTMLSelectElement).value;
+												setSingle(r.role, v === '' ? '' : Number(v));
+											}}
 										>
-											<option value="">{$i18n.t('— not mapped —')}</option>
+											<NativeSelect.Option value="">{$i18n.t('— not mapped —')}</NativeSelect.Option
+											>
 											{#each candidates(r) as a}
-												<option value={a.id}>{a.code} - {a.name}</option>
+												<NativeSelect.Option value={a.id}>{a.code} - {a.name}</NativeSelect.Option>
 											{/each}
-										</select>
+										</NativeSelect.Root>
 									{/if}
-									{#if (draft[r.role] ?? []).length > 0 || r.source === 'mapped'}
-										<button
-											class="text-[11px] text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
-											on:click={() => resetRole(r.role)}
+									{#if ids.length > 0 || r.source === 'mapped'}
+										<Button
+											variant="ghost"
+											size="xs"
+											class="self-start text-muted-foreground"
+											onclick={() => resetRole(r.role)}
 										>
-											{$i18n.t('Reset to default')}
-										</button>
+											<RotateCcw />{$i18n.t('Reset to default')}
+										</Button>
 									{/if}
 								</div>
 							</div>
 						{/each}
-					</div>
-				</div>
+					</Card.Content>
+				</Card.Root>
 			{/if}
 		{/each}
 
-		<div class="flex gap-2 items-center">
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition disabled:opacity-50"
-				disabled={saving || dirty.size === 0}
-				on:click={save}
-			>
-				{saving ? $i18n.t('Saving...') : $i18n.t('Save')}
-			</button>
+		<div class="flex flex-wrap items-center justify-end gap-3">
 			{#if dirty.size > 0}
-				<button
-					class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition"
-					on:click={load}
-				>
-					{$i18n.t('Discard')}
-				</button>
-				<span class="text-xs text-gray-400">{$i18n.t('{{count}} unsaved change(s)', { count: dirty.size })}</span>
+				<span class="text-sm text-muted-foreground">
+					{$i18n.t('{{count}} unsaved change(s)', { count: dirty.size })}
+				</span>
+				<Button variant="outline" onclick={load}>{$i18n.t('Discard')}</Button>
 			{/if}
+			<Button disabled={saving || dirty.size === 0} onclick={save}>
+				{#if saving}<Spinner />{/if}
+				{saving ? $i18n.t('Saving...') : $i18n.t('Save')}
+			</Button>
 		</div>
 	{/if}
 </div>

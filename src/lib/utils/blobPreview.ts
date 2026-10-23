@@ -1,3 +1,4 @@
+import { langHeader } from '$lib/utils/uiLocale';
 // Fetch an auth-gated endpoint and return a blob URL the browser can use
 // in <img src=…> or <iframe src=…>.
 //
@@ -21,7 +22,7 @@ export const fetchAsBlobUrl = async (
 	if (!url || !token) return null;
 	try {
 		const res = await fetch(url, {
-			headers: { Authorization: `Bearer ${token}` }
+			headers: { ...langHeader(), Authorization: `Bearer ${token}` }
 		});
 		if (!res.ok) return null;
 		const blob = await res.blob();

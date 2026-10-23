@@ -12,6 +12,11 @@
 
 import { K4MI_BASE_URL, WEBUI_API_BASE_URL } from '$lib/constants';
 
+/** The link K4miDocLink renders: Gnos3 redirects into K4mi server-side, already signed in.
+ * For menu items and buttons that open a document (target="_blank"). */
+export const k4miDocHref = (docId: number | string): string =>
+	`${WEBUI_API_BASE_URL}/auths/k4mi/open?doc_id=${encodeURIComponent(String(docId))}`;
+
 export interface K4miExchangeTokenResponse {
 	token: string;
 	expires_at: number;

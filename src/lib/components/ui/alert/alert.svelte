@@ -1,0 +1,47 @@
+<script lang="ts" module>
+	import { type VariantProps, tv } from "tailwind-variants";
+
+	export const alertVariants = tv({
+		base: "grid gap-0.5 rounded-lg border bg-card px-4 py-3 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4 group/alert relative w-full",
+		variants: {
+			variant: {
+				default: "bg-card text-card-foreground",
+				destructive: "text-destructive bg-card *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+				// Gnos3: something to fix (missing rate, unmapped role) — the icon carries the tone
+				warning: "border-[color-mix(in_oklab,var(--warning)_35%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,var(--card))] text-card-foreground *:[svg]:text-warning! *:data-[slot=alert-description]:text-muted-foreground",
+				// Gnos3: neutral information with a blue icon
+				info: "bg-card text-card-foreground *:[svg]:text-info! *:data-[slot=alert-description]:text-muted-foreground",
+			},
+		},
+		defaultVariants: {
+			variant: "default",
+		},
+	});
+
+	export type AlertVariant = VariantProps<typeof alertVariants>["variant"];
+</script>
+
+<script lang="ts">
+	import { cn, type WithElementRef } from "$lib/utils/shadcn.js";
+	import type { HTMLAttributes } from "svelte/elements";
+
+	let {
+		ref = $bindable(null),
+		class: className,
+		variant = "default",
+		children,
+		...restProps
+	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
+		variant?: AlertVariant;
+	} = $props();
+</script>
+
+<div
+	bind:this={ref}
+	data-slot="alert"
+	role="alert"
+	class={cn(alertVariants({ variant }), className)}
+	{...restProps}
+>
+	{@render children?.()}
+</div>

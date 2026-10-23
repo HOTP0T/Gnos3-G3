@@ -1,7 +1,20 @@
 <script lang="ts">
-	import { onMount, getContext } from 'svelte';
+	import { onMount, getContext, untrack } from 'svelte';
 	import { page as pageStore } from '$app/stores';
 	import { toast } from 'svelte-sonner';
+
+	import Search from '@lucide/svelte/icons/search';
+	import Rows3 from '@lucide/svelte/icons/rows-3';
+	import Rows2 from '@lucide/svelte/icons/rows-2';
+	import Columns3 from '@lucide/svelte/icons/columns-3';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import IdCard from '@lucide/svelte/icons/id-card';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 
 	import {
 		getBusinessCards,
@@ -11,43 +24,54 @@
 		syncBusinessCardFromK4mi,
 		type BusinessCard
 	} from '$lib/apis/business-cards';
+	import { k4miDocHref } from '$lib/apis/k4mi';
 
-	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
-	import Pagination from '$lib/components/common/Pagination.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
+	import TablePagination from '$lib/components/gnos3-ui/TablePagination.svelte';
 	import BusinessCardDetailDrawer from './BusinessCardDetailDrawer.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
-	let cards: BusinessCard[] = [];
-	let companies: string[] = [];
-	let total = 0;
-	let loading = true;
+	let cards = $state<BusinessCard[]>([]);
+	let companies = $state<string[]>([]);
+	let total = $state(0);
+	let loading = $state(true);
+	let mounted = false;
 
-	let page = 1;
-	let perPage = 50;
+	let page = $state(1);
+	const perPage = 50;
 
-	let searchQuery = '';
+	let searchQuery = $state('');
 	let searchDebounce: ReturnType<typeof setTimeout>;
-	let companyFilter = '';
-	let needsReviewOnly = false;
-	let statusFilter = '';
+	let companyFilter = $state('');
+	let needsReviewOnly = $state(false);
+	let statusFilter = $state('');
 
-	let sortBy = '';
-	let sortDir: 'asc' | 'desc' = 'asc';
+	let sortBy = $state('');
+	let sortDir = $state<'asc' | 'desc'>('asc');
 
-	let showDeleteConfirm = false;
-	let deleteTarget: BusinessCard | null = null;
-	let reprocessingIds: Set<number> = new Set();
-	let syncingIds: Set<number> = new Set();
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<BusinessCard | null>(null);
+	let reprocessingIds = $state<Set<number>>(new Set());
+	let syncingIds = $state<Set<number>>(new Set());
 
-	let selectedCard: BusinessCard | null = null;
+	let selectedCard = $state<BusinessCard | null>(null);
 
-	let density: 'compact' | 'comfortable' = 'comfortable';
-	let columnsMenuOpen = false;
-	let visibleColumns: Set<string> = new Set();
+	let density = $state<'compact' | 'comfortable'>('comfortable');
+	let visibleColumns = $state<Set<string>>(new Set());
 
 	const COLUMNS: Array<{
 		key: keyof BusinessCard;
@@ -67,13 +91,27 @@
 		{ key: 'k4mi_notes', label: 'Notes', sortable: false, readonly: true, minW: '16rem' }
 	];
 
-	$: shownColumns = COLUMNS.filter(
-		(c) => c.alwaysVisible || visibleColumns.has(String(c.key))
+	const shownColumns = $derived(
+		COLUMNS.filter((c) => c.alwaysVisible || visibleColumns.has(String(c.key)))
 	);
+	const cellPad = $derived(density === 'compact' ? 'py-1' : 'py-2');
 
-	$: cellPad = density === 'compact' ? 'px-2.5 py-1' : 'px-3 py-2';
-	$: headPad = density === 'compact' ? 'px-2.5 py-1.5' : 'px-3 py-2.5';
-	$: rowText = density === 'compact' ? 'text-xs' : 'text-sm';
+	const initials = (name: string | null | undefined) =>
+		(name || '?')
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((p) => p[0]?.toUpperCase())
+			.join('') || '?';
+
+	const statusOf = (card: BusinessCard): string =>
+		card.processing_status === 'processing' || card.processing_status === 'pending'
+			? card.processing_status
+			: card.processing_status === 'failed'
+				? 'failed'
+				: card.needs_review
+					? 'needs_review'
+					: 'ok';
 
 	const formatK4miNotes = (notes: unknown): string => {
 		if (!Array.isArray(notes) || notes.length === 0) return '';
@@ -122,6 +160,20 @@
 		}
 	};
 
+	// A filter changed: back to page 1 (the page effect reloads) or reload in place.
+	const filtersChanged = () => {
+		if (page === 1) loadCards();
+		else page = 1;
+	};
+
+	let lastPage = 0;
+	$effect(() => {
+		const p = page;
+		if (!mounted || p === lastPage) return;
+		lastPage = p;
+		untrack(loadCards);
+	});
+
 	const handleSort = (key: string) => {
 		if (sortBy === key) {
 			if (sortDir === 'asc') {
@@ -134,16 +186,12 @@
 			sortBy = key;
 			sortDir = 'asc';
 		}
-		page = 1;
-		loadCards();
+		filtersChanged();
 	};
 
 	const debouncedSearch = () => {
 		clearTimeout(searchDebounce);
-		searchDebounce = setTimeout(() => {
-			page = 1;
-			loadCards();
-		}, 300);
+		searchDebounce = setTimeout(filtersChanged, 300);
 	};
 
 	const handleDelete = (card: BusinessCard) => {
@@ -163,7 +211,6 @@
 			toast.error(`${err}`);
 		}
 		deleteTarget = null;
-		showDeleteConfirm = false;
 	};
 
 	const handleReprocess = async (card: BusinessCard) => {
@@ -196,10 +243,6 @@
 		}
 	};
 
-	const openCard = (card: BusinessCard) => {
-		selectedCard = card;
-	};
-
 	const onCardUpdated = (updated: BusinessCard) => {
 		const idx = cards.findIndex((c) => c.id === updated.id);
 		if (idx !== -1) cards[idx] = updated;
@@ -207,44 +250,31 @@
 		selectedCard = updated;
 	};
 
-	const toggleDensity = () => {
-		density = density === 'compact' ? 'comfortable' : 'compact';
+	const setDensity = (d: string) => {
+		if (d !== 'compact' && d !== 'comfortable') return;
+		density = d;
 		try {
 			localStorage.setItem('bc-table-density', density);
 		} catch {}
 	};
 
-	const toggleColumn = (key: string) => {
-		if (visibleColumns.has(key)) {
-			visibleColumns.delete(key);
-		} else {
-			visibleColumns.add(key);
-		}
-		visibleColumns = new Set(visibleColumns);
+	const saveColumns = () => {
 		try {
-			localStorage.setItem(
-				'bc-table-columns',
-				JSON.stringify(Array.from(visibleColumns))
-			);
+			localStorage.setItem('bc-table-columns', JSON.stringify(Array.from(visibleColumns)));
 		} catch {}
+	};
+
+	const toggleColumn = (key: string) => {
+		const next = new Set(visibleColumns);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		visibleColumns = next;
+		saveColumns();
 	};
 
 	const resetColumns = () => {
 		visibleColumns = new Set(COLUMNS.map((c) => String(c.key)));
-		try {
-			localStorage.setItem(
-				'bc-table-columns',
-				JSON.stringify(Array.from(visibleColumns))
-			);
-		} catch {}
-	};
-
-	const handleClickOutside = (e: MouseEvent) => {
-		if (!columnsMenuOpen) return;
-		const target = e.target as HTMLElement;
-		if (!target.closest('[data-columns-menu]')) {
-			columnsMenuOpen = false;
-		}
+		saveColumns();
 	};
 
 	onMount(() => {
@@ -255,11 +285,7 @@
 
 		try {
 			const stored = localStorage.getItem('bc-table-columns');
-			if (stored) {
-				visibleColumns = new Set(JSON.parse(stored));
-			} else {
-				visibleColumns = new Set(COLUMNS.map((c) => String(c.key)));
-			}
+			visibleColumns = new Set(stored ? JSON.parse(stored) : COLUMNS.map((c) => String(c.key)));
 		} catch {
 			visibleColumns = new Set(COLUMNS.map((c) => String(c.key)));
 		}
@@ -269,479 +295,316 @@
 		const company = url.searchParams.get('company');
 		if (company) companyFilter = company;
 
+		mounted = true;
+		lastPage = page;
 		loadCards();
 		loadCompanies();
 	});
-
-	$: page, loadCards();
-	$: needsReviewOnly, statusFilter, companyFilter, (page = 1, loadCards());
 </script>
 
-<svelte:window on:click={handleClickOutside} />
+<div class="flex flex-col gap-4">
+	<div class="flex flex-wrap items-center gap-2">
+		<div class="relative w-full sm:w-72">
+			<Search
+				class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+			/>
+			<Input
+				type="search"
+				class="h-8 pl-8"
+				placeholder={$i18n.t('Search name, company, email, notes…')}
+				bind:value={searchQuery}
+				oninput={debouncedSearch}
+			/>
+		</div>
 
-<div class="py-3">
-	<div class="flex flex-wrap items-center gap-2 mb-3">
-		<input
-			type="search"
-			class="px-3 py-1.5 text-sm rounded-full bg-gray-50 dark:bg-gray-850 outline-none focus:ring-1 focus:ring-gray-400"
-			placeholder={$i18n.t('Search name, company, email, notes…')}
-			bind:value={searchQuery}
-			on:input={debouncedSearch}
-		/>
-
-		<select
-			class="px-3 py-1.5 text-sm rounded-full bg-gray-50 dark:bg-gray-850 outline-none"
-			bind:value={companyFilter}
+		<NativeSelect.Root
+			size="sm"
+			class="max-w-56"
+			value={companyFilter}
+			aria-label={$i18n.t('Company')}
+			onchange={(e: Event) => {
+				companyFilter = (e.currentTarget as HTMLSelectElement).value;
+				filtersChanged();
+			}}
 		>
-			<option value="">{$i18n.t('All companies')}</option>
+			<NativeSelect.Option value="">{$i18n.t('All companies')}</NativeSelect.Option>
 			{#each companies as c}
-				<option value={c}>{c}</option>
+				<NativeSelect.Option value={c}>{c}</NativeSelect.Option>
 			{/each}
-		</select>
+		</NativeSelect.Root>
 
-		<select
-			class="px-3 py-1.5 text-sm rounded-full bg-gray-50 dark:bg-gray-850 outline-none"
-			bind:value={statusFilter}
+		<NativeSelect.Root
+			size="sm"
+			value={statusFilter}
+			aria-label={$i18n.t('Status')}
+			onchange={(e: Event) => {
+				statusFilter = (e.currentTarget as HTMLSelectElement).value;
+				filtersChanged();
+			}}
 		>
-			<option value="">{$i18n.t('Any status')}</option>
-			<option value="completed">{$i18n.t('Completed')}</option>
-			<option value="processing">{$i18n.t('Processing')}</option>
-			<option value="pending">{$i18n.t('Pending')}</option>
-			<option value="failed">{$i18n.t('Failed')}</option>
-		</select>
+			<NativeSelect.Option value="">{$i18n.t('Any status')}</NativeSelect.Option>
+			<NativeSelect.Option value="completed">{$i18n.t('Completed')}</NativeSelect.Option>
+			<NativeSelect.Option value="processing">{$i18n.t('Processing')}</NativeSelect.Option>
+			<NativeSelect.Option value="pending">{$i18n.t('Pending', { context: 'gnos3' })}</NativeSelect.Option>
+			<NativeSelect.Option value="failed">{$i18n.t('Failed')}</NativeSelect.Option>
+		</NativeSelect.Root>
 
-		<label class="flex items-center gap-1.5 text-sm">
-			<input type="checkbox" bind:checked={needsReviewOnly} />
-			{$i18n.t('Needs review only')}
-		</label>
+		<div class="flex items-center gap-2">
+			<Checkbox
+				id="bc-needs-review"
+				checked={needsReviewOnly}
+				onCheckedChange={(v) => {
+					needsReviewOnly = v === true;
+					filtersChanged();
+				}}
+			/>
+			<Label for="bc-needs-review" class="font-normal">{$i18n.t('Needs review only')}</Label>
+		</div>
 
-		<div class="ml-auto flex items-center gap-1.5">
-			<span class="text-xs text-gray-500 dark:text-gray-400">
-				{total} {$i18n.t('cards')}
+		<div class="ml-auto flex items-center gap-2">
+			<span class="text-sm text-muted-foreground tabular-nums">
+				{total}
+				{$i18n.t('cards')}
 			</span>
 
-			<Tooltip content={density === 'compact' ? $i18n.t('Comfortable density') : $i18n.t('Compact density')}>
-				<button
-					class="p-1.5 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-					on:click={toggleDensity}
-					aria-label={$i18n.t('Toggle density')}
-				>
-					{#if density === 'compact'}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="size-4"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line
-								x1="3"
-								y1="18"
-								x2="21"
-								y2="18"
-							/></svg
-						>
-					{:else}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="size-4"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><line x1="3" y1="4" x2="21" y2="4" /><line x1="3" y1="8" x2="21" y2="8" /><line
-								x1="3"
-								y1="12"
-								x2="21"
-								y2="12"
-							/><line x1="3" y1="16" x2="21" y2="16" /><line
-								x1="3"
-								y1="20"
-								x2="21"
-								y2="20"
-							/></svg
-						>
-					{/if}
-				</button>
-			</Tooltip>
+			<ToggleGroup.Root
+				type="single"
+				variant="outline"
+				size="sm"
+				value={density}
+				onValueChange={(v) => setDensity(v)}
+				aria-label={$i18n.t('Density')}
+			>
+				<ToggleGroup.Item value="compact" aria-label={$i18n.t('Compact density')}>
+					<Rows3 />
+				</ToggleGroup.Item>
+				<ToggleGroup.Item value="comfortable" aria-label={$i18n.t('Comfortable density')}>
+					<Rows2 />
+				</ToggleGroup.Item>
+			</ToggleGroup.Root>
 
-			<div class="relative" data-columns-menu>
-				<Tooltip content={$i18n.t('Show/hide columns')}>
-					<button
-						class="p-1.5 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-						on:click={() => (columnsMenuOpen = !columnsMenuOpen)}
-						aria-label={$i18n.t('Show/hide columns')}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="size-4"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><rect x="3" y="3" width="18" height="18" rx="2" /><line
-								x1="9"
-								y1="3"
-								x2="9"
-								y2="21"
-							/><line x1="15" y1="3" x2="15" y2="21" /></svg
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="outline"
+							size="icon-sm"
+							aria-label={$i18n.t('Show/hide columns')}
 						>
-					</button>
-				</Tooltip>
-
-				{#if columnsMenuOpen}
-					<div
-						class="absolute right-0 top-full mt-1 z-30 w-56 rounded-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-lg py-1.5"
-					>
-						<div
-							class="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+							<Columns3 />
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-56">
+					<DropdownMenu.Label>{$i18n.t('Visible columns')}</DropdownMenu.Label>
+					{#each COLUMNS as col}
+						<DropdownMenu.CheckboxItem
+							checked={col.alwaysVisible || visibleColumns.has(String(col.key))}
+							disabled={col.alwaysVisible}
+							closeOnSelect={false}
+							onCheckedChange={() => !col.alwaysVisible && toggleColumn(String(col.key))}
 						>
-							{$i18n.t('Visible columns')}
-						</div>
-						{#each COLUMNS as col}
-							<label
-								class="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer {col.alwaysVisible
-									? 'opacity-60 cursor-not-allowed'
-									: ''}"
-							>
-								<input
-									type="checkbox"
-									checked={col.alwaysVisible || visibleColumns.has(String(col.key))}
-									disabled={col.alwaysVisible}
-									on:change={() => !col.alwaysVisible && toggleColumn(String(col.key))}
-								/>
-								<span class="text-gray-700 dark:text-gray-200">{$i18n.t(col.label)}</span>
-							</label>
-						{/each}
-						<div class="border-t border-gray-100 dark:border-gray-800 mt-1.5 pt-1.5">
-							<button
-								class="w-full text-left px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-								on:click={resetColumns}
-							>
-								{$i18n.t('Show all')}
-							</button>
-						</div>
-					</div>
-				{/if}
-			</div>
+							{$i18n.t(col.label, { context: 'gnos3' })}
+						</DropdownMenu.CheckboxItem>
+					{/each}
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item onSelect={resetColumns}>{$i18n.t('Show all')}</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 		</div>
 	</div>
 
 	{#if loading && cards.length === 0}
-		<div class="flex justify-center py-16"><Spinner /></div>
-	{:else if cards.length === 0}
-		<div class="text-center py-16 text-sm text-gray-500 dark:text-gray-400">
-			{$i18n.t('No business cards found.')}
-			<div class="mt-2 text-xs">
-				{$i18n.t('Tag a K4mi document with')} <code>business_card</code> {$i18n.t('to extract one.')}
-			</div>
+		<div class="flex flex-col gap-2 rounded-md border p-3">
+			{#each Array(6) as _}
+				<Skeleton class="h-8 w-full" />
+			{/each}
 		</div>
+	{:else if cards.length === 0}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><IdCard /></Empty.Media>
+				<Empty.Title>{$i18n.t('No business cards found.')}</Empty.Title>
+				<Empty.Description>
+					{$i18n.t('Tag a K4mi document with')} <code>business_card</code>
+					{$i18n.t('to extract one.')}
+				</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-			<table class="w-full {rowText} border-collapse">
-				<thead
-					class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50/80 dark:bg-gray-900/60 sticky top-0 z-10 backdrop-blur"
-				>
-					<tr>
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root class={density === 'compact' ? 'text-xs' : ''}>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
 						{#each shownColumns as col}
-							<th
-								class="{headPad} font-medium whitespace-nowrap border-b border-gray-200 dark:border-gray-800"
-								style="min-width: {col.minW}"
-							>
+							<Table.Head style="min-width: {col.minW}">
 								{#if col.sortable}
 									<button
-										class="inline-flex items-center gap-1 hover:text-gray-800 dark:hover:text-gray-200 transition"
-										on:click={() => handleSort(col.key)}
+										type="button"
+										class="-mx-1 inline-flex items-center gap-1 rounded-sm px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+										onclick={() => handleSort(String(col.key))}
+										aria-sort={sortBy === col.key
+											? sortDir === 'asc'
+												? 'ascending'
+												: 'descending'
+											: undefined}
 									>
-										<span>{$i18n.t(col.label)}</span>
+										{$i18n.t(col.label, { context: 'gnos3' })}
 										{#if sortBy === col.key}
-											<span class="text-gray-400">{sortDir === 'asc' ? '↑' : '↓'}</span>
+											{#if sortDir === 'asc'}<ArrowUp class="size-3.5 text-muted-foreground" />{:else}<ArrowDown
+													class="size-3.5 text-muted-foreground"
+												/>{/if}
 										{/if}
 									</button>
 								{:else}
-									{$i18n.t(col.label)}
+									{$i18n.t(col.label, { context: 'gnos3' })}
 								{/if}
-							</th>
+							</Table.Head>
 						{/each}
-						<th
-							class="{headPad} font-medium whitespace-nowrap border-b border-gray-200 dark:border-gray-800"
-							style="width: 5.5rem"
-						>
-							{$i18n.t('Status')}
-						</th>
-						<th
-							class="{headPad} font-medium whitespace-nowrap text-right border-b border-gray-200 dark:border-gray-800"
-							style="width: 9rem"
-						>
-							{$i18n.t('Actions')}
-						</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each cards as card, idx (card.id)}
-						<tr
-							class="group border-b border-gray-100 dark:border-gray-900 transition-colors cursor-pointer {idx %
-								2 ===
-							0
-								? 'bg-white dark:bg-transparent'
-								: 'bg-gray-50/40 dark:bg-gray-900/20'} hover:bg-blue-50/40 dark:hover:bg-blue-500/5"
-							on:click={() => openCard(card)}
-							on:keydown={(e) => {
+						<Table.Head style="width: 8rem">{$i18n.t('Status')}</Table.Head>
+						<Table.Head class="w-12"><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each cards as card (card.id)}
+						<Table.Row
+							class="cursor-pointer"
+							data-state={selectedCard?.id === card.id ? 'selected' : undefined}
+							onclick={() => (selectedCard = card)}
+							onkeydown={(e: KeyboardEvent) => {
 								if (e.key === 'Enter' || e.key === ' ') {
 									e.preventDefault();
-									openCard(card);
+									selectedCard = card;
 								}
 							}}
-							role="button"
-							tabindex="0"
+							tabindex={0}
 						>
 							{#each shownColumns as col}
-								<td class="{cellPad} align-top" style="min-width: {col.minW}">
-									{#if col.readonly && col.key === 'k4mi_notes'}
+								<Table.Cell class="{cellPad} max-w-[22rem]" style="min-width: {col.minW}">
+									{#if col.key === 'full_name'}
+										<div class="flex items-center gap-2">
+											<span
+												class="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium"
+												>{initials(card.full_name)}</span
+											>
+											{#if card.full_name}
+												<span class="truncate font-medium">{card.full_name}</span>
+											{:else}
+												<span class="text-muted-foreground">{$i18n.t('Untitled card')}</span>
+											{/if}
+										</div>
+									{:else if col.readonly && col.key === 'k4mi_notes'}
 										{@const noteText = formatK4miNotes(card.k4mi_notes)}
 										{#if noteText}
-											<Tooltip content={noteText}>
-												<span
-													class="text-xs leading-snug text-gray-600 dark:text-gray-300 line-clamp-2"
-												>
-													{noteText}
-												</span>
-											</Tooltip>
+											<span
+												class="line-clamp-2 text-xs leading-snug whitespace-normal text-muted-foreground"
+												title={noteText}>{noteText}</span
+											>
 										{:else}
-											<span class="text-xs text-gray-400 dark:text-gray-600">—</span>
+											<span class="text-muted-foreground">—</span>
 										{/if}
+									{:else if col.key === 'email' && card.email}
+										<a
+											class="block truncate text-link underline-offset-4 hover:underline"
+											href="mailto:{card.email}"
+											onclick={(e) => e.stopPropagation()}>{card.email}</a
+										>
 									{:else if (card as any)[col.key]}
-										<span class="block truncate text-gray-800 dark:text-gray-200">
-											{(card as any)[col.key]}
-										</span>
+										<span class="block truncate">{(card as any)[col.key]}</span>
 									{:else}
-										<span class="text-gray-400 dark:text-gray-600">—</span>
+										<span class="text-muted-foreground">—</span>
 									{/if}
-								</td>
+								</Table.Cell>
 							{/each}
-							<td class="{cellPad} align-top whitespace-nowrap">
-								{#if card.processing_status === 'processing' || card.processing_status === 'pending'}
-									<Tooltip content={$i18n.t('Processing')}>
-										<span
-											class="inline-flex items-center justify-center size-6 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-											aria-label={$i18n.t('Processing')}
-										>
-											<Spinner className="size-3" />
-										</span>
-									</Tooltip>
-								{:else if card.processing_status === 'failed'}
-									<Tooltip content={$i18n.t('Failed')}>
-										<span
-											class="inline-flex items-center justify-center size-6 rounded-full bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300"
-											aria-label={$i18n.t('Failed')}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="size-3.5"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2.5"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												><line x1="18" y1="6" x2="6" y2="18" /><line
-													x1="6"
-													y1="6"
-													x2="18"
-													y2="18"
-												/></svg
-											>
-										</span>
-									</Tooltip>
-								{:else if card.needs_review}
-									<Tooltip content={$i18n.t('Needs review')}>
-										<span
-											class="inline-flex items-center justify-center size-6 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-											aria-label={$i18n.t('Needs review')}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="size-3.5"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2.5"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												><path d="M12 9v4" /><path d="M12 17h.01" /><path
-													d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-												/></svg
-											>
-										</span>
-									</Tooltip>
-								{:else}
-									<Tooltip content={$i18n.t('OK')}>
-										<span
-											class="inline-flex items-center justify-center size-6 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-											aria-label={$i18n.t('OK')}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="size-3.5"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2.5"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												><polyline points="20 6 9 17 4 12" /></svg
-											>
-										</span>
-									</Tooltip>
-								{/if}
-							</td>
-							<td class="{cellPad} align-top whitespace-nowrap text-right">
-								<div
-									class="inline-flex items-center gap-2 text-gray-500 dark:text-gray-400 transition"
-								>
-									{#if card.k4mi_document_id}
-										<Tooltip content={$i18n.t('Open in K4mi')}>
-											<K4miDocLink
-												docId={card.k4mi_document_id}
-												extraClass="hover:text-gray-700 dark:hover:text-gray-200 transition p-1 -m-1"
-												title={$i18n.t('Open in K4mi')}
-												stopPropagation
-											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													class="size-4"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline
-														points="15 3 21 3 21 9"
-													/><line x1="10" y1="14" x2="21" y2="3" /></svg
+							<Table.Cell class={cellPad}>
+								<StatusBadge kind="extraction" status={statusOf(card)} />
+							</Table.Cell>
+							<Table.Cell class="{cellPad} text-right">
+								<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+								<div class="inline-flex" onclick={(e) => e.stopPropagation()}>
+									<DropdownMenu.Root>
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-xs"
+													aria-label={$i18n.t('More actions')}
 												>
-											</K4miDocLink>
-										</Tooltip>
-										<Tooltip content={$i18n.t('Sync notes & metadata from K4mi')}>
-											<button
-												class="hover:text-blue-600 dark:hover:text-blue-300 transition p-1 -m-1 disabled:opacity-40 disabled:cursor-not-allowed"
-												on:click|stopPropagation={() => handleSync(card)}
-												disabled={syncingIds.has(card.id)}
-												aria-label={$i18n.t('Sync from K4mi')}
-											>
-												{#if syncingIds.has(card.id)}
-													<Spinner className="size-4" />
-												{:else}
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														class="size-4"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														><polyline points="23 4 23 10 17 10" /><polyline
-															points="1 20 1 14 7 14"
-														/><path
-															d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-														/></svg
-													>
-												{/if}
-											</button>
-										</Tooltip>
-										<Tooltip content={$i18n.t('Re-extract from the document')}>
-											<button
-												class="hover:text-indigo-600 dark:hover:text-indigo-300 transition p-1 -m-1 disabled:opacity-40 disabled:cursor-not-allowed"
-												on:click|stopPropagation={() => handleReprocess(card)}
-												disabled={reprocessingIds.has(card.id)}
-												aria-label={$i18n.t('Reprocess')}
-											>
-												{#if reprocessingIds.has(card.id)}
-													<Spinner className="size-4" />
-												{:else}
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														class="size-4"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg
-													>
-												{/if}
-											</button>
-										</Tooltip>
-									{/if}
-									<Tooltip content={$i18n.t('Delete')}>
-										<button
-											class="hover:text-red-600 dark:hover:text-red-400 transition p-1 -m-1"
-											on:click|stopPropagation={() => handleDelete(card)}
-											aria-label={$i18n.t('Delete')}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="size-4"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												><polyline points="3 6 5 6 21 6" /><path
-													d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
-												/><line x1="10" y1="11" x2="10" y2="17" /><line
-													x1="14"
-													y1="11"
-													x2="14"
-													y2="17"
-												/></svg
-											>
-										</button>
-									</Tooltip>
+													{#if syncingIds.has(card.id) || reprocessingIds.has(card.id)}
+														<Spinner />
+													{:else}
+														<Ellipsis />
+													{/if}
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content align="end" class="w-60">
+											{#if card.k4mi_document_id}
+												<DropdownMenu.Item>
+													{#snippet child({ props })}
+														<a
+															{...props}
+															href={k4miDocHref(card.k4mi_document_id!)}
+															target="_blank"
+															rel="noopener noreferrer"
+														>
+															<ExternalLink />{$i18n.t('Open in K4mi')}
+														</a>
+													{/snippet}
+												</DropdownMenu.Item>
+												<DropdownMenu.Item
+													disabled={syncingIds.has(card.id)}
+													onSelect={() => handleSync(card)}
+												>
+													<RefreshCw />{$i18n.t('Sync notes & metadata from K4mi')}
+												</DropdownMenu.Item>
+												<DropdownMenu.Item
+													disabled={reprocessingIds.has(card.id)}
+													onSelect={() => handleReprocess(card)}
+												>
+													<RotateCcw />{$i18n.t('Re-extract from the document')}
+												</DropdownMenu.Item>
+												<DropdownMenu.Separator />
+											{/if}
+											<DropdownMenu.Item variant="destructive" onSelect={() => handleDelete(card)}>
+												<Trash2 />{$i18n.t('Delete')}
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
 								</div>
-							</td>
-						</tr>
+							</Table.Cell>
+						</Table.Row>
 					{/each}
-				</tbody>
-			</table>
+				</Table.Body>
+			</Table.Root>
 		</div>
 
-		<div class="mt-3">
-			<Pagination bind:page count={total} {perPage} />
-		</div>
+		<TablePagination bind:page count={total} {perPage} />
 	{/if}
 </div>
 
 {#if selectedCard}
 	<BusinessCardDetailDrawer
 		card={selectedCard}
-		on:close={() => (selectedCard = null)}
-		on:updated={(e) => onCardUpdated(e.detail)}
-		on:deleteRequest={(e) => {
+		onclose={() => (selectedCard = null)}
+		onupdated={onCardUpdated}
+		ondeleterequest={(c) => {
 			selectedCard = null;
-			handleDelete(e.detail);
+			handleDelete(c);
 		}}
 	/>
 {/if}
 
 <ConfirmDialog
-	bind:show={showDeleteConfirm}
+	bind:open={showDeleteConfirm}
 	title={$i18n.t('Delete business card?')}
-	message={deleteTarget
-		? `${$i18n.t('Permanently delete the card for')} "${deleteTarget.full_name}"?`
+	description={deleteTarget
+		? `${$i18n.t('Permanently delete the card for')} "${deleteTarget.full_name ?? ''}"? ${$i18n.t('The K4mi document stays.')}`
 		: ''}
-	on:confirm={confirmDelete}
-	on:cancel={() => {
-		deleteTarget = null;
-		showDeleteConfirm = false;
-	}}
+	confirmLabel={$i18n.t('Delete')}
+	destructive
+	onconfirm={confirmDelete}
+	oncancel={() => (deleteTarget = null)}
 />

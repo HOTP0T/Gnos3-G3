@@ -1,4 +1,5 @@
 import { BUSINESS_CARDS_API_BASE_URL } from '$lib/constants';
+import { langHeader } from '$lib/utils/uiLocale';
 
 export interface BusinessCard {
 	id: number;
@@ -49,6 +50,7 @@ function authHeaders(): Record<string, string> {
 	const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
 	return {
 		'Content-Type': 'application/json',
+		...langHeader(),
 		...(token ? { Authorization: `Bearer ${token}` } : {})
 	};
 }

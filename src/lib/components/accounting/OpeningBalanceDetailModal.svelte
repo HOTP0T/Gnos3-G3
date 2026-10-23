@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { getContext, createEventDispatcher } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import Modal from '$lib/components/common/Modal.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import Download from '@lucide/svelte/icons/download';
+	import Upload from '@lucide/svelte/icons/upload';
+	import Scale from '@lucide/svelte/icons/scale';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import BookOpen from '@lucide/svelte/icons/book-open';
+
 	import {
 		getArApAccounts,
 		getOpeningBalanceDetails,
@@ -11,7 +18,19 @@
 		downloadOpeningBalanceDetailTemplate
 	} from '$lib/apis/accounting';
 
-	const i18n = getContext('i18n');
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let show = false;
@@ -31,6 +50,9 @@
 	$: delta = Math.round((detailTotal - openingLump) * 100) / 100;
 
 	$: if (show && companyId && arApAccounts.length === 0) loadAccounts();
+
+	const fmt = (n: number) =>
+		n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 	const loadAccounts = async () => {
 		loading = true;
@@ -71,7 +93,10 @@
 	const onAccountChange = () => loadDetails();
 
 	const addRow = () =>
-		(rows = [...rows, { party_name: '', reference: '', amount: null, item_date: '', due_date: '' }]);
+		(rows = [
+			...rows,
+			{ party_name: '', reference: '', amount: null, item_date: '', due_date: '' }
+		]);
 	const removeRow = (i: number) => (rows = rows.filter((_, idx) => idx !== i));
 
 	const save = async () => {
@@ -103,7 +128,9 @@
 		importing = true;
 		try {
 			const res = await importOpeningBalanceDetails(companyId, file);
-			toast.success($i18n.t('Imported') + `: ${res.imported}, ` + $i18n.t('skipped') + `: ${res.skipped}`);
+			toast.success(
+				$i18n.t('Imported') + `: ${res.imported}, ` + $i18n.t('skipped') + `: ${res.skipped}`
+			);
 			arApAccounts = [];
 			await loadAccounts();
 			await loadDetails();
@@ -115,84 +142,180 @@
 	};
 </script>
 
-<Modal bind:show size="lg">
-	<div class="px-6 py-5">
-		<div class="flex items-center justify-between mb-4">
-			<h2 class="text-lg font-medium dark:text-gray-200">{$i18n.t('Opening Balance Detail (AR/AP)')}</h2>
-			<button class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition" on:click={() => (show = false)}>✕</button>
-		</div>
-
-		<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-			{$i18n.t('Break an AR/AP account opening balance into per-customer/vendor lines so they appear individually in the aging report.')}
-		</p>
+<Dialog.Root bind:open={show}>
+	<Dialog.Content class="max-h-[90vh] gap-5 overflow-y-auto sm:max-w-3xl">
+		<Dialog.Header>
+			<Dialog.Title>
+				{$i18n.t('Opening Balance Detail (AR/AP)')}
+			</Dialog.Title>
+			<Dialog.Description>
+				{$i18n.t(
+					'Break an AR/AP account opening balance into per-customer/vendor lines so they appear individually in the aging report.'
+				)}
+			</Dialog.Description>
+		</Dialog.Header>
 
 		{#if loading && arApAccounts.length === 0}
-			<div class="flex justify-center my-8"><Spinner className="size-5" /></div>
+			<div class="grid gap-2">
+				{#each Array(4) as _}
+					<Skeleton class="h-8 w-full" />
+				{/each}
+			</div>
 		{:else if arApAccounts.length === 0}
-			<div class="text-sm text-gray-400 italic py-6 text-center">{$i18n.t('No AR/AP accounts found for this company.')}</div>
+			<Empty.Root class="border border-dashed">
+				<Empty.Header>
+					<Empty.Media variant="icon"><BookOpen /></Empty.Media>
+					<Empty.Title>{$i18n.t('No AR/AP accounts found for this company.')}</Empty.Title>
+					<Empty.Description>
+						{$i18n.t('Add receivable or payable accounts in the chart of accounts first.')}
+					</Empty.Description>
+				</Empty.Header>
+			</Empty.Root>
 		{:else}
-			<div class="flex flex-wrap items-end gap-3 mb-3">
-				<div class="grow">
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Account')}</label>
-					<select bind:value={selectedAccountId} on:change={onAccountChange} class="w-full text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800">
+			<div class="flex flex-wrap items-end gap-2">
+				<div class="grid min-w-[16rem] flex-1 gap-2">
+					<Label for="ob-account">{$i18n.t('Account', { context: 'gnos3' })}</Label>
+					<NativeSelect.Root
+						id="ob-account"
+						class="w-full"
+						bind:value={selectedAccountId}
+						onchange={onAccountChange}
+					>
 						{#each arApAccounts as a}
-							<option value={a.id}>{a.side.toUpperCase()} · {a.code} — {a.name}</option>
+							<NativeSelect.Option value={a.id}
+								>{a.side.toUpperCase()} · {a.code} — {a.name}</NativeSelect.Option
+							>
 						{/each}
-					</select>
+					</NativeSelect.Root>
 				</div>
-				<button class="px-3 py-1.5 text-xs rounded-lg text-blue-600 dark:text-blue-400 hover:underline" on:click={downloadOpeningBalanceDetailTemplate}>
-					{$i18n.t('Download template')}
-				</button>
-				<button class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-850 disabled:opacity-50" on:click={() => fileInput?.click()} disabled={importing}>
-					{#if importing}<Spinner className="size-3.5" />{/if} {$i18n.t('Import Excel')}
-				</button>
-				<input type="file" accept=".xlsx,.xls" class="hidden" bind:this={fileInput} on:change={onImport} />
+				<Button variant="ghost" onclick={downloadOpeningBalanceDetailTemplate}>
+					<Download />{$i18n.t('Download template')}
+				</Button>
+				<Button variant="outline" disabled={importing} onclick={() => fileInput?.click()}>
+					{#if importing}<Spinner />{:else}<Upload />{/if}
+					{$i18n.t('Import Excel')}
+				</Button>
+				<input
+					type="file"
+					accept=".xlsx,.xls"
+					class="hidden"
+					bind:this={fileInput}
+					onchange={onImport}
+				/>
 			</div>
 
-			<!-- Reconciliation banner -->
-			<div class="mb-3 text-xs flex items-center gap-4 px-3 py-2 rounded-lg {Math.abs(delta) < 0.01 ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}">
-				<span>{$i18n.t('Account opening')}: <b class="font-mono">{openingLump.toFixed(2)}</b></span>
-				<span>{$i18n.t('Detail total')}: <b class="font-mono">{detailTotal.toFixed(2)}</b></span>
-				<span>{$i18n.t('Δ')}: <b class="font-mono">{delta.toFixed(2)}</b></span>
-				{#if Math.abs(delta) >= 0.01}<span class="italic">{$i18n.t('Detail lines should sum to the account opening balance.')}</span>{/if}
-			</div>
+			<!-- Reconciliation: detail lines against the account's opening balance -->
+			<Alert.Root variant={Math.abs(delta) < 0.01 ? 'default' : 'warning'}>
+				{#if Math.abs(delta) < 0.01}
+					<Scale class="text-success!" />
+				{:else}
+					<TriangleAlert />
+				{/if}
+				<Alert.Title class="flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
+					<span>{$i18n.t('Account opening')}: <b>{fmt(openingLump)}</b></span>
+					<span>{$i18n.t('Detail total')}: <b>{fmt(detailTotal)}</b></span>
+					<span>{$i18n.t('Δ')}: <b>{fmt(delta)}</b></span>
+				</Alert.Title>
+				{#if Math.abs(delta) >= 0.01}
+					<Alert.Description>
+						{$i18n.t('Detail lines should sum to the account opening balance.')}
+					</Alert.Description>
+				{/if}
+			</Alert.Root>
 
-			<div class="overflow-x-auto border border-gray-100 dark:border-gray-850 rounded-lg">
-				<table class="w-full text-xs">
-					<thead class="bg-gray-50 dark:bg-gray-850/50 text-gray-500 dark:text-gray-400 text-[10px] uppercase">
-						<tr>
-							<th class="px-2 py-2 text-left">{$i18n.t('Customer / Vendor')}</th>
-							<th class="px-2 py-2 text-left">{$i18n.t('Reference')}</th>
-							<th class="px-2 py-2 text-right">{$i18n.t('Amount')}</th>
-							<th class="px-2 py-2 text-left">{$i18n.t('Item Date')}</th>
-							<th class="px-2 py-2 text-left">{$i18n.t('Due Date')}</th>
-							<th class="px-2 py-2"></th>
-						</tr>
-					</thead>
-					<tbody>
+			<div class="overflow-hidden rounded-md border {loading ? 'opacity-60' : ''}">
+				<Table.Root>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head class="min-w-[10rem]">{$i18n.t('Customer / Vendor')}</Table.Head>
+							<Table.Head class="min-w-[8rem]">{$i18n.t('Reference')}</Table.Head>
+							<Table.Head class="w-32 text-right">{$i18n.t('Amount')}</Table.Head>
+							<Table.Head>{$i18n.t('Item Date')}</Table.Head>
+							<Table.Head>{$i18n.t('Due Date')}</Table.Head>
+							<Table.Head class="w-10"><span class="sr-only">{$i18n.t('Remove')}</span></Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
 						{#each rows as r, i}
-							<tr class="border-t border-gray-50 dark:border-gray-850/40">
-								<td class="px-2 py-1"><input bind:value={r.party_name} class="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-1 dark:text-gray-200" /></td>
-								<td class="px-2 py-1"><input bind:value={r.reference} class="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-1 dark:text-gray-200" /></td>
-								<td class="px-2 py-1"><input type="number" step="0.01" bind:value={r.amount} class="w-28 text-right bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-1 dark:text-gray-200 font-mono" /></td>
-								<td class="px-2 py-1"><input type="date" bind:value={r.item_date} class="bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-1 dark:text-gray-200" /></td>
-								<td class="px-2 py-1"><input type="date" bind:value={r.due_date} class="bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-1 dark:text-gray-200" /></td>
-								<td class="px-2 py-1 text-center"><button class="text-red-400 hover:text-red-600" on:click={() => removeRow(i)}>✕</button></td>
-							</tr>
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell>
+									<Input
+										class="h-8"
+										aria-label={$i18n.t('Customer / Vendor')}
+										bind:value={r.party_name}
+									/>
+								</Table.Cell>
+								<Table.Cell>
+									<Input
+										class="h-8 font-mono"
+										aria-label={$i18n.t('Reference')}
+										bind:value={r.reference}
+									/>
+								</Table.Cell>
+								<Table.Cell>
+									<Input
+										type="number"
+										step="0.01"
+										class="h-8 min-w-24 text-right tabular-nums"
+										aria-label={$i18n.t('Amount')}
+										bind:value={r.amount}
+									/>
+								</Table.Cell>
+								<Table.Cell>
+									<Input
+										type="date"
+										class="h-8 tabular-nums"
+										aria-label={$i18n.t('Item Date')}
+										bind:value={r.item_date}
+									/>
+								</Table.Cell>
+								<Table.Cell>
+									<Input
+										type="date"
+										class="h-8 tabular-nums"
+										aria-label={$i18n.t('Due Date')}
+										bind:value={r.due_date}
+									/>
+								</Table.Cell>
+								<Table.Cell>
+									<Tip content={$i18n.t('Remove line')}>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											aria-label={$i18n.t('Remove line')}
+											onclick={() => removeRow(i)}
+										>
+											<X />
+										</Button>
+									</Tip>
+								</Table.Cell>
+							</Table.Row>
+						{:else}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell colspan={6} class="py-6 text-center text-muted-foreground">
+									{$i18n.t('No detail lines yet.')}
+								</Table.Cell>
+							</Table.Row>
 						{/each}
-						{#if rows.length === 0}
-							<tr><td colspan="6" class="px-2 py-4 text-center text-gray-400 italic">{$i18n.t('No detail lines yet.')}</td></tr>
-						{/if}
-					</tbody>
-				</table>
+					</Table.Body>
+				</Table.Root>
 			</div>
 
-			<div class="flex items-center justify-between mt-3">
-				<button class="px-3 py-1.5 text-xs rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 hover:text-blue-600 hover:border-blue-400" on:click={addRow}>+ {$i18n.t('Add line')}</button>
-				<button class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50" on:click={save} disabled={saving}>
-					{#if saving}<Spinner className="size-3.5" />{/if} {$i18n.t('Save')}
-				</button>
+			<div>
+				<Button variant="ghost" size="sm" onclick={addRow}>
+					<Plus />{$i18n.t('Add line')}
+				</Button>
 			</div>
 		{/if}
-	</div>
-</Modal>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (show = false)}>{$i18n.t('Close')}</Button>
+			{#if arApAccounts.length > 0}
+				<Button disabled={saving} onclick={save}>
+					{#if saving}<Spinner />{/if}
+					{$i18n.t('Save')}
+				</Button>
+			{/if}
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

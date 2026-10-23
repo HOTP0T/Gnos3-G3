@@ -1,23 +1,70 @@
 <script lang="ts">
-	import { getContext, createEventDispatcher } from 'svelte';
+	import { getContext, createEventDispatcher, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import Modal from '$lib/components/common/Modal.svelte';
-	import { createTransaction, updateTransaction, getJournalTemplates, createTemplateFromTransaction, deleteJournalTemplate, uploadAttachment, getAccountingAiStatus, aiValidateTransaction, postTransaction, matchBankStatement, getTransactionInvoices, setTransactionInvoices, getCompany, convertCurrency } from '$lib/apis/accounting';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import Check from '@lucide/svelte/icons/check';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import Link2 from '@lucide/svelte/icons/link-2';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import FileText from '@lucide/svelte/icons/file-text';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
+	import Scale from '@lucide/svelte/icons/scale';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+
+	import {
+		createTransaction,
+		updateTransaction,
+		getJournalTemplates,
+		createTemplateFromTransaction,
+		deleteJournalTemplate,
+		uploadAttachment,
+		getAccountingAiStatus,
+		aiValidateTransaction,
+		postTransaction,
+		matchBankStatement,
+		getTransactionInvoices,
+		setTransactionInvoices,
+		getCompany,
+		convertCurrency
+	} from '$lib/apis/accounting';
 	import { INVOICE_API_BASE_URL } from '$lib/constants';
 	import { fetchAsBlobUrl } from '$lib/utils/blobPreview';
 	import K4miDocLink from '$lib/components/common/K4miDocLink.svelte';
 	import InvoiceSelector from '$lib/components/accounting/InvoiceSelector.svelte';
 	import AccountFormModal from '$lib/components/accounting/AccountFormModal.svelte';
 
-	const i18n = getContext('i18n');
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
+
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let show = false;
 	export let transaction: any = null;
 	export let accounts: any[] = [];
 	export let companyId: number;
-	export let bankStatementLineId: number | null = null;  // when set, shows "Direct Match" option
+	export let bankStatementLineId: number | null = null; // when set, shows "Direct Match" option
 
 	// Determine read-only mode for posted/voided transactions
 	$: readOnly = transaction && (transaction.status === 'posted' || transaction.status === 'voided');
@@ -149,12 +196,17 @@
 	let journalTemplates: any[] = [];
 	let selectedTemplateId: number | null = null;
 	let savingTemplate = false;
+	let showDeleteTemplateConfirm = false;
+	let templateNameOpen = false;
+	let templateName = '';
 
 	async function loadTemplates() {
 		try {
 			const res = await getJournalTemplates(companyId);
 			journalTemplates = Array.isArray(res) ? res : [];
-		} catch { journalTemplates = []; }
+		} catch {
+			journalTemplates = [];
+		}
 	}
 
 	function applyTemplate(templateId: number) {
@@ -174,32 +226,40 @@
 			};
 		});
 		if (lines.length < 2) {
-			while (lines.length < 2) lines.push({ account_id: null, debit: null, credit: null, description: '' });
+			while (lines.length < 2)
+				lines.push({ account_id: null, debit: null, credit: null, description: '' });
 		}
 		// Keep selectedTemplateId so the user can delete the chosen template.
 	}
 
+	// Asked for confirmation first (ConfirmDialog below).
 	async function handleDeleteTemplate() {
 		if (!selectedTemplateId) return;
-		if (!confirm($i18n.t('Delete this journal template?'))) return;
 		try {
 			await deleteJournalTemplate(selectedTemplateId);
 			toast.success($i18n.t('Template deleted'));
 			selectedTemplateId = null;
 			await loadTemplates();
-		} catch (err: any) { toast.error(err?.detail ?? `${err}`); }
+		} catch (err: any) {
+			toast.error(err?.detail ?? `${err}`);
+		}
 	}
 
+	// The template name comes from the popover next to "Save as Template".
 	async function saveAsTemplate() {
 		if (!transaction?.id) return;
-		const name = prompt('Template name:');
+		const name = templateName.trim();
 		if (!name) return;
 		savingTemplate = true;
 		try {
 			await createTemplateFromTransaction(transaction.id, name);
 			toast.success($i18n.t('Template saved'));
+			templateNameOpen = false;
+			templateName = '';
 			await loadTemplates();
-		} catch (err: any) { toast.error(err?.detail ?? `${err}`); }
+		} catch (err: any) {
+			toast.error(err?.detail ?? `${err}`);
+		}
 		savingTemplate = false;
 	}
 
@@ -217,7 +277,9 @@
 				attachmentUrls = [...attachmentUrls, result.url];
 			}
 			attachmentInput.value = '';
-		} catch (err: any) { toast.error(err?.detail ?? `${err}`); }
+		} catch (err: any) {
+			toast.error(err?.detail ?? `${err}`);
+		}
 		uploading = false;
 	}
 
@@ -243,23 +305,25 @@
 		setTimeout(() => URL.revokeObjectURL(result.url), 60_000);
 	}
 
+	// `gap` marks a line the booking engine could not resolve (display only, never sent).
 	let lines: Array<{
 		account_id: number | null;
 		debit: number | null;
 		credit: number | null;
 		description: string;
+		gap?: string;
+		gapNote?: string;
 	}> = [];
 
 	let saving = false;
 
-	// Account search per line
-	let accountSearchIdx: number | null = null; // which line's dropdown is open
+	// Account picker per line (a combobox: search + list in a popover)
+	let accountSearchIdx: number | null = null; // which line's picker is open
 	let accountSearchQuery = '';
 
 	const openAccountSearch = (idx: number) => {
 		accountSearchIdx = idx;
-		const acct = accounts.find((a: any) => a.id === lines[idx]?.account_id);
-		accountSearchQuery = acct ? `${acct.code} - ${acct.name}` : '';
+		accountSearchQuery = '';
 	};
 
 	const selectAccount = (idx: number, accountId: number) => {
@@ -269,17 +333,8 @@
 		accountSearchQuery = '';
 	};
 
-	const clearAccount = (idx: number) => {
-		lines[idx].account_id = null;
-		lines = lines;
-		accountSearchQuery = '';
-	};
-
-	const getAccountLabel = (accountId: number | null): string => {
-		if (!accountId) return '';
-		const acct = accounts.find((a: any) => a.id === accountId);
-		return acct ? `${acct.code} - ${acct.name}` : `#${accountId}`;
-	};
+	const findAccount = (accountId: number | null) =>
+		accountId ? accounts.find((a: any) => a.id === accountId) : null;
 
 	$: filteredAccounts = accounts.filter((a: any) => {
 		if (!accountSearchQuery) return true;
@@ -318,6 +373,9 @@
 	}
 
 	function resetForm() {
+		templateNameOpen = false;
+		templateName = '';
+		validationResult = null;
 		if (transaction) {
 			formData = {
 				transaction_date: transaction.transaction_date?.slice(0, 10) ?? '',
@@ -360,7 +418,9 @@
 						account_id: null,
 						debit: g.side === 'debit' ? amt : null,
 						credit: g.side === 'credit' ? amt : null,
-						description: g.description ?? g.label ?? ''
+						description: g.description ?? g.label ?? '',
+						gap: g.label ?? g.role ?? '',
+						gapNote: g.note ?? ''
 					}
 				];
 			}
@@ -377,6 +437,7 @@
 			invoiceLabel = '';
 			extraInvoices = [];
 			attachmentUrls = [];
+			rateGapNote = '';
 			lines = [
 				{ account_id: null, debit: null, credit: null, description: '' },
 				{ account_id: null, debit: null, credit: null, description: '' }
@@ -420,8 +481,7 @@
 			if (invoice.invoice_date) formData.transaction_date = invoice.invoice_date.slice(0, 10);
 			if (invoice.currency) formData.currency = invoice.currency;
 			if (invoice.invoice_number) formData.reference = invoice.invoice_number;
-			if (invoice.vendor_name)
-				formData.description = `Invoice from ${invoice.vendor_name}`;
+			if (invoice.vendor_name) formData.description = `Invoice from ${invoice.vendor_name}`;
 			if (invoice.total_amount) {
 				const amount = parseFloat(String(invoice.total_amount));
 				if (amount > 0 && lines.length >= 2) {
@@ -458,6 +518,18 @@
 	$: allAccountsSet = lines.every((l) => l.account_id !== null && l.account_id !== undefined);
 	$: canSubmit = !readOnly && !saving && isBalanced && lines.length >= 2 && allAccountsSet;
 
+	// Display only: gap lines still waiting for an account, lines without one, the base amount.
+	$: openGapCount = lines.filter((l) => l.gap && !l.account_id).length;
+	$: missingAccountCount = lines.filter(
+		(l) => l.account_id === null || l.account_id === undefined
+	).length;
+	$: entryCurrency = (formData.currency || '').toUpperCase();
+	$: isForeign = !!entryCurrency && !!baseCurrency && entryCurrency !== baseCurrency;
+	$: rateNumber = Number(formData.exchange_rate) || 0;
+
+	const fmt = (n: number) =>
+		n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 	function addLine() {
 		lines = [...lines, { account_id: null, debit: null, credit: null, description: '' }];
 	}
@@ -469,10 +541,14 @@
 	// AI validation
 	let aiAvailable = false;
 	let validating = false;
-	let validationResult: { is_valid: boolean; issues: string[]; warnings: string[]; suggestions: string[] } | null = null;
+	let validationResult: {
+		is_valid: boolean;
+		issues: string[];
+		warnings: string[];
+		suggestions: string[];
+	} | null = null;
 
 	// Check AI status on mount
-	import { onMount } from 'svelte';
 	onMount(() => {
 		getAccountingAiStatus()
 			.then((s) => (aiAvailable = s.available))
@@ -487,10 +563,10 @@
 		validating = true;
 		try {
 			validationResult = await aiValidateTransaction(transaction.id);
-			if (validationResult.is_valid) {
+			if (validationResult?.is_valid) {
 				toast.success('Entry looks good!');
 			} else {
-				toast.warning(`Found ${validationResult.issues.length} issue(s)`);
+				toast.warning(`Found ${validationResult?.issues.length ?? 0} issue(s)`);
 			}
 		} catch {
 			toast.error('AI validation failed');
@@ -570,200 +646,209 @@
 	}
 </script>
 
-<InvoiceSelector bind:show={showInvoiceSelector} on:select={handleInvoiceSelect} />
-<InvoiceSelector bind:show={showExtraInvoiceSelector} on:select={handleExtraInvoiceSelect} />
-<AccountFormModal bind:show={showCreateAccount} {accounts} {companyId} on:save={handleAccountCreated} />
-
-<Modal bind:show size="lg">
-	<div class="px-6 py-5">
-		<!-- Header -->
-		<div class="flex items-center justify-between mb-5">
-			<h2 class="text-lg font-medium dark:text-gray-200">
-				{#if readOnly}
-					{$i18n.t('View Transaction')}
-				{:else if transaction?.id}
-					{$i18n.t('Edit Transaction')}
-				{:else}
-					{$i18n.t('New Transaction')}
-				{/if}
-			</h2>
-			<button
-				class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-				on:click={() => (show = false)}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="size-5 dark:text-gray-300"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-				</svg>
-			</button>
-		</div>
-
-		<!-- Invoice Link -->
-		<div class="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-850 border border-gray-200 dark:border-gray-700">
-			<div class="flex items-center justify-between">
-				<div>
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-						{$i18n.t('Linked Invoice')}
-						<span class="text-gray-400 font-normal">({$i18n.t('optional')})</span>
-					</label>
-					{#if invoiceLabel}
-						<div class="flex items-center gap-2">
-							<span class="text-sm dark:text-gray-200">{invoiceLabel}</span>
-							{#if invoiceK4miDocId}
-								<K4miDocLink docId={invoiceK4miDocId} extraClass="text-blue-500 hover:text-blue-700" title={$i18n.t('Open in K4mi')}>
-									<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
-								</K4miDocLink>
-							{/if}
-							{#if !readOnly}
-								<button
-									class="text-xs text-red-500 hover:text-red-700 transition"
-									on:click={clearInvoice}
-								>
-									{$i18n.t('Remove')}
-								</button>
-							{/if}
-						</div>
-					{:else}
-						<span class="text-sm text-gray-400">{$i18n.t('No invoice linked')}</span>
-					{/if}
-				</div>
-				{#if !readOnly}
-					<button
-						class="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 transition"
-						on:click={() => (showInvoiceSelector = true)}
-					>
-						{$i18n.t('Browse Invoices')}
-					</button>
-				{/if}
-			</div>
-
-			<!-- Additional related invoices (multi-link) -->
-			<div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-				<div class="flex items-center justify-between mb-1">
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
-						{$i18n.t('Related invoices')}
-						<span class="text-gray-400 font-normal">({$i18n.t('optional')})</span>
-					</label>
-					{#if !readOnly}
-						<button
-							class="px-2 py-1 text-[11px] font-medium rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 hover:text-blue-600 hover:border-blue-400 transition"
-							on:click={() => (showExtraInvoiceSelector = true)}
-						>
-							+ {$i18n.t('Add invoice')}
-						</button>
-					{/if}
-				</div>
-				{#if extraInvoices.length}
-					<div class="flex flex-wrap gap-1.5">
-						{#each extraInvoices as ei}
-							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs dark:text-gray-200">
-								{#if ei.k4mi_document_id}
-									<K4miDocLink docId={ei.k4mi_document_id} extraClass="text-blue-500 hover:text-blue-700" title={$i18n.t('Open in K4mi')}>{ei.invoice_number ?? `#${ei.invoice_id}`}</K4miDocLink>
-								{:else}
-									{ei.invoice_number ?? `#${ei.invoice_id}`}
-								{/if}
-								{#if !readOnly}
-									<button class="text-gray-400 hover:text-red-500" title={$i18n.t('Remove')} on:click={() => removeExtraInvoice(ei.invoice_id)}>×</button>
-								{/if}
-							</span>
-						{/each}
-					</div>
-				{:else}
-					<span class="text-xs text-gray-400">{$i18n.t('None')}</span>
-				{/if}
-			</div>
-		</div>
-
-		<!-- Template Selector (only when creating new) -->
-		{#if !transaction?.id && journalTemplates.length > 0}
-			<div class="flex items-center gap-2 mb-3">
-				<label class="text-xs font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
-					{$i18n.t('From Template')}
-				</label>
-				<select
-					class="flex-1 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-1.5 outline-hidden focus:border-blue-500 dark:text-gray-200"
-					bind:value={selectedTemplateId}
-					on:change={() => { if (selectedTemplateId) applyTemplate(selectedTemplateId); }}
-				>
-					<option value={null}>{$i18n.t('Select a template...')}</option>
-					{#each journalTemplates as tpl}
-						<option value={tpl.id}>{tpl.name}</option>
-					{/each}
-				</select>
-				{#if selectedTemplateId}
-					<button
-						class="text-xs text-red-500 hover:text-red-700 whitespace-nowrap"
-						title={$i18n.t('Delete template')}
-						on:click={handleDeleteTemplate}
-					>{$i18n.t('Delete')}</button>
-				{/if}
-			</div>
-		{/if}
-
-		<!-- Save as Template (only for existing transactions) -->
-		{#if transaction?.id && !savingTemplate}
-			<div class="flex justify-end mb-2">
+<!-- The account picker of one journal line: a combobox (search + list) in a popover -->
+{#snippet accountPicker(idx: number, line: any)}
+	{@const acct = findAccount(line.account_id)}
+	{@const isGap = !!line.gap && !line.account_id}
+	<Popover.Root
+		open={accountSearchIdx === idx}
+		onOpenChange={(o) => {
+			if (o) openAccountSearch(idx);
+			else if (accountSearchIdx === idx) accountSearchIdx = null;
+		}}
+	>
+		<Popover.Trigger>
+			{#snippet child({ props })}
 				<button
-					class="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
-					on:click={saveAsTemplate}
+					{...props}
+					type="button"
+					class="flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-transparent px-2.5 text-left text-sm shadow-xs transition-colors outline-none hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 dark:bg-input/30"
+					aria-invalid={isGap ? 'true' : undefined}
 				>
-					{$i18n.t('Save as Template')}
+					{#if acct}
+						<span class="min-w-0 truncate">
+							<span class="font-mono text-[13px]">{acct.code}</span>
+							{acct.name}
+						</span>
+					{:else if line.account_id}
+						<span class="truncate font-mono text-[13px]">#{line.account_id}</span>
+					{:else}
+						<span class="truncate text-muted-foreground">-- {$i18n.t('Select account')} --</span>
+					{/if}
+					<ChevronsUpDown class="size-4 shrink-0 opacity-50" />
+				</button>
+			{/snippet}
+		</Popover.Trigger>
+		<Popover.Content align="start" class="w-[min(24rem,calc(100vw-2rem))] gap-0 p-0">
+			<div class="border-b p-2">
+				<Input
+					class="h-8"
+					placeholder={$i18n.t('Search accounts...')}
+					aria-label={$i18n.t('Search accounts...')}
+					bind:value={accountSearchQuery}
+					onkeydown={(e: KeyboardEvent) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							const first = filteredAccounts[0];
+							if (first) selectAccount(idx, first.id);
+						}
+					}}
+				/>
+			</div>
+			<div class="max-h-64 overflow-y-auto p-1">
+				{#each filteredAccounts.slice(0, 30) as account (account.id)}
+					<button
+						type="button"
+						class="flex w-full items-baseline gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+						onclick={() => selectAccount(idx, account.id)}
+					>
+						<span class="font-mono text-[13px]">{account.code}</span>
+						<span class="min-w-0 flex-1 truncate text-muted-foreground">{account.name}</span>
+						{#if account.id === line.account_id}<Check class="size-4 self-center" />{/if}
+					</button>
+				{/each}
+				{#if filteredAccounts.length === 0}
+					<p class="px-2 py-3 text-center text-sm text-muted-foreground">
+						{$i18n.t('No accounts found')}
+					</p>
+				{/if}
+			</div>
+			<div class="border-t p-1">
+				<button
+					type="button"
+					class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-link outline-none hover:bg-accent focus-visible:bg-accent"
+					onclick={() => openCreateAccount(idx)}
+				>
+					<Plus class="size-4" />{$i18n.t('Create new account')}
 				</button>
 			</div>
+		</Popover.Content>
+	</Popover.Root>
+	{#if isGap}
+		<p class="mt-1 text-xs whitespace-normal text-destructive">
+			{$i18n.t(line.gap)} · {$i18n.t('account required')}
+		</p>
+		{#if line.gapNote}
+			<p class="mt-0.5 text-xs whitespace-normal text-muted-foreground">{line.gapNote}</p>
+		{/if}
+	{/if}
+{/snippet}
+
+<Dialog.Root bind:open={show}>
+	<Dialog.Content class="max-h-[90vh] gap-5 overflow-y-auto sm:max-w-3xl">
+		<!-- Header: title, status, what the entry is -->
+		<Dialog.Header>
+			<div class="flex flex-wrap items-center gap-2 pr-8">
+				<Dialog.Title>
+					{#if readOnly}
+						{$i18n.t('View Transaction')}
+					{:else if transaction?.id}
+						{$i18n.t('Edit Transaction')}
+					{:else}
+						{$i18n.t('New Transaction')}
+					{/if}
+				</Dialog.Title>
+				{#if transaction?.status}
+					<StatusBadge kind="entry" status={transaction.status} />
+				{/if}
+				{#if openGapCount > 0}
+					<StatusBadge
+						kind="entry"
+						status="incomplete"
+						label="{$i18n.t('Incomplete')} · {$i18n.t('{{n}} line(s)', { n: openGapCount })}"
+					/>
+				{/if}
+			</div>
+			<Dialog.Description>
+				{#if transaction?.id}
+					<span class="font-mono text-[13px]">#{transaction.id}</span>
+					{#if transaction.reference}
+						· <span class="font-mono text-[13px]">{transaction.reference}</span>
+					{/if}
+					{#if transaction.invoice_id}
+						· {$i18n.t('Invoice')} #{transaction.invoice_id}
+					{/if}
+				{:else}
+					{$i18n.t('Debits must equal credits, and every line needs an account.')}
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<!-- Template selector (only when creating new) -->
+		{#if !transaction?.id && journalTemplates.length > 0}
+			<div class="flex flex-wrap items-center gap-2">
+				<Label for="je-template" class="whitespace-nowrap">{$i18n.t('From Template')}</Label>
+				<NativeSelect.Root
+					id="je-template"
+					size="sm"
+					class="min-w-48 flex-1"
+					bind:value={selectedTemplateId}
+					onchange={() => {
+						if (selectedTemplateId) applyTemplate(selectedTemplateId);
+					}}
+				>
+					<NativeSelect.Option value={null}>{$i18n.t('Select a template...')}</NativeSelect.Option>
+					{#each journalTemplates as tpl}
+						<NativeSelect.Option value={tpl.id}>{tpl.name}</NativeSelect.Option>
+					{/each}
+				</NativeSelect.Root>
+				{#if selectedTemplateId}
+					<Tip content={$i18n.t('Delete template')}>
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							class="text-destructive hover:text-destructive"
+							aria-label={$i18n.t('Delete template')}
+							onclick={() => (showDeleteTemplateConfirm = true)}
+						>
+							<Trash2 />
+						</Button>
+					</Tip>
+				{/if}
+			</div>
 		{/if}
 
-		<!-- Form Fields -->
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-			<!-- Date -->
-			<div>
-				<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Date')}
-				</label>
-				<input
+		<!-- Fields: Date · Type · Currency · Reference; the exchange rate (foreign currency only)
+		     takes the start of the next row, dense flow keeps Reference on the first -->
+		<div class="grid grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+			<div class="grid content-start gap-2">
+				<Label for="je-date">{$i18n.t('Date')}</Label>
+				<Input
+					id="je-date"
 					type="date"
-					class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-2 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
+					class="tabular-nums"
 					bind:value={formData.transaction_date}
-					on:change={refreshRate}
+					onchange={refreshRate}
 					disabled={readOnly}
 				/>
 			</div>
 
-			<!-- Type -->
-			<div>
-				<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Type')}
-				</label>
-				<select
-					class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-2 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
+			<div class="grid content-start gap-2">
+				<Label for="je-type">{$i18n.t('Type')}</Label>
+				<NativeSelect.Root
+					id="je-type"
+					class="w-full"
 					bind:value={formData.transaction_type}
 					disabled={readOnly}
 				>
-					<option value="invoice">{$i18n.t('Invoice')}</option>
-					<option value="bill">{$i18n.t('Bill')}</option>
-					<option value="payment_in">{$i18n.t('Payment In')}</option>
-					<option value="payment_out">{$i18n.t('Payment Out')}</option>
-					<option value="others">{$i18n.t('Others')}</option>
-					<option value="adjustment">{$i18n.t('Adjustment')}</option>
-				</select>
+					<NativeSelect.Option value="invoice">{$i18n.t('Invoice')}</NativeSelect.Option>
+					<NativeSelect.Option value="bill">{$i18n.t('Bill')}</NativeSelect.Option>
+					<NativeSelect.Option value="payment_in">{$i18n.t('Payment In')}</NativeSelect.Option>
+					<NativeSelect.Option value="payment_out">{$i18n.t('Payment Out')}</NativeSelect.Option>
+					<NativeSelect.Option value="others">{$i18n.t('Others')}</NativeSelect.Option>
+					<NativeSelect.Option value="adjustment">{$i18n.t('Adjustment')}</NativeSelect.Option>
+				</NativeSelect.Root>
 			</div>
 
-			<!-- Currency -->
-			<div>
-				<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Currency')}
-				</label>
-				<input
+			<div class="grid content-start gap-2">
+				<Label for="je-currency">{$i18n.t('Currency')}</Label>
+				<Input
+					id="je-currency"
 					type="text"
-					class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-2 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
+					class="font-mono uppercase"
 					bind:value={formData.currency}
-					on:input={refreshRate}
-					maxlength="3"
+					oninput={refreshRate}
+					maxlength={3}
 					placeholder="USD"
 					disabled={readOnly}
 				/>
@@ -771,365 +856,518 @@
 
 			<!-- Exchange rate (auto-filled from live rates; overridable) -->
 			{#if (formData.currency || '').toUpperCase() !== baseCurrency}
-				<div>
-					<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+				<div class="grid content-start gap-2 sm:col-span-2">
+					<Label for="je-rate">
 						{$i18n.t('Exchange Rate')}
-						<span class="text-gray-400 dark:text-gray-500">({(formData.currency || '').toUpperCase()} → {baseCurrency})</span>
-					</label>
-					<input
+						<span class="font-normal text-muted-foreground"
+							>{(formData.currency || '').toUpperCase()} → {baseCurrency}</span
+						>
+					</Label>
+					<Input
+						id="je-rate"
 						type="number"
 						step="0.00000001"
 						min="0"
-						class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-2 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
+						class="text-right tabular-nums"
 						bind:value={formData.exchange_rate}
 						placeholder="1.0"
 						disabled={readOnly}
 					/>
-					{#if rateGapNote}
-						<div class="text-[11px] mt-1 text-red-700 dark:text-red-300">{rateGapNote}</div>
-					{/if}
 					{#if rateHint}
-						<div
-							class="text-[10px] mt-1 {rateMissing
-								? 'text-amber-600 dark:text-amber-400'
-								: 'text-gray-400 dark:text-gray-500'}"
-						>
-							{rateHint}
-						</div>
+						<p class="flex gap-1.5 text-[13px] leading-[18px] text-muted-foreground">
+							{#if rateMissing}
+								<TriangleAlert class="mt-0.5 size-3.5 shrink-0 text-warning" />
+							{/if}
+							<span>{rateHint}</span>
+						</p>
 					{/if}
 				</div>
 			{/if}
 
-			<!-- Reference -->
-			<div>
-				<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Reference')}
-				</label>
-				<input
+			<div class="grid content-start gap-2">
+				<Label for="je-reference">{$i18n.t('Reference')}</Label>
+				<Input
+					id="je-reference"
 					type="text"
-					class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-2 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
+					class="font-mono placeholder:font-sans"
 					bind:value={formData.reference}
 					placeholder={$i18n.t('Reference number')}
 					disabled={readOnly}
 				/>
 			</div>
 
-			<!-- Description -->
-			<div class="md:col-span-2">
-				<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Description')}
-				</label>
-				<textarea
-					class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-3 py-2 outline-hidden focus:border-blue-500 dark:text-gray-200 resize-none disabled:opacity-60"
-					rows="2"
+			<div class="col-span-full grid gap-2">
+				<Label for="je-description">{$i18n.t('Description')}</Label>
+				<Textarea
+					id="je-description"
+					class="min-h-16 resize-none"
+					rows={2}
 					bind:value={formData.description}
 					placeholder={$i18n.t('Transaction description')}
 					disabled={readOnly}
-				></textarea>
+				/>
 			</div>
 		</div>
 
-		<!-- Lines Section -->
-		<div class="mb-4">
-			<div class="flex items-center justify-between mb-2">
-				<h3 class="text-sm font-medium dark:text-gray-300">{$i18n.t('Journal Lines')}</h3>
-				{#if !readOnly}
-					<button
-						class="text-xs px-3 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 transition font-medium"
-						on:click={addLine}
-					>
-						+ {$i18n.t('Add Line')}
-					</button>
-				{/if}
-			</div>
+		<!-- A missing exchange rate is a notice on the entry, not a line -->
+		{#if rateGapNote}
+			<Alert.Root variant="warning">
+				<TriangleAlert />
+				<Alert.Title>{$i18n.t('No exchange rate for this entry')}</Alert.Title>
+				<Alert.Description>{rateGapNote}</Alert.Description>
+			</Alert.Root>
+		{/if}
 
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-					<thead
-						class="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
-					>
-						<tr>
-							<th class="px-3 py-2 w-2/5">{$i18n.t('Account')}</th>
-							<th class="px-3 py-2 text-right w-1/6">{$i18n.t('Debit')}</th>
-							<th class="px-3 py-2 text-right w-1/6">{$i18n.t('Credit')}</th>
-							<th class="px-3 py-2 w-1/4">{$i18n.t('Description')}</th>
-							{#if !readOnly}
-								<th class="px-3 py-2 w-10"></th>
-							{/if}
-						</tr>
-					</thead>
-					<tbody>
-						{#each lines as line, idx}
-							<tr class="border-b border-gray-100 dark:border-gray-800">
-								<!-- Account searchable select -->
-								<td class="px-2 py-1.5 relative">
-									{#if accountSearchIdx === idx && !readOnly}
-										<!-- Search input + dropdown -->
-										<input
-											type="text"
-											class="w-full text-xs rounded-lg border border-blue-400 dark:border-blue-600 bg-white dark:bg-gray-850 px-2 py-1.5 outline-hidden dark:text-gray-200"
-											placeholder={$i18n.t('Search accounts...')}
-											bind:value={accountSearchQuery}
-											on:blur={() => { setTimeout(() => { accountSearchIdx = null; }, 200); }}
-											autofocus
-										/>
-										<div class="absolute z-50 left-2 right-2 mt-0.5 max-h-40 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
-											{#each filteredAccounts.slice(0, 30) as account}
-												<button
-													type="button"
-													class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 transition border-b border-gray-50 dark:border-gray-800 last:border-b-0"
-													on:mousedown|preventDefault={() => selectAccount(idx, account.id)}
-												>
-													<span class="font-mono font-medium">{account.code}</span>
-													<span class="text-gray-500 dark:text-gray-400 ml-1">{account.name}</span>
-												</button>
-											{/each}
-											{#if filteredAccounts.length === 0}
-												<div class="px-2.5 py-2 text-xs text-gray-400 italic">{$i18n.t('No accounts found')}</div>
-											{/if}
-											<button
-												type="button"
-												class="w-full text-left px-2.5 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition border-t border-gray-200 dark:border-gray-700 flex items-center gap-1"
-												on:mousedown|preventDefault={() => openCreateAccount(idx)}
-											>
-												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-												{$i18n.t('Create new account')}
-											</button>
-										</div>
-									{:else}
-										<!-- Display selected account as clickable button -->
-										<button
-											type="button"
-											class="w-full text-left text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-2 py-1.5 outline-hidden dark:text-gray-200 disabled:opacity-60 hover:border-blue-400 dark:hover:border-blue-600 transition truncate"
-											disabled={readOnly}
-											on:click={() => openAccountSearch(idx)}
-										>
-											{#if line.account_id}
-												{getAccountLabel(line.account_id)}
-											{:else}
-												<span class="text-gray-400">-- {$i18n.t('Select account')} --</span>
-											{/if}
-										</button>
-									{/if}
-								</td>
-
-								<!-- Debit -->
-								<td class="px-2 py-1.5">
-									<input
-										type="number"
-										step="0.01"
-										min="0"
-										class="w-full text-xs text-right rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-2 py-1.5 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
-										bind:value={line.debit}
-										placeholder="0.00"
-										disabled={readOnly}
-									/>
-								</td>
-
-								<!-- Credit -->
-								<td class="px-2 py-1.5">
-									<input
-										type="number"
-										step="0.01"
-										min="0"
-										class="w-full text-xs text-right rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-2 py-1.5 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
-										bind:value={line.credit}
-										placeholder="0.00"
-										disabled={readOnly}
-									/>
-								</td>
-
-								<!-- Line Description -->
-								<td class="px-2 py-1.5">
-									<input
-										type="text"
-										class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent dark:bg-gray-850 px-2 py-1.5 outline-hidden focus:border-blue-500 dark:text-gray-200 disabled:opacity-60"
-										bind:value={line.description}
-										placeholder={$i18n.t('Line memo')}
-										disabled={readOnly}
-									/>
-								</td>
-
-								<!-- Remove -->
-								{#if !readOnly}
-									<td class="px-2 py-1.5 text-center">
-										<button
-											class="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition disabled:opacity-30"
-											disabled={lines.length <= 2}
-											on:click={() => removeLine(idx)}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke-width="2"
-												stroke="currentColor"
-												class="size-3.5"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="M6 18 18 6M6 6l12 12"
-												/>
-											</svg>
-										</button>
-									</td>
-								{/if}
-							</tr>
-						{/each}
-					</tbody>
-
-					<!-- Totals row -->
-					<tfoot>
-						<tr class="bg-gray-50 dark:bg-gray-800 font-medium text-xs">
-							<td class="px-3 py-2 text-right">{$i18n.t('Totals')}</td>
-							<td class="px-3 py-2 text-right">
-								{totalDebit.toLocaleString(undefined, {
-									minimumFractionDigits: 2,
-									maximumFractionDigits: 2
-								})}
-							</td>
-							<td class="px-3 py-2 text-right">
-								{totalCredit.toLocaleString(undefined, {
-									minimumFractionDigits: 2,
-									maximumFractionDigits: 2
-								})}
-							</td>
-							<td class="px-3 py-2" colspan={readOnly ? 1 : 2}></td>
-						</tr>
-					</tfoot>
-				</table>
-			</div>
-
-			<!-- Balance indicator -->
-			<div class="mt-3 flex items-center justify-end gap-2 text-sm">
-				{#if isBalanced}
-					<span class="text-green-600 dark:text-green-400 font-medium">
-						{$i18n.t('Balanced')}
-					</span>
+		<!-- Linked invoices -->
+		<div class="grid gap-2 text-sm">
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<Link2 class="size-4 text-muted-foreground" />
+				<span class="text-muted-foreground">
+					{$i18n.t('Linked Invoice')}
+					<span class="sr-only">({$i18n.t('optional')})</span>
+				</span>
+				{#if invoiceLabel}
+					<span class="font-medium">{invoiceLabel}</span>
+					{#if invoiceK4miDocId}
+						<K4miDocLink
+							docId={invoiceK4miDocId}
+							extraClass="inline-flex text-link"
+							title={$i18n.t('Open in K4mi')}
+						>
+							<ExternalLink class="size-3.5" />
+							<span class="sr-only">{$i18n.t('Open in K4mi')}</span>
+						</K4miDocLink>
+					{/if}
+					{#if !readOnly}
+						<Button
+							variant="ghost"
+							size="xs"
+							class="text-muted-foreground hover:text-destructive"
+							onclick={clearInvoice}
+						>
+							{$i18n.t('Remove')}
+						</Button>
+					{/if}
 				{:else}
-					<span class="text-red-600 dark:text-red-400 font-medium">
-						{$i18n.t('Unbalanced')} ({balanceDiff > 0 ? '+' : ''}{balanceDiff.toLocaleString(
-							undefined,
-							{ minimumFractionDigits: 2, maximumFractionDigits: 2 }
-						)})
-					</span>
+					<span class="text-muted-foreground">{$i18n.t('No invoice linked')}</span>
+				{/if}
+				{#if !readOnly}
+					<Separator orientation="vertical" class="mx-1 h-4!" />
+					<Button variant="link" size="sm" onclick={() => (showInvoiceSelector = true)}>
+						{$i18n.t('Browse Invoices')}
+					</Button>
+				{/if}
+			</div>
+
+			<!-- Additional related invoices (multi-link) -->
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 pl-6">
+				<span class="text-muted-foreground">{$i18n.t('Related invoices')}</span>
+				{#each extraInvoices as ei}
+					<Badge variant="outline" class="gap-1 font-mono text-[12px]">
+						{#if ei.k4mi_document_id}
+							<K4miDocLink
+								docId={ei.k4mi_document_id}
+								extraClass="text-link underline-offset-4 hover:underline"
+								title={$i18n.t('Open in K4mi')}
+								>{ei.invoice_number ?? `#${ei.invoice_id}`}</K4miDocLink
+							>
+						{:else}
+							{ei.invoice_number ?? `#${ei.invoice_id}`}
+						{/if}
+						{#if !readOnly}
+							<button
+								type="button"
+								class="-mr-0.5 rounded-sm text-muted-foreground outline-none hover:text-destructive focus-visible:ring-[3px] focus-visible:ring-ring/50"
+								aria-label={$i18n.t('Remove')}
+								title={$i18n.t('Remove')}
+								onclick={() => removeExtraInvoice(ei.invoice_id)}
+							>
+								<X class="size-3" />
+							</button>
+						{/if}
+					</Badge>
+				{:else}
+					<span class="text-muted-foreground">{$i18n.t('None')}</span>
+				{/each}
+				{#if !readOnly}
+					<Button variant="ghost" size="xs" onclick={() => (showExtraInvoiceSelector = true)}>
+						<Plus />{$i18n.t('Add invoice')}
+					</Button>
 				{/if}
 			</div>
 		</div>
+
+		<!-- Journal lines -->
+		<div class="grid gap-2">
+			<div class="flex items-center justify-between">
+				<h3 class="text-sm font-medium">{$i18n.t('Journal Lines')}</h3>
+				{#if !readOnly}
+					<Button variant="ghost" size="sm" onclick={addLine}>
+						<Plus />{$i18n.t('Add Line')}
+					</Button>
+				{/if}
+			</div>
+
+			<div class="overflow-hidden rounded-md border">
+				<Table.Root>
+					<Table.Header class="bg-muted/50">
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head class="min-w-[16rem]">{$i18n.t('Account', { context: 'gnos3' })}</Table.Head>
+							<Table.Head class="w-32 text-right">{$i18n.t('Debit')}</Table.Head>
+							<Table.Head class="w-32 text-right">{$i18n.t('Credit')}</Table.Head>
+							<Table.Head class="min-w-[10rem]">{$i18n.t('Description')}</Table.Head>
+							{#if !readOnly}
+								<Table.Head class="w-10"
+									><span class="sr-only">{$i18n.t('Remove')}</span></Table.Head
+								>
+							{/if}
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each lines as line, idx}
+							{#if readOnly}
+								{@const acct = findAccount(line.account_id)}
+								<Table.Row class="hover:bg-transparent">
+									<Table.Cell>
+										{#if acct}
+											<span class="font-mono text-[13px]">{acct.code}</span>
+											{acct.name}
+										{:else if line.account_id}
+											<span class="font-mono text-[13px]">#{line.account_id}</span>
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">
+										{line.debit ? fmt(line.debit) : '—'}
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">
+										{line.credit ? fmt(line.credit) : '—'}
+									</Table.Cell>
+									<Table.Cell class="whitespace-normal">{line.description || '—'}</Table.Cell>
+								</Table.Row>
+							{:else}
+								<Table.Row
+									class="align-top hover:bg-transparent {line.gap && !line.account_id
+										? 'bg-warning/5 hover:bg-warning/5'
+										: ''}"
+								>
+									<Table.Cell class="min-w-[16rem] align-top">
+										{@render accountPicker(idx, line)}
+									</Table.Cell>
+									<Table.Cell class="align-top">
+										<Input
+											type="number"
+											step="0.01"
+											min="0"
+											class="h-8 min-w-24 text-right tabular-nums"
+											aria-label={$i18n.t('Debit')}
+											bind:value={line.debit}
+											placeholder="0.00"
+										/>
+									</Table.Cell>
+									<Table.Cell class="align-top">
+										<Input
+											type="number"
+											step="0.01"
+											min="0"
+											class="h-8 min-w-24 text-right tabular-nums"
+											aria-label={$i18n.t('Credit')}
+											bind:value={line.credit}
+											placeholder="0.00"
+										/>
+									</Table.Cell>
+									<Table.Cell class="align-top">
+										<Input
+											type="text"
+											class="h-8 min-w-[10rem]"
+											aria-label={$i18n.t('Description')}
+											bind:value={line.description}
+											placeholder={$i18n.t('Line memo')}
+										/>
+									</Table.Cell>
+									<Table.Cell class="align-top">
+										<Tip content={$i18n.t('Remove line')} disabled={lines.length <= 2}>
+											<Button
+												variant="ghost"
+												size="icon-xs"
+												aria-label={$i18n.t('Remove line')}
+												disabled={lines.length <= 2}
+												onclick={() => removeLine(idx)}
+											>
+												<X />
+											</Button>
+										</Tip>
+									</Table.Cell>
+								</Table.Row>
+							{/if}
+						{/each}
+					</Table.Body>
+					<Table.Footer>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell>{$i18n.t('Totals')}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">{fmt(totalDebit)}</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">{fmt(totalCredit)}</Table.Cell>
+							<Table.Cell colspan={readOnly ? 1 : 2}>
+								{#if isBalanced}
+									<Badge variant="status"><Scale class="text-success" />{$i18n.t('Balanced')}</Badge
+									>
+								{:else}
+									<StatusBadge
+										kind="entry"
+										status="unbalanced"
+										label="{$i18n.t('Unbalanced')} ({balanceDiff > 0 ? '+' : ''}{fmt(balanceDiff)})"
+									/>
+								{/if}
+							</Table.Cell>
+						</Table.Row>
+					</Table.Footer>
+				</Table.Root>
+			</div>
+		</div>
+
+		<!-- Gap lines: the user fixes them right here, on the highlighted lines -->
+		{#if !readOnly && openGapCount > 0}
+			<Alert.Root variant="warning">
+				<TriangleAlert />
+				<Alert.Title>
+					{$i18n.t('{{n}} line(s) still need an account', { n: openGapCount })}
+				</Alert.Title>
+				<Alert.Description>
+					{$i18n.t(
+						'Nothing is guessed: choose the account on each highlighted line, or map a default in Settings → Booking Defaults. The entry can be saved once every line has an account.'
+					)}
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
 
 		<!-- Attachments -->
-		<div class="mt-3">
-			<div class="flex items-center justify-between mb-1.5">
-				<label class="text-xs font-medium text-gray-500 dark:text-gray-400">{$i18n.t('Attachments')}</label>
+		<div class="grid gap-2">
+			<div class="flex items-center justify-between">
+				<h3 class="text-sm font-medium">{$i18n.t('Attachments')}</h3>
 				{#if !readOnly}
 					<input
 						bind:this={attachmentInput}
 						type="file"
 						multiple
 						class="hidden"
-						on:change={handleAttachmentUpload}
+						onchange={handleAttachmentUpload}
 					/>
-					<button
-						class="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition flex items-center gap-1"
-						on:click={() => attachmentInput?.click()}
+					<Button
+						variant="ghost"
+						size="sm"
 						disabled={uploading}
+						onclick={() => attachmentInput?.click()}
 					>
 						{#if uploading}
-							{$i18n.t('Uploading...')}
+							<Spinner />{$i18n.t('Uploading...')}
 						{:else}
-							<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
-							{$i18n.t('Attach File')}
+							<Paperclip />{$i18n.t('Attach File')}
 						{/if}
-					</button>
+					</Button>
 				{/if}
 			</div>
 			{#if attachmentUrls.length > 0}
-				<div class="space-y-1">
+				<ul class="grid gap-1">
 					{#each attachmentUrls as url, i}
-						<div class="flex items-center gap-2 text-xs bg-gray-50 dark:bg-gray-850 rounded-lg px-3 py-1.5">
-							<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5 text-gray-400"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+						<li class="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+							<FileText class="size-4 shrink-0 text-muted-foreground" />
 							<button
 								type="button"
-								on:click={() => openAttachment(url)}
-								class="text-blue-600 dark:text-blue-400 hover:underline truncate flex-1 text-left bg-transparent border-0 p-0 cursor-pointer"
+								class="min-w-0 flex-1 truncate rounded-sm text-left text-link underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+								onclick={() => openAttachment(url)}
 							>
 								{url.split('/').pop()}
 							</button>
 							{#if !readOnly}
-								<button class="text-red-500 hover:text-red-700 transition" on:click={() => removeAttachment(i)} title={$i18n.t('Remove')}>
-									<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-								</button>
+								<Tip content={$i18n.t('Remove')}>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										aria-label={$i18n.t('Remove')}
+										onclick={() => removeAttachment(i)}
+									>
+										<X />
+									</Button>
+								</Tip>
 							{/if}
-						</div>
+						</li>
 					{/each}
-				</div>
+				</ul>
 			{:else}
-				<div class="text-[10px] text-gray-400 dark:text-gray-500 italic">{$i18n.t('No attachments')}</div>
+				<p class="text-sm text-muted-foreground">{$i18n.t('No attachments')}</p>
 			{/if}
 		</div>
 
-		<!-- Direct Match option (only when creating from Bank tab) -->
-		{#if bankStatementLineId && !transaction?.id}
-			<label class="flex items-center gap-2 pt-3 text-xs text-gray-600 dark:text-gray-400 cursor-pointer border-t border-gray-100 dark:border-gray-800">
-				<input type="checkbox" bind:checked={directMatch} class="rounded" />
-				{$i18n.t('Direct match — post entry and match to bank statement line')}
-			</label>
+		<!-- AI validation results -->
+		{#if validationResult}
+			<Alert.Root variant={validationResult.is_valid ? 'default' : 'destructive'}>
+				{#if validationResult.is_valid}
+					<CircleCheck class="text-success!" />
+				{:else}
+					<CircleAlert />
+				{/if}
+				<Alert.Title>
+					{validationResult.is_valid ? $i18n.t('Entry is valid') : $i18n.t('Issues found')}
+				</Alert.Title>
+				<Alert.Description>
+					<ul class="grid list-disc gap-0.5 pl-4">
+						{#each validationResult.issues as issue}
+							<li>{issue}</li>
+						{/each}
+						{#each validationResult.warnings as warning}
+							<li class="text-muted-foreground">{$i18n.t(warning)}</li>
+						{/each}
+						{#each validationResult.suggestions as suggestion}
+							<li class="text-muted-foreground">{suggestion}</li>
+						{/each}
+					</ul>
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
+
+		<!-- What the primary button will book -->
+		{#if !readOnly}
+			<div class="grid gap-1.5 rounded-md border bg-muted/40 px-3 py-2.5 text-sm">
+				<span class="text-[13px] font-medium">{$i18n.t('This will book:')}</span>
+				{#if isBalanced && lines.length >= 2 && allAccountsSet}
+					<p>
+						{transaction?.id ? $i18n.t('The draft entry, updated:') : $i18n.t('A draft entry:')}
+						{$i18n.t('{{n}} lines', { n: lines.length })} ·
+						<span class="tabular-nums">{entryCurrency} {fmt(totalDebit)}</span>
+						{$i18n.t('debit = credit')}
+						{#if isForeign && rateNumber > 0}
+							· <span class="tabular-nums">{baseCurrency} {fmt(totalDebit * rateNumber)}</span>
+							{$i18n.t('at')} <span class="tabular-nums">{formData.exchange_rate}</span>
+						{/if}
+					</p>
+					{#if directMatch && bankStatementLineId && !transaction?.id}
+						<p class="text-muted-foreground">
+							{$i18n.t('Then it is posted and matched to the bank statement line.')}
+						</p>
+					{/if}
+				{:else}
+					<p class="text-muted-foreground">{$i18n.t('Nothing yet. Before saving:')}</p>
+					<ul class="grid gap-1">
+						{#if !isBalanced}
+							<li class="flex items-center gap-1.5">
+								<CircleAlert class="size-4 shrink-0 text-destructive" />
+								<span class="tabular-nums">
+									{$i18n.t('Debits and credits differ by {{diff}}', {
+										diff: fmt(Math.abs(balanceDiff))
+									})}
+								</span>
+							</li>
+						{/if}
+						{#if !allAccountsSet}
+							<li class="flex items-center gap-1.5">
+								<CircleAlert class="size-4 shrink-0 text-destructive" />
+								{$i18n.t('{{n}} line(s) without an account', { n: missingAccountCount })}
+							</li>
+						{/if}
+						{#if lines.length < 2}
+							<li class="flex items-center gap-1.5">
+								<CircleAlert class="size-4 shrink-0 text-destructive" />
+								{$i18n.t('An entry needs at least two lines')}
+							</li>
+						{/if}
+					</ul>
+				{/if}
+			</div>
 		{/if}
 
 		<!-- Footer -->
-		<div class="flex items-center justify-end gap-2 pt-3" class:border-t={!bankStatementLineId || transaction?.id} class:border-gray-100={!bankStatementLineId} class:dark:border-gray-800={!bankStatementLineId}>
-			<button
-				class="text-sm px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white font-medium transition"
-				on:click={() => (show = false)}
-			>
-				{readOnly ? $i18n.t('Close') : $i18n.t('Cancel')}
-			</button>
-
-			{#if !readOnly}
-				{#if aiAvailable && transaction?.id}
-					<button
-						class="text-sm px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition disabled:opacity-50"
-						disabled={validating}
-						on:click={handleValidate}
-					>
-						{validating ? $i18n.t('Validating...') : $i18n.t('AI Validate')}
-					</button>
-				{/if}
-				<button
-					class="text-sm px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-850 text-gray-100 dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-					disabled={!canSubmit}
-					on:click={handleSubmit}
-				>
-					{#if saving}
-						{$i18n.t('Saving...')}
-					{:else if transaction?.id}
-						{$i18n.t('Update')}
-					{:else}
-						{$i18n.t('Create')}
-					{/if}
-				</button>
-			{/if}
-		</div>
-
-		<!-- AI Validation Results -->
-		{#if validationResult}
-			<div class="px-5 pb-4 -mt-2">
-				<div class="text-xs rounded-lg p-3 space-y-1.5 {validationResult.is_valid ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
-					<div class="font-medium {validationResult.is_valid ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}">
-						{validationResult.is_valid ? $i18n.t('Entry is valid') : $i18n.t('Issues found')}
+		<Dialog.Footer class="gap-3 sm:items-center sm:justify-between">
+			<div class="flex flex-wrap items-center gap-2">
+				{#if bankStatementLineId && !transaction?.id}
+					<div class="flex items-center gap-2">
+						<Checkbox id="je-direct-match" bind:checked={directMatch} />
+						<Label for="je-direct-match" class="text-[13px] font-normal text-muted-foreground">
+							{$i18n.t('Direct match — post entry and match to bank statement line')}
+						</Label>
 					</div>
-					{#each validationResult.issues as issue}
-						<div class="text-red-600 dark:text-red-400">- {issue}</div>
-					{/each}
-					{#each validationResult.warnings as warning}
-						<div class="text-yellow-600 dark:text-yellow-400">- {warning}</div>
-					{/each}
-					{#each validationResult.suggestions as suggestion}
-						<div class="text-blue-600 dark:text-blue-400">- {suggestion}</div>
-					{/each}
-				</div>
+				{/if}
+				{#if transaction?.id}
+					<Popover.Root bind:open={templateNameOpen}>
+						<Popover.Trigger>
+							{#snippet child({ props })}
+								<Button {...props} variant="ghost" size="sm" disabled={savingTemplate}>
+									<BookmarkPlus />{$i18n.t('Save as Template')}
+								</Button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content align="start" class="w-72">
+							<form
+								class="grid gap-3"
+								onsubmit={(e) => {
+									e.preventDefault();
+									saveAsTemplate();
+								}}
+							>
+								<div class="grid gap-2">
+									<Label for="je-template-name">{$i18n.t('Template name')}</Label>
+									<Input id="je-template-name" class="h-8" bind:value={templateName} />
+								</div>
+								<div class="flex justify-end gap-2">
+									<Button variant="outline" size="sm" onclick={() => (templateNameOpen = false)}>
+										{$i18n.t('Cancel')}
+									</Button>
+									<Button
+										type="submit"
+										variant="secondary"
+										size="sm"
+										disabled={!templateName.trim() || savingTemplate}
+									>
+										{#if savingTemplate}<Spinner />{/if}
+										{$i18n.t('Save Template')}
+									</Button>
+								</div>
+							</form>
+						</Popover.Content>
+					</Popover.Root>
+				{/if}
 			</div>
-		{/if}
-	</div>
-</Modal>
+
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				<Button variant="outline" onclick={() => (show = false)}>
+					{readOnly ? $i18n.t('Close') : $i18n.t('Cancel')}
+				</Button>
+				{#if !readOnly}
+					{#if aiAvailable && transaction?.id}
+						<Button variant="outline" disabled={validating} onclick={handleValidate}>
+							{#if validating}<Spinner />{:else}<Sparkles />{/if}
+							{validating ? $i18n.t('Validating...') : $i18n.t('AI Validate')}
+						</Button>
+					{/if}
+					<Button disabled={!canSubmit} onclick={handleSubmit}>
+						{#if saving}
+							<Spinner />{$i18n.t('Saving...')}
+						{:else if transaction?.id}
+							{$i18n.t('Update')}
+						{:else}
+							{$i18n.t('Create')}
+						{/if}
+					</Button>
+				{/if}
+			</div>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Opened from inside the dialog: created after it, so their portals stack above it -->
+<InvoiceSelector bind:show={showInvoiceSelector} on:select={handleInvoiceSelect} />
+<InvoiceSelector bind:show={showExtraInvoiceSelector} on:select={handleExtraInvoiceSelect} />
+<AccountFormModal
+	bind:show={showCreateAccount}
+	{accounts}
+	{companyId}
+	on:save={handleAccountCreated}
+/>
+<ConfirmDialog
+	bind:open={showDeleteTemplateConfirm}
+	title={$i18n.t('Delete this journal template?')}
+	description={journalTemplates.find((t) => t.id === selectedTemplateId)?.name ?? ''}
+	confirmLabel={$i18n.t('Delete')}
+	destructive
+	onconfirm={handleDeleteTemplate}
+/>

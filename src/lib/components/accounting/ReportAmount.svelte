@@ -1,10 +1,15 @@
 <script lang="ts">
 	// Renders a report money amount. When a display currency (≠ base) is selected it
 	// shows the converted amount on top with the original base-currency amount in
-	// small grey text underneath as reference — matching the tables/bank views.
+	// small muted text underneath as reference — matching the tables/bank views.
 	//
 	// `value` is the raw amount in `baseCcy`. `factor` is the base→display multiplier
 	// (null = no rate available: falls back to the base amount + a warning).
+	import { getContext } from 'svelte';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+
+	const i18n: any = getContext('i18n');
+
 	export let value: any;
 	export let factor: number | null = 1;
 	export let converting = false;
@@ -23,7 +28,10 @@
 	const f = (n: number): string => {
 		const x = abs ? Math.abs(n) : n;
 		if (x === 0 && zeroText !== null) return zeroText;
-		return x.toLocaleString(locale, { minimumFractionDigits: minFrac, maximumFractionDigits: maxFrac });
+		return x.toLocaleString(locale, {
+			minimumFractionDigits: minFrac,
+			maximumFractionDigits: maxFrac
+		});
 	};
 
 	$: base = toNum(value);
@@ -37,11 +45,26 @@
 {:else}
 	{#key displayCcy}
 		{#if hasRate}
-			<span>{topStr}{#if topStr} <span class="text-[9px] text-gray-400 dark:text-gray-500 font-normal">{displayCcy}</span>{/if}</span>
-			{#if origStr}<span class="block text-[9px] text-gray-400 dark:text-gray-500 font-normal">{origStr} {baseCcy}</span>{/if}
+			<span
+				>{topStr}{#if topStr}{' '}<span class="text-[10px] font-normal text-muted-foreground"
+						>{displayCcy}</span
+					>{/if}</span
+			>
+			{#if origStr}<span class="block text-[10px] font-normal text-muted-foreground"
+					>{origStr} {baseCcy}</span
+				>{/if}
 		{:else}
-			<span>{origStr}{#if origStr} <span class="text-[9px] text-gray-400 dark:text-gray-500 font-normal">{baseCcy}</span>{/if}</span>
-			<span class="text-[9px] text-amber-500" title="No exchange rate">&#9888;</span>
+			<span
+				>{origStr}{#if origStr}{' '}<span class="text-[10px] font-normal text-muted-foreground"
+						>{baseCcy}</span
+					>{/if}</span
+			>
+			<span title={$i18n.t('No exchange rate available')} class="inline-flex align-[-2px]"
+				><TriangleAlert
+					class="size-3 text-warning"
+					aria-label={$i18n.t('No exchange rate available')}
+				/></span
+			>
 		{/if}
 	{/key}
 {/if}

@@ -1,20 +1,22 @@
 <script lang="ts">
 	// Revenue vs Expenses (grouped bars) or Net Income (line) over N months.
-	// Backed by the /reports/monthly-series endpoint.
+	// Backed by the /reports/monthly-series endpoint. Revenue is always aqua (chart-3), expenses
+	// orange (chart-2), net blue (chart-1); the latest bar carries its value.
 	import { onMount, getContext } from 'svelte';
-	import type { Writable } from 'svelte/store';
+	import ChartColumn from '@lucide/svelte/icons/chart-column';
 	import { theme } from '$lib/stores';
 	import { getMonthlySeries, type MonthlySeriesPoint } from '$lib/apis/accounting';
 	import EChart from '../EChart.svelte';
-	import { chartTheme, tooltipStyle } from '../palette';
+	import WidgetState from '../WidgetState.svelte';
+	import { chartTheme, pageIsDark, tooltipStyle, legendStyle, tooltipHtml } from '../palette';
 	import { fmtCompact, fmtNumber } from '../format';
 
 	export let companyId: number;
 	export let options: { mode?: 'revenue_expenses' | 'net_income'; months?: number } = {};
 
 	const i18n: any = getContext('i18n');
-	$: isDark = $theme.includes('dark');
-	$: t = chartTheme(isDark);
+	const T = (k: string) => ($i18n?.t ? $i18n.t(k) : k);
+	$: t = chartTheme(pageIsDark($theme));
 
 	let points: MonthlySeriesPoint[] = [];
 	let currency = '';
@@ -40,27 +42,67 @@
 
 	$: labels = points.map((p) => p.period);
 	$: hasData = points.some((p) => p.revenue || p.expenses || p.net_income);
+	$: last = points.length - 1;
 
+	$: revenueName = T('Revenue');
+	$: expensesName = T('Expenses');
+	$: netName = T('Net Income');
 	$: option = buildOption(t, mode, points, labels, currency);
-	function buildOption(t: any, mode: string, pts: MonthlySeriesPoint[], labels: string[], cur: string) {
+	$: label =
+		mode === 'net_income'
+			? `${netName}, ${labels[0] ?? ''} – ${labels[last] ?? ''}`
+			: `${revenueName} / ${expensesName}, ${labels[0] ?? ''} – ${labels[last] ?? ''}`;
+
+	// The latest bar / point carries its value (design system: a value on the latest bar).
+	const lastLabel = (t: any) => ({
+		show: true,
+		position: 'top',
+		distance: 4,
+		color: t.primary,
+		fontSize: 11,
+		fontWeight: 500,
+		formatter: (p: any) => (p.value ? fmtCompact(p.value) : '')
+	});
+
+	function buildOption(
+		t: any,
+		mode: string,
+		pts: MonthlySeriesPoint[],
+		labels: string[],
+		cur: string
+	) {
+		const money = (v: number) => `${fmtNumber(v)} ${cur}`.trim();
 		const base = {
-			grid: { left: 6, right: 12, top: 28, bottom: 4, containLabel: true },
+			grid: {
+				left: 6,
+				right: 8,
+				top: mode === 'net_income' ? 20 : 40,
+				bottom: 0,
+				containLabel: true
+			},
 			tooltip: {
 				trigger: 'axis',
+				axisPointer: { type: 'shadow', shadowStyle: { color: t.band, opacity: 0.8 } },
 				...tooltipStyle(t),
-				valueFormatter: (v: number) => `${fmtNumber(v)} ${cur}`
+				formatter: (params: any[]) =>
+					tooltipHtml(
+						t,
+						params[0]?.axisValueLabel ?? '',
+						params.map((p) => ({ color: p.color, name: p.seriesName, value: money(p.value) }))
+					)
 			},
 			xAxis: {
 				type: 'category',
 				data: labels,
-				axisLine: { lineStyle: { color: t.axis } },
+				axisLine: { show: false },
 				axisTick: { show: false },
-				axisLabel: { color: t.muted, fontSize: 10 }
+				axisLabel: { color: t.muted, fontSize: 11 }
 			},
 			yAxis: {
 				type: 'value',
+				splitNumber: 3,
 				splitLine: { lineStyle: { color: t.grid } },
-				axisLabel: { color: t.muted, fontSize: 10, formatter: (v: number) => fmtCompact(v) }
+				axisLabel: { color: t.muted, fontSize: 11, formatter: (v: number) => fmtCompact(v) }
 			}
 		};
 		if (mode === 'net_income') {
@@ -68,54 +110,54 @@
 				...base,
 				series: [
 					{
-						name: 'Net Income',
+						name: netName,
 						type: 'line',
 						smooth: true,
-						symbolSize: 7,
-						data: pts.map((p) => +p.net_income.toFixed(2)),
+						symbolSize: 8,
+						data: pts.map((p, i) => ({
+							value: +p.net_income.toFixed(2),
+							...(i === pts.length - 1 ? { label: lastLabel(t) } : {})
+						})),
 						lineStyle: { color: t.net, width: 2 },
-						itemStyle: { color: t.net },
+						itemStyle: { color: t.net, borderColor: t.surface, borderWidth: 2 },
 						areaStyle: { color: t.net, opacity: t.isDark ? 0.12 : 0.08 }
 					}
 				]
 			};
 		}
+		const bar = (name: string, color: string, key: 'revenue' | 'expenses') => ({
+			name,
+			type: 'bar',
+			barMaxWidth: 24,
+			barGap: '10%',
+			itemStyle: { color },
+			data: pts.map((p, i) => {
+				const value = +p[key].toFixed(2);
+				// 4px rounding on the data end, which is the bottom for a negative bar
+				const negative = value < 0;
+				return {
+					value,
+					itemStyle: { borderRadius: negative ? [0, 0, 4, 4] : [4, 4, 0, 0] },
+					...(i === pts.length - 1
+						? { label: { ...lastLabel(t), position: negative ? 'bottom' : 'top' } }
+						: {})
+				};
+			})
+		});
 		return {
 			...base,
-			legend: {
-				data: ['Revenue', 'Expenses'],
-				top: 0,
-				right: 0,
-				textStyle: { color: t.secondary, fontSize: 11 },
-				itemWidth: 10,
-				itemHeight: 10
-			},
-			series: [
-				{
-					name: 'Revenue',
-					type: 'bar',
-					data: pts.map((p) => +p.revenue.toFixed(2)),
-					itemStyle: { color: t.revenue, borderRadius: [3, 3, 0, 0] },
-					barMaxWidth: 22
-				},
-				{
-					name: 'Expenses',
-					type: 'bar',
-					data: pts.map((p) => +p.expenses.toFixed(2)),
-					itemStyle: { color: t.expenses, borderRadius: [3, 3, 0, 0] },
-					barMaxWidth: 22
-				}
-			]
+			legend: { ...legendStyle(t), data: [revenueName, expensesName], top: 0, left: 0 },
+			series: [bar(revenueName, t.revenue, 'revenue'), bar(expensesName, t.expenses, 'expenses')]
 		};
 	}
 </script>
 
 {#if loading}
-	<div class="h-full flex items-center justify-center text-xs text-gray-400">{i18n?.t ? i18n.t('Loading…') : 'Loading…'}</div>
+	<WidgetState state="loading" />
 {:else if error}
-	<div class="h-full flex items-center justify-center text-xs text-gray-400">{i18n?.t ? i18n.t('No data') : 'No data'}</div>
+	<WidgetState state="error" onretry={load} />
 {:else if !hasData}
-	<div class="h-full flex items-center justify-center text-xs text-gray-400">{i18n?.t ? i18n.t('No data') : 'No data'}</div>
+	<WidgetState state="empty" icon={ChartColumn} message={T('No data')} />
 {:else}
-	<EChart {option} />
+	<EChart {option} {label} />
 {/if}

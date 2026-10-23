@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import GeneralLedger from './GeneralLedger.svelte';
 	import TrialBalance from './TrialBalance.svelte';
 	import ProfitLoss from './ProfitLoss.svelte';
@@ -10,7 +11,7 @@
 	import StatutoryStatements from './StatutoryStatements.svelte';
 	import { getStatementLayout, type StatementLayout } from '$lib/apis/accounting';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	export let companyId: number;
 
@@ -56,38 +57,53 @@
 		: baseTabs;
 </script>
 
-<div class="py-3 space-y-4">
-	<!-- Sub-tab bar -->
-	<div class="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
-		{#each tabs as tab}
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-md transition
-					{activeReport === tab.id
-					? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-					: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-				on:click={() => (activeReport = tab.id)}
+<!-- Report picker: segmented tabs (views of the same books); only the active report mounts. -->
+<Tabs.Root
+	value={activeReport}
+	onValueChange={(v) => (activeReport = v as ReportTab)}
+	class="min-w-0 gap-4"
+>
+	<Tabs.List
+		aria-label={$i18n.t('Reports')}
+		class="max-w-full justify-start overflow-x-auto [scrollbar-width:none]"
+	>
+		{#each tabs as tab (tab.id)}
+			<Tabs.Trigger value={tab.id} class="flex-[1_0_auto] px-2.5">{$i18n.t(tab.label)}</Tabs.Trigger
 			>
-				{$i18n.t(tab.label)}
-			</button>
 		{/each}
-	</div>
+	</Tabs.List>
 
-	<!-- Report content -->
-	{#if activeReport === 'statements'}
-		<StatutoryStatements {companyId} layoutLabel={statementLayout?.label ?? null} layoutKey={statementLayout?.layout ?? null} presentation={statementLayout?.presentation ?? null} />
-	{:else if activeReport === 'general-ledger'}
-		<GeneralLedger {companyId} />
-	{:else if activeReport === 'trial-balance'}
-		<TrialBalance {companyId} />
-	{:else if activeReport === 'profit-loss'}
-		<ProfitLoss {companyId} />
-	{:else if activeReport === 'balance-sheet'}
-		<BalanceSheet {companyId} />
-	{:else if activeReport === 'cash-flow'}
-		<CashFlow {companyId} />
-	{:else if activeReport === 'ap-aging'}
-		<AgingReport {companyId} reportType="ap" />
-	{:else if activeReport === 'ar-aging'}
-		<AgingReport {companyId} reportType="ar" />
+	{#if hasStatements}
+		<Tabs.Content value="statements" class="min-w-0">
+			{#if activeReport === 'statements'}
+				<StatutoryStatements
+					{companyId}
+					layoutLabel={statementLayout?.label_en ? $i18n.t(statementLayout.label_en) : null}
+					layoutKey={statementLayout?.layout ?? null}
+					presentation={statementLayout?.presentation ?? null}
+				/>
+			{/if}
+		</Tabs.Content>
 	{/if}
-</div>
+	<Tabs.Content value="general-ledger" class="min-w-0">
+		{#if activeReport === 'general-ledger'}<GeneralLedger {companyId} />{/if}
+	</Tabs.Content>
+	<Tabs.Content value="trial-balance" class="min-w-0">
+		{#if activeReport === 'trial-balance'}<TrialBalance {companyId} />{/if}
+	</Tabs.Content>
+	<Tabs.Content value="profit-loss" class="min-w-0">
+		{#if activeReport === 'profit-loss'}<ProfitLoss {companyId} />{/if}
+	</Tabs.Content>
+	<Tabs.Content value="balance-sheet" class="min-w-0">
+		{#if activeReport === 'balance-sheet'}<BalanceSheet {companyId} />{/if}
+	</Tabs.Content>
+	<Tabs.Content value="cash-flow" class="min-w-0">
+		{#if activeReport === 'cash-flow'}<CashFlow {companyId} />{/if}
+	</Tabs.Content>
+	<Tabs.Content value="ap-aging" class="min-w-0">
+		{#if activeReport === 'ap-aging'}<AgingReport {companyId} reportType="ap" />{/if}
+	</Tabs.Content>
+	<Tabs.Content value="ar-aging" class="min-w-0">
+		{#if activeReport === 'ar-aging'}<AgingReport {companyId} reportType="ar" />{/if}
+	</Tabs.Content>
+</Tabs.Root>

@@ -111,6 +111,7 @@
 	import Code from '../icons/Code.svelte';
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
+	import Gnos3Wordmark from '../common/Gnos3Wordmark.svelte';
 
 	const BREAKPOINT = 768;
 	const DEFAULT_PINNED_ITEMS = ['notes', 'workspace'];
@@ -840,11 +841,18 @@
 						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
 					>
 						<div class=" self-center flex items-center justify-center size-9">
-							<img
-								src="{WEBUI_BASE_URL}/static/favicon.png"
-								class="sidebar-new-chat-icon size-6 rounded-full group-hover:hidden"
-								alt=""
-							/>
+							<div class="group-hover:hidden">
+								<img
+									src="{WEBUI_BASE_URL}/static/favicon.png"
+									class="sidebar-new-chat-icon size-6 dark:hidden"
+									alt=""
+								/>
+								<img
+									src="{WEBUI_BASE_URL}/static/favicon-dark.png"
+									class="sidebar-new-chat-icon size-6 hidden dark:block"
+									alt=""
+								/>
+							</div>
 
 							<Sidebar className="size-5 hidden group-hover:flex" />
 						</div>
@@ -1026,7 +1034,7 @@
 		bind:this={navElement}
 		id="sidebar"
 		class="h-screen max-h-[100dvh] min-h-screen select-none {$showSidebar
-			? `${$mobile ? 'bg-gray-50 dark:bg-gray-950' : 'bg-gray-50/70 dark:bg-gray-950/70'} z-50`
+			? `${$mobile ? 'bg-gray-50 dark:bg-sidebar' : 'bg-gray-50/70 dark:bg-sidebar'} z-50`
 			: ' bg-transparent z-0 '} {$isApp
 			? `ml-[4.5rem] md:ml-0 `
 			: ' transition-all duration-300 '} shrink-0 text-gray-900 dark:text-gray-200 text-sm fixed top-0 left-0 overflow-x-hidden
@@ -1051,7 +1059,13 @@
 					<img
 						crossorigin="anonymous"
 						src="{WEBUI_BASE_URL}/static/favicon.png"
-						class="sidebar-new-chat-icon size-6 rounded-full"
+						class="sidebar-new-chat-icon size-6 dark:hidden"
+						alt=""
+					/>
+					<img
+						crossorigin="anonymous"
+						src="{WEBUI_BASE_URL}/static/favicon-dark.png"
+						class="sidebar-new-chat-icon size-6 hidden dark:block"
 						alt=""
 					/>
 				</a>
@@ -1061,7 +1075,11 @@
 						id="sidebar-webui-name"
 						class=" self-center font-medium text-gray-850 dark:text-white font-primary"
 					>
-						{$WEBUI_NAME}
+						{#if $WEBUI_NAME === 'Gnos3'}
+							<Gnos3Wordmark className="h-[1.05rem] mt-[3px]" />
+						{:else}
+							{$WEBUI_NAME}
+						{/if}
 					</div>
 				</a>
 				<Tooltip

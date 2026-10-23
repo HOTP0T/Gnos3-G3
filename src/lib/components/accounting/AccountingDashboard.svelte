@@ -16,18 +16,38 @@
 	import { theme } from '$lib/stores';
 	import { convertAmount, convertRowAmount } from '$lib/utils/currency';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
-	import Badge from '$lib/components/common/Badge.svelte';
-	import AuditTrail from '$lib/components/accounting/AuditTrail.svelte';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import Circle from '@lucide/svelte/icons/circle';
+	import Lock from '@lucide/svelte/icons/lock';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Wallet from '@lucide/svelte/icons/wallet';
+	import ChartColumn from '@lucide/svelte/icons/chart-column';
 
-	const i18n = getContext('i18n');
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import KpiCard from '$lib/components/gnos3-ui/KpiCard.svelte';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import AuditTrail from '$lib/components/accounting/AuditTrail.svelte';
+	import { chartTheme, pageIsDark } from '$lib/components/accounting/dashboard/palette';
+
+	// NB: not mounted anywhere since the configurable dashboard (dashboard/ConfigurableDashboard)
+	// replaced it; kept in step with the design system in case it is used again.
+
+	const i18n: any = getContext('i18n');
 	const displayCurrency = getContext<Writable<string>>('displayCurrency');
 	const exchangeRates = getContext<Writable<any[]>>('exchangeRates');
 	const companyCurrencyCtx = getContext<Writable<string>>('companyCurrency');
 
 	export let companyId: number;
 
-	$: isDark = $theme.includes('dark');
+	$: isDark = pageIsDark($theme);
+	$: ct = chartTheme(isDark);
 
 	let loading = true;
 
@@ -97,7 +117,7 @@
 			// Recent transactions
 			const txList = Array.isArray(transactions)
 				? transactions
-				: transactions?.transactions ?? transactions?.items ?? [];
+				: (transactions?.transactions ?? transactions?.items ?? []);
 			recentTransactions = txList.slice(0, 10);
 
 			// Build monthly revenue vs expenses data from the last 6 months
@@ -111,7 +131,11 @@
 			// Fetch P&L for last 6 months
 			const sixMonthsAgo = dayjs().subtract(5, 'month').startOf('month').format('YYYY-MM-DD');
 			try {
-				const fullPL = await getProfitLoss({ date_from: sixMonthsAgo, date_to: monthEnd, company_id: companyId });
+				const fullPL = await getProfitLoss({
+					date_from: sixMonthsAgo,
+					date_to: monthEnd,
+					company_id: companyId
+				});
 				if (fullPL?.revenue) {
 					for (const item of fullPL.revenue) {
 						const key = item.period ?? item.month;
@@ -148,9 +172,8 @@
 			}));
 
 			// Periods
-			const periodList = Array.isArray(periods) ? periods : periods?.items ?? [];
-			currentPeriod =
-				periodList.find((p: any) => !p.is_closed) ?? periodList[0] ?? null;
+			const periodList = Array.isArray(periods) ? periods : (periods?.items ?? []);
+			currentPeriod = periodList.find((p: any) => !p.is_closed) ?? periodList[0] ?? null;
 		} catch (err) {
 			toast.error(`${err}`);
 		}
@@ -167,23 +190,26 @@
 		if (revenueExpenseCanvas && monthlyRevenueExpenses.length) {
 			if (revenueExpenseChart) revenueExpenseChart.destroy();
 
+			const t = ct;
+			const fmt = (v: number) =>
+				`${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${nativeCurrency}`;
 			revenueExpenseChart = new Chart(revenueExpenseCanvas, {
 				type: 'bar',
 				data: {
 					labels: monthlyRevenueExpenses.map((d) => d.period),
 					datasets: [
 						{
-							label: 'Revenue',
+							label: $i18n.t('Revenue'),
 							data: monthlyRevenueExpenses.map((d) => d.revenue),
-							backgroundColor: '#6bc87a',
+							backgroundColor: t.revenue,
 							borderRadius: 4,
 							barPercentage: 0.7,
 							categoryPercentage: 0.8
 						},
 						{
-							label: 'Expenses',
+							label: $i18n.t('Expenses'),
 							data: monthlyRevenueExpenses.map((d) => d.expenses),
-							backgroundColor: '#d97c5a',
+							backgroundColor: t.expenses,
 							borderRadius: 4,
 							barPercentage: 0.7,
 							categoryPercentage: 0.8
@@ -197,38 +223,40 @@
 						legend: {
 							display: true,
 							position: 'top',
+							align: 'start',
 							labels: {
-								color: isDark ? '#d1d5db' : '#374151',
-								font: { size: 11 },
-								boxWidth: 12,
-								padding: 8
+								color: t.secondary,
+								font: { size: 12 },
+								boxWidth: 10,
+								boxHeight: 10,
+								padding: 12
 							}
 						},
 						tooltip: {
-							backgroundColor: 'rgba(17, 24, 39, 0.9)',
-							titleColor: '#f3f4f6',
-							bodyColor: '#d1d5db',
-							borderColor: 'rgba(75, 85, 99, 0.3)',
+							backgroundColor: t.background,
+							titleColor: t.primary,
+							bodyColor: t.secondary,
+							borderColor: t.grid,
 							borderWidth: 1,
 							padding: 8,
 							callbacks: {
-								label: (ctx: any) => `${ctx.dataset.label}: $${ctx.raw.toLocaleString()}`
+								label: (ctx: any) => `${ctx.dataset.label}: ${fmt(ctx.raw)}`
 							}
 						}
 					},
 					scales: {
 						x: {
 							grid: { display: false },
-							ticks: { color: '#6b7280', font: { size: 10 } },
+							ticks: { color: t.muted, font: { size: 11 } },
 							border: { display: false }
 						},
 						y: {
-							grid: { color: 'rgba(107, 114, 128, 0.1)', drawTicks: false },
+							grid: { color: t.grid, drawTicks: false },
 							ticks: {
-								color: '#6b7280',
-								font: { size: 10 },
+								color: t.muted,
+								font: { size: 11 },
 								padding: 8,
-								callback: (value: number) => `$${value.toLocaleString()}`
+								callback: (value: number) => value.toLocaleString()
 							},
 							border: { display: false }
 						}
@@ -266,390 +294,333 @@
 		if (currency) nativeCurrency = currency;
 	};
 
-	function cvt(amount: any, date?: string): { display: string; original: string; hasRate: boolean } {
+	function cvt(
+		amount: any,
+		date?: string
+	): { display: string; original: string; hasRate: boolean } {
 		const num = typeof amount === 'string' ? parseFloat(amount) : (amount ?? 0);
 		if (!num || !$displayCurrency || $displayCurrency === nativeCurrency) {
 			return { display: '', original: '', hasRate: true };
 		}
-		const result = convertAmount(num, nativeCurrency, $displayCurrency, ($exchangeRates ?? []), date);
+		const result = convertAmount(num, nativeCurrency, $displayCurrency, $exchangeRates ?? [], date);
 		return {
-			display: result.hasRate ? result.converted.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '',
-			original: num.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-			hasRate: result.hasRate,
+			display: result.hasRate
+				? result.converted.toLocaleString(undefined, {
+						minimumFractionDigits: 2,
+						maximumFractionDigits: 2
+					})
+				: '',
+			original: num.toLocaleString(undefined, {
+				minimumFractionDigits: 2,
+				maximumFractionDigits: 2
+			}),
+			hasRate: result.hasRate
 		};
 	}
 
 	$: isConverting = $displayCurrency && $displayCurrency !== nativeCurrency;
+
+	// A KPI figure as text: converted to the display currency when one is chosen and a rate exists.
+	const kpiValue = (value: number, _display?: string): string => {
+		if (isConverting) {
+			const c = cvt(value);
+			if (c.hasRate) return `${c.display} ${$displayCurrency}`;
+		}
+		return formatCurrency(value);
+	};
+	const kpiOriginal = (value: number, _display?: string): string => {
+		if (!isConverting) return '';
+		const c = cvt(value);
+		return c.hasRate ? `${c.original} ${nativeCurrency}` : '';
+	};
 
 	const formatCurrency = (value: number | string): string => {
 		const num = typeof value === 'string' ? parseFloat(value) : value;
 		const cur = nativeCurrency || 'EUR';
 		return `${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
 	};
-
-	const getStatusBadgeType = (status: string): string => {
-		switch (status) {
-			case 'posted':
-				return 'success';
-			case 'voided':
-				return 'error';
-			case 'draft':
-			default:
-				return 'muted';
-		}
-	};
-
-	const getTypeBadgeColor = (type: string): string => {
-		switch (type) {
-			case 'invoice':
-				return 'bg-blue-500/20 text-blue-700 dark:text-blue-200';
-			case 'payment':
-				return 'bg-purple-500/20 text-purple-700 dark:text-purple-200';
-			case 'bill':
-				return 'bg-orange-500/20 text-orange-700 dark:text-orange-200';
-			case 'journal':
-			default:
-				return 'bg-gray-500/20 text-gray-700 dark:text-gray-200';
-		}
-	};
 </script>
 
 {#if loading}
-	<div class="flex justify-center my-10">
-		<Spinner className="size-5" />
+	<div class="flex flex-col gap-4" aria-busy="true">
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			{#each Array(4) as _}<Skeleton class="h-[118px] rounded-xl" />{/each}
+		</div>
+		<Skeleton class="h-64 rounded-xl" />
 	</div>
 {:else}
-	<div class="py-3 space-y-4">
+	<div class="flex flex-col gap-4">
 		<!-- AI Status Indicator -->
 		{#if aiStatus?.enabled}
-			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-				<span
-					class="inline-block w-2 h-2 rounded-full {aiStatus.available
-						? 'bg-green-500'
-						: 'bg-gray-400'}"
-				></span>
+			<div class="flex items-center gap-2 text-sm text-muted-foreground">
+				{#if aiStatus.available}
+					<CircleCheck class="size-4 text-success" aria-hidden="true" />
+				{:else}
+					<Circle class="size-4" aria-hidden="true" />
+				{/if}
 				<span>
-					{$i18n.t('Accounting AI')} {aiStatus.available ? $i18n.t('Online') : $i18n.t('Offline')}
-					{#if aiStatus.model && aiStatus.available}
-						<span class="text-gray-400 dark:text-gray-500">({aiStatus.model})</span>
-					{/if}
+					{$i18n.t('Accounting AI')}
+					{aiStatus.available ? $i18n.t('Online') : $i18n.t('Offline')}
+					{#if aiStatus.model && aiStatus.available}({aiStatus.model}){/if}
 				</span>
 			</div>
 		{/if}
 
-		<!-- Stat Cards -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
+		<!-- KPIs: plain figures; what needs attention carries a badge with a word -->
+		<div class="grid grid-cols-[repeat(auto-fit,minmax(min(12.5rem,100%),1fr))] gap-4">
+			{#each [{ label: 'Total Assets', v: totalAssets }, { label: 'Total Liabilities', v: totalLiabilities }, { label: 'Net Income (Current Month)', v: netIncome }] as k}
+				<KpiCard label={$i18n.t(k.label)} value={kpiValue(k.v, $displayCurrency)}>
+					{#snippet footer()}
+						{#if kpiOriginal(k.v, $displayCurrency)}<span class="tabular-nums"
+								>{kpiOriginal(k.v, $displayCurrency)}</span
+							>{/if}
+					{/snippet}
+				</KpiCard>
+			{/each}
+			<KpiCard
+				label={$i18n.t('Draft Entries')}
+				value={draftCount}
+				href="/accounting/company/{companyId}/entries"
 			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Total Assets')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200">
-					{#key $displayCurrency}
-					{#if isConverting}
-						{@const c = cvt(totalAssets)}
-						{#if c.hasRate}
-							<span>{c.display} <span class="text-sm text-gray-400">{$displayCurrency}</span></span>
-							<div class="text-[10px] text-gray-400">{c.original} {nativeCurrency}</div>
-						{:else}
-							{formatCurrency(totalAssets)}
-						{/if}
+				{#snippet action()}
+					{#if draftCount > 0}<Badge variant="warning">{$i18n.t('Pending', { context: 'gnos3' })}</Badge>{/if}
+				{/snippet}
+			</KpiCard>
+			<KpiCard label={$i18n.t('Cash Position')} value={formatCurrency(cashPosition)} />
+			<KpiCard label={$i18n.t('Accounts Receivable')} value={formatCurrency(outstandingAR)} />
+			<KpiCard label={$i18n.t('Accounts Payable')} value={formatCurrency(outstandingAP)} />
+			<KpiCard
+				label={$i18n.t('Overdue Invoices')}
+				value={overdueInvoices}
+				href="/accounting/company/{companyId}/invoices"
+			>
+				{#snippet footer()}
+					{#if overdueInvoices > 0}<span class="tabular-nums">{formatCurrency(overdueAmount)}</span
+						>{/if}
+				{/snippet}
+			</KpiCard>
+		</div>
+
+		<div class="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+			<!-- Revenue vs Expenses (revenue aqua, expenses orange) -->
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{$i18n.t('Monthly Revenue vs Expenses')}</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					{#if monthlyRevenueExpenses.length === 0}
+						<Empty.Root class="p-6">
+							<Empty.Header>
+								<Empty.Media variant="icon"><ChartColumn /></Empty.Media>
+								<Empty.Title>{$i18n.t('No data')}</Empty.Title>
+							</Empty.Header>
+						</Empty.Root>
 					{:else}
-						{formatCurrency(totalAssets)}
+						<div class="h-56">
+							<canvas
+								bind:this={revenueExpenseCanvas}
+								role="img"
+								aria-label={$i18n.t('Monthly Revenue vs Expenses')}
+							></canvas>
+						</div>
 					{/if}
-					{/key}
-				</div>
-			</div>
+				</Card.Content>
+			</Card.Root>
 
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Total Liabilities')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200">
-					{#key $displayCurrency}
-					{#if isConverting}
-						{@const c = cvt(totalLiabilities)}
-						{#if c.hasRate}
-							<span>{c.display} <span class="text-sm text-gray-400">{$displayCurrency}</span></span>
-							<div class="text-[10px] text-gray-400">{c.original} {nativeCurrency}</div>
-						{:else}
-							{formatCurrency(totalLiabilities)}
-						{/if}
-					{:else}
-						{formatCurrency(totalLiabilities)}
-					{/if}
-					{/key}
-				</div>
-			</div>
-
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border {netIncome >= 0
-					? 'border-green-200/50 dark:border-green-800/30'
-					: 'border-red-200/50 dark:border-red-800/30'}"
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Net Income (Current Month)')}
-				</div>
-				<div
-					class="text-2xl font-medium {netIncome >= 0
-						? 'text-green-700 dark:text-green-400'
-						: 'text-red-700 dark:text-red-400'}"
-				>
-					{#key $displayCurrency}
-					{#if isConverting}
-						{@const c = cvt(netIncome)}
-						{#if c.hasRate}
-							<span>{c.display} <span class="text-sm text-gray-400">{$displayCurrency}</span></span>
-							<div class="text-[10px] text-gray-400">{c.original} {nativeCurrency}</div>
-						{:else}
-							{formatCurrency(netIncome)}
-						{/if}
-					{:else}
-						{formatCurrency(netIncome)}
-					{/if}
-					{/key}
-				</div>
-			</div>
-
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border {draftCount > 0
-					? 'border-yellow-200 dark:border-yellow-800/50'
-					: 'border-gray-100/30 dark:border-gray-850/30'}"
-			>
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-					{$i18n.t('Draft Entries')}
-				</div>
-				<div class="text-2xl font-medium dark:text-gray-200 flex items-center gap-2">
-					{draftCount}
-					{#if draftCount > 0}
-						<Badge type="warning" content={$i18n.t('Pending')} />
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<!-- KPI Cards Row 2 -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Cash Position')}</div>
-				<div class="text-2xl font-medium {cashPosition >= 0 ? 'text-blue-700 dark:text-blue-400' : 'text-red-700 dark:text-red-400'}">
-					{formatCurrency(cashPosition)}
-				</div>
-			</div>
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Accounts Receivable')}</div>
-				<div class="text-2xl font-medium dark:text-gray-200">{formatCurrency(outstandingAR)}</div>
-			</div>
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Accounts Payable')}</div>
-				<div class="text-2xl font-medium dark:text-gray-200">{formatCurrency(outstandingAP)}</div>
-			</div>
-			<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border {overdueInvoices > 0 ? 'border-red-200 dark:border-red-800/50' : 'border-gray-100/30 dark:border-gray-850/30'}">
-				<div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Overdue Invoices')}</div>
-				<div class="text-2xl font-medium {overdueInvoices > 0 ? 'text-red-700 dark:text-red-400' : 'dark:text-gray-200'}">
-					{overdueInvoices}
-					{#if overdueInvoices > 0}
-						<span class="text-sm font-normal text-red-500 dark:text-red-400">{formatCurrency(overdueAmount)}</span>
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<!-- Alerts -->
-		{#if draftCount > 0 || unmatchedBankLines > 0 || overdueInvoices > 0}
-			<div class="space-y-1.5">
-				{#if draftCount > 0}
-					<button
-						class="w-full flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-lg text-sm text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition text-left"
-						on:click={() => goto(`/accounting/company/${companyId}/entries`)}
-					>
-						<span class="text-amber-500">&#9888;</span>
-						<span class="font-medium">{draftCount}</span> {$i18n.t('draft entries awaiting review')}
-						<span class="ml-auto text-xs text-amber-500">{$i18n.t('View')} &rarr;</span>
-					</button>
+			<div class="flex flex-col gap-4">
+				<!-- Alerts -->
+				{#if draftCount > 0 || unmatchedBankLines > 0 || overdueInvoices > 0}
+					<Card.Root size="sm">
+						<Card.Header><Card.Title>{$i18n.t('Alerts')}</Card.Title></Card.Header>
+						<Card.Content>
+							<ul class="divide-y">
+								{#if draftCount > 0}
+									<li class="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+										<TriangleAlert class="size-4 shrink-0 text-warning" aria-hidden="true" />
+										<span class="min-w-0 flex-1 font-medium"
+											>{draftCount} {$i18n.t('draft entries awaiting review')}</span
+										>
+										<Button
+											variant="outline"
+											size="xs"
+											href="/accounting/company/{companyId}/entries">{$i18n.t('View')}</Button
+										>
+									</li>
+								{/if}
+								{#if unmatchedBankLines > 0}
+									<li class="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+										<TriangleAlert class="size-4 shrink-0 text-warning" aria-hidden="true" />
+										<span class="min-w-0 flex-1 font-medium"
+											>{unmatchedBankLines} {$i18n.t('unmatched bank lines')}</span
+										>
+										<Button variant="outline" size="xs" href="/accounting/company/{companyId}/bank"
+											>{$i18n.t('Reconcile')}</Button
+										>
+									</li>
+								{/if}
+								{#if overdueInvoices > 0}
+									<li class="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+										<CircleAlert class="size-4 shrink-0 text-destructive" aria-hidden="true" />
+										<span class="min-w-0 flex-1 font-medium"
+											>{overdueInvoices} {$i18n.t('overdue invoices')}</span
+										>
+										<Button
+											variant="outline"
+											size="xs"
+											href="/accounting/company/{companyId}/invoices">{$i18n.t('View')}</Button
+										>
+									</li>
+								{/if}
+							</ul>
+						</Card.Content>
+					</Card.Root>
 				{/if}
-				{#if unmatchedBankLines > 0}
-					<button
-						class="w-full flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-lg text-sm text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition text-left"
-						on:click={() => goto(`/accounting/company/${companyId}/bank`)}
+
+				<!-- Quick Actions -->
+				<Card.Root size="sm">
+					<Card.Header><Card.Title>{$i18n.t('Quick Actions')}</Card.Title></Card.Header>
+					<Card.Content
+						class="grid grid-cols-[repeat(auto-fill,minmax(min(10rem,100%),1fr))] gap-2"
 					>
-						<span class="text-blue-500">&#9679;</span>
-						<span class="font-medium">{unmatchedBankLines}</span> {$i18n.t('unmatched bank lines')}
-						<span class="ml-auto text-xs text-blue-500">{$i18n.t('Reconcile')} &rarr;</span>
-					</button>
-				{/if}
-				{#if overdueInvoices > 0}
-					<button
-						class="w-full flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg text-sm text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30 transition text-left"
-						on:click={() => goto(`/accounting/company/${companyId}/invoices`)}
-					>
-						<span class="text-red-500">&#9888;</span>
-						<span class="font-medium">{overdueInvoices}</span> {$i18n.t('overdue invoices')}
-						<span class="ml-auto text-xs text-red-500">{$i18n.t('View')} &rarr;</span>
-					</button>
-				{/if}
-			</div>
-		{/if}
-
-		<!-- Quick Actions -->
-		<div class="flex gap-2">
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition"
-				on:click={() => goto(`/accounting/company/${companyId}/entries`)}
-			>
-				{$i18n.t('New Journal Entry')}
-			</button>
-			<button
-				class="px-4 py-2 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 transition"
-				on:click={() => goto(`/accounting/company/${companyId}/payments`)}
-			>
-				{$i18n.t('Record Payment')}
-			</button>
-		</div>
-
-		<!-- Revenue vs Expenses Chart -->
-		<div class="grid grid-cols-1 gap-3">
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="text-sm font-medium dark:text-gray-200 mb-3">
-					{$i18n.t('Monthly Revenue vs Expenses')}
-				</div>
-				{#if monthlyRevenueExpenses.length === 0}
-					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
-						{$i18n.t('No data')}
-					</div>
-				{:else}
-					<div class="h-48">
-						<canvas bind:this={revenueExpenseCanvas}></canvas>
-					</div>
-				{/if}
-			</div>
-		</div>
-
-		<!-- Accounting Period Summary -->
-		{#if currentPeriod}
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="text-sm font-medium dark:text-gray-200 mb-2">
-					{$i18n.t('Current Accounting Period')}
-				</div>
-				<div class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
-					<span class="font-medium dark:text-gray-200">
-						{currentPeriod.name ?? currentPeriod.label ?? `${currentPeriod.start_date} - ${currentPeriod.end_date}`}
-					</span>
-					<Badge
-						type={!currentPeriod.is_closed ? 'success' : 'muted'}
-						content={$i18n.t(!currentPeriod.is_closed ? 'Open' : 'Closed')}
-					/>
-					{#if currentPeriod.start_date && currentPeriod.end_date}
-						<span class="text-xs text-gray-400 dark:text-gray-500">
-							{dayjs(currentPeriod.start_date).format('YYYY-MM-DD')} &mdash; {dayjs(
-								currentPeriod.end_date
-							).format('YYYY-MM-DD')}
-						</span>
-					{/if}
-				</div>
-			</div>
-		{/if}
-
-		<!-- Recent Transactions -->
-		{#if recentTransactions.length > 0}
-			<div
-				class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-			>
-				<div class="flex justify-between items-center mb-3">
-					<div class="text-sm font-medium dark:text-gray-200">
-						{$i18n.t('Recent Transactions')}
-					</div>
-					<a
-						href="/accounting/company/{companyId}/entries"
-						class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-					>
-						{$i18n.t('View All')} &rarr;
-					</a>
-				</div>
-
-				<table
-					class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto"
-				>
-					<thead
-						class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200"
-					>
-						<tr
-							class="border-b-[1.5px] border-gray-50 dark:border-gray-850/30"
+						<Button
+							variant="outline"
+							size="sm"
+							class="justify-start"
+							href="/accounting/company/{companyId}/entries"
 						>
-							<th class="px-2.5 py-2">{$i18n.t('Date')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('Type')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('Description')}</th>
-							<th class="px-2.5 py-2 text-right">{$i18n.t('Total')}</th>
-							<th class="px-2.5 py-2">{$i18n.t('Status')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each recentTransactions as transaction}
-							<tr
-								class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
-								on:click={() => goto(`/accounting/company/${companyId}/entries?id=${transaction.id}`)}
-							>
-								<td class="px-3 py-1.5">
-									{transaction.transaction_date
-										? dayjs(transaction.transaction_date).format('YYYY-MM-DD')
-										: '-'}
-								</td>
-								<td class="px-3 py-1.5">
-									<span
-										class="text-xs font-medium {getTypeBadgeColor(
-											transaction.transaction_type
-										)} w-fit px-[5px] rounded-lg uppercase line-clamp-1"
-									>
-										{transaction.transaction_type ?? '-'}
-									</span>
-								</td>
-								<td class="px-3 py-1.5 max-w-[200px] truncate">
-									{transaction.description ?? transaction.memo ?? '-'}
-								</td>
-								<td class="px-3 py-1.5 text-right">
-									{#key $displayCurrency}
-									{@const c = convertRowAmount(transaction.total ?? transaction.amount ?? 0, transaction.currency, $displayCurrency, nativeCurrency, $exchangeRates ?? [], transaction.transaction_date, transaction.exchange_rate)}
-									{#if c.converting}
-										{#if c.hasRate}
-											<span class="font-medium">{c.display} <span class="text-[9px] text-gray-400">{c.to}</span></span>
-											<div class="text-[9px] text-gray-400">{c.original} {c.from}</div>
-										{:else}
-											<span>{c.original} {c.from}</span>
-											<span class="text-[9px] text-amber-500 italic" title="No exchange rate available">&#9888;</span>
-										{/if}
-									{:else}
-										{c.original} <span class="text-[9px] text-gray-400">{c.from}</span>
-									{/if}
-									{/key}
-								</td>
-								<td class="px-3 py-1.5">
-									<Badge
-										type={getStatusBadgeType(transaction.status)}
-										content={transaction.status ?? 'draft'}
-									/>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/if}
+							<Plus />{$i18n.t('New Journal Entry')}
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							class="justify-start"
+							href="/accounting/company/{companyId}/payments"
+						>
+							<Wallet />{$i18n.t('Record Payment')}
+						</Button>
+					</Card.Content>
+				</Card.Root>
 
-		<!-- Activity / Audit Trail -->
-		<div
-			class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30"
-		>
-			<div class="text-sm font-medium dark:text-gray-200 mb-3">
-				{$i18n.t('Recent Activity')}
+				<!-- Accounting Period Summary -->
+				{#if currentPeriod}
+					<Card.Root size="sm">
+						<Card.Header>
+							<Card.Title>{$i18n.t('Current Accounting Period')}</Card.Title>
+						</Card.Header>
+						<Card.Content class="flex flex-col gap-1">
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="font-medium">
+									{currentPeriod.name ??
+										currentPeriod.label ??
+										`${currentPeriod.start_date} - ${currentPeriod.end_date}`}
+								</span>
+								<Badge variant="status">
+									{#if !currentPeriod.is_closed}
+										<Circle class="text-success" aria-hidden="true" />{$i18n.t('Open')}
+									{:else}
+										<Lock aria-hidden="true" />{$i18n.t('Closed')}
+									{/if}
+								</Badge>
+							</div>
+							{#if currentPeriod.start_date && currentPeriod.end_date}
+								<span class="text-sm text-muted-foreground tabular-nums">
+									{dayjs(currentPeriod.start_date).format('YYYY-MM-DD')} — {dayjs(
+										currentPeriod.end_date
+									).format('YYYY-MM-DD')}
+								</span>
+							{/if}
+						</Card.Content>
+					</Card.Root>
+				{/if}
 			</div>
-			<AuditTrail {companyId} limit={10} />
+		</div>
+
+		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+			<!-- Recent Transactions -->
+			{#if recentTransactions.length > 0}
+				<Card.Root class="gap-0 pb-0">
+					<Card.Header class="pb-4">
+						<Card.Title>{$i18n.t('Recent Transactions')}</Card.Title>
+						<Card.Action>
+							<Button variant="link" size="sm" href="/accounting/company/{companyId}/entries"
+								>{$i18n.t('View All')}</Button
+							>
+						</Card.Action>
+					</Card.Header>
+					<div class="border-t">
+						<Table.Root class="text-[13px]">
+							<Table.Header class="bg-muted/50">
+								<Table.Row class="hover:bg-transparent">
+									<Table.Head class="pl-6">{$i18n.t('Date')}</Table.Head>
+									<Table.Head>{$i18n.t('Type')}</Table.Head>
+									<Table.Head>{$i18n.t('Description')}</Table.Head>
+									<Table.Head class="text-right">{$i18n.t('Total')}</Table.Head>
+									<Table.Head class="pr-6">{$i18n.t('Status')}</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each recentTransactions as transaction}
+									{@const c = convertRowAmount(
+										transaction.total ?? transaction.amount ?? 0,
+										transaction.currency,
+										$displayCurrency,
+										nativeCurrency,
+										$exchangeRates ?? [],
+										transaction.transaction_date,
+										transaction.exchange_rate
+									)}
+									<Table.Row
+										class="cursor-pointer"
+										tabindex={0}
+										onclick={() =>
+											goto(`/accounting/company/${companyId}/entries?id=${transaction.id}`)}
+										onkeydown={(e: KeyboardEvent) => {
+											if (e.key === 'Enter')
+												goto(`/accounting/company/${companyId}/entries?id=${transaction.id}`);
+										}}
+									>
+										<Table.Cell class="pl-6 tabular-nums">
+											{transaction.transaction_date
+												? dayjs(transaction.transaction_date).format('YYYY-MM-DD')
+												: '—'}
+										</Table.Cell>
+										<Table.Cell>
+											<Badge variant="outline" class="font-normal"
+												>{(transaction.transaction_type ?? '—').replace(/_/g, ' ')}</Badge
+											>
+										</Table.Cell>
+										<Table.Cell class="max-w-[200px] truncate">
+											{transaction.description ?? transaction.memo ?? '—'}
+										</Table.Cell>
+										<Table.Cell class="text-right tabular-nums">
+											{#if c.converting && c.hasRate}
+												{c.display} <span class="text-xs text-muted-foreground">{c.to}</span>
+											{:else if c.converting}
+												{c.original} <span class="text-xs text-muted-foreground">{c.from}</span>
+												<TriangleAlert
+													class="inline size-3.5 text-warning"
+													aria-label={$i18n.t('No exchange rate available')}
+												/>
+											{:else}
+												{c.original} <span class="text-xs text-muted-foreground">{c.from}</span>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="pr-6">
+											<StatusBadge kind="entry" status={transaction.status ?? 'draft'} />
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				</Card.Root>
+			{/if}
+
+			<!-- Activity / Audit Trail -->
+			<Card.Root>
+				<Card.Header><Card.Title>{$i18n.t('Recent Activity')}</Card.Title></Card.Header>
+				<Card.Content><AuditTrail {companyId} limit={10} /></Card.Content>
+			</Card.Root>
 		</div>
 	</div>
 {/if}

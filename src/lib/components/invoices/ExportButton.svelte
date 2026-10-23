@@ -3,11 +3,17 @@
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 
-	const i18n = getContext('i18n');
+	import Download from '@lucide/svelte/icons/download';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import FileText from '@lucide/svelte/icons/file-text';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+
+	const i18n: any = getContext('i18n');
 
 	export let invoices: any[] = [];
-
-	let showMenu = false;
 
 	const EXPORT_COLUMNS = [
 		'id',
@@ -50,7 +56,6 @@
 
 		const csv = [header, ...rows].join('\n');
 		downloadFile(csv, `invoices-export-${dayjs().format('YYYY-MM-DD')}.csv`, 'text/csv');
-		showMenu = false;
 		toast.success($i18n.t('Exported CSV'));
 	};
 
@@ -70,7 +75,6 @@
 			const wb = XLSX.utils.book_new();
 			XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
 			XLSX.writeFile(wb, `invoices-export-${dayjs().format('YYYY-MM-DD')}.xlsx`);
-			showMenu = false;
 			toast.success($i18n.t('Exported Excel'));
 		} catch (err) {
 			toast.error(`Export failed: ${err}`);
@@ -88,54 +92,16 @@
 	};
 </script>
 
-<div class="relative">
-	<button
-		class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
-		on:click={() => {
-			showMenu = !showMenu;
-		}}
-	>
-		<svg
-			xmlns="http://www.w3.org/2000/svg"
-			fill="none"
-			viewBox="0 0 24 24"
-			stroke-width="2"
-			stroke="currentColor"
-			class="size-3.5"
-		>
-			<path
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
-			/>
-		</svg>
-		<span>{$i18n.t('Export')}</span>
-	</button>
-
-	{#if showMenu}
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div
-			class="fixed inset-0 z-40"
-			on:click={() => {
-				showMenu = false;
-			}}
-		></div>
-		<div
-			class="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 shadow-lg py-1 min-w-[120px]"
-		>
-			<button
-				class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-850 transition dark:text-gray-200"
-				on:click={exportCsv}
-			>
-				CSV
-			</button>
-			<button
-				class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-850 transition dark:text-gray-200"
-				on:click={exportXlsx}
-			>
-				Excel (XLSX)
-			</button>
-		</div>
-	{/if}
-</div>
+<DropdownMenu.Root>
+	<DropdownMenu.Trigger>
+		{#snippet child({ props })}
+			<Button {...props} variant="outline" size="sm">
+				<Download />{$i18n.t('Export')}<ChevronDown class="text-muted-foreground" />
+			</Button>
+		{/snippet}
+	</DropdownMenu.Trigger>
+	<DropdownMenu.Content align="end" class="w-44">
+		<DropdownMenu.Item onSelect={exportCsv}><FileText />CSV</DropdownMenu.Item>
+		<DropdownMenu.Item onSelect={exportXlsx}><FileSpreadsheet />Excel (XLSX)</DropdownMenu.Item>
+	</DropdownMenu.Content>
+</DropdownMenu.Root>

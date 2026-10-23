@@ -6,12 +6,26 @@
 	import type { Writable } from 'svelte/store';
 	import { convertAmount } from '$lib/utils/currency';
 	import ReportAmount from '$lib/components/accounting/ReportAmount.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	const i18n = getContext('i18n');
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import Download from '@lucide/svelte/icons/download';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+
+	const i18n: any = getContext('i18n');
 	export let companyId: number;
 
 	let loading = false;
+	let loadError = '';
 	let rawData: any = null;
 
 	// Display-currency conversion (company-wide selector). Cash Flow figures are raw
@@ -23,9 +37,10 @@
 
 	$: baseCcy = $companyCurrency || 'EUR';
 	$: converting = !!($displayCurrency && baseCcy && $displayCurrency !== baseCcy);
-	$: fx = converting && rawData
-		? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], rawData?.date_to)
-		: null;
+	$: fx =
+		converting && rawData
+			? convertAmount(1, baseCcy, $displayCurrency, $exchangeRates ?? [], rawData?.date_to)
+			: null;
 	$: factor = converting ? (fx?.hasRate ? fx.rate : null) : 1;
 	$: noRate = converting && !fx?.hasRate;
 	$: displayCcy = converting ? $displayCurrency : baseCcy;
@@ -37,24 +52,38 @@
 
 	let fiscalStartMonth = 1;
 
-	const fmt = (v: any): string => {
-		const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
-		return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-	};
-
 	const load = async () => {
 		const opt = monthOptions.find((o) => o.value === selectedMonth);
-		if (!opt) { toast.error($i18n.t('Please select a period')); return; }
+		if (!opt) {
+			toast.error($i18n.t('Please select a period'));
+			return;
+		}
 		loading = true;
+		loadError = '';
 		try {
 			rawData = await getCashFlow({ company_id: companyId, date_from: opt.from, date_to: opt.to });
-		} catch (err) { toast.error(`${err}`); }
+		} catch (err) {
+			loadError = `${err}`;
+			toast.error(`${err}`);
+		}
 		loading = false;
 	};
 
+	const doExport = () => {
+		const opt = monthOptions.find((o) => o.value === selectedMonth);
+		if (opt) exportCashFlow({ company_id: companyId, date_from: opt.from, date_to: opt.to });
+	};
+
+	// Dense report table: 13px, 6px row padding, 12px at the outer edges (design system → Reports).
+	const TABLE =
+		'text-[13px] [&_td]:py-1.5 [&_td:first-child]:pl-3 [&_th:first-child]:pl-3 [&_td:last-child]:pr-3 [&_th:last-child]:pr-3';
+
 	onMount(async () => {
 		try {
-			const [res, co] = await Promise.all([getPeriods({ company_id: companyId }), getCompany(companyId).catch(() => null)]);
+			const [res, co] = await Promise.all([
+				getPeriods({ company_id: companyId }),
+				getCompany(companyId).catch(() => null)
+			]);
 			const periods = res.periods ?? res ?? [];
 			fiscalStartMonth = Number(co?.fiscal_year_start_month ?? 1) || 1;
 			monthOptions = buildMonthOptions(periods, fiscalStartMonth);
@@ -63,128 +92,165 @@
 	});
 </script>
 
-<div class="space-y-3">
-	<div class="flex flex-wrap gap-3 items-end">
-		<div>
-			<label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{$i18n.t('Period')}</label>
-			{#if monthOptions.length > 0}
-				<select bind:value={selectedMonth} class="text-sm rounded-lg px-3 py-1.5 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden">
+{#snippet group(label: string)}
+	<Table.Row class="bg-muted/50 font-medium hover:bg-muted/50">
+		<Table.Cell colspan={2}>{label}</Table.Cell>
+	</Table.Row>
+{/snippet}
+
+{#snippet line(label: string, value: any)}
+	<Table.Row>
+		<Table.Cell style="padding-left: 32px">{label}</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"><ReportAmount {value} {...fxProps} /></Table.Cell>
+	</Table.Row>
+{/snippet}
+
+{#snippet accountLine(item: any)}
+	<Table.Row>
+		<Table.Cell class="whitespace-normal" style="padding-left: 32px">
+			<span class="font-mono text-[13px] text-muted-foreground">{item.account_code}</span>
+			{item.account_name}
+		</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"
+			><ReportAmount value={item.change} {...fxProps} /></Table.Cell
+		>
+	</Table.Row>
+{/snippet}
+
+{#snippet subtotal(label: string, value: any)}
+	<Table.Row class="border-t font-medium">
+		<Table.Cell>{label}</Table.Cell>
+		<Table.Cell class="text-right tabular-nums"><ReportAmount {value} {...fxProps} /></Table.Cell>
+	</Table.Row>
+{/snippet}
+
+<div class="flex min-w-0 flex-col gap-4">
+	<div class="flex flex-wrap items-center gap-2">
+		{#if monthOptions.length > 0}
+			<div class="relative">
+				<CalendarDays
+					class="pointer-events-none absolute top-1/2 left-2.5 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<NativeSelect.Root
+					size="sm"
+					class="[&>select]:pl-8"
+					bind:value={selectedMonth}
+					aria-label={$i18n.t('Period')}
+				>
 					{#each monthOptions as opt}
-						<option value={opt.value}>{opt.label}</option>
+						<NativeSelect.Option value={opt.value}>{opt.label}</NativeSelect.Option>
 					{/each}
-				</select>
-			{:else}
-				<span class="text-xs text-gray-400 italic">{$i18n.t('No accounting periods defined')}</span>
-			{/if}
-		</div>
-		<button
-			class="px-4 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
-			disabled={!selectedMonth}
-			on:click={load}
-		>{$i18n.t('Generate')}</button>
+				</NativeSelect.Root>
+			</div>
+		{:else}
+			<span class="text-sm text-muted-foreground">{$i18n.t('No accounting periods defined')}</span>
+		{/if}
+		<Button size="sm" disabled={loading || !selectedMonth} onclick={load}>
+			{#if loading}<Spinner />{/if}
+			{$i18n.t('Generate', { context: 'gnos3' })}
+		</Button>
 		{#if data}
-			<button
-				class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1.5"
-				on:click={() => {
-					const opt = monthOptions.find(o => o.value === selectedMonth);
-					if (opt) exportCashFlow({ company_id: companyId, date_from: opt.from, date_to: opt.to });
-				}}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+			<Button variant="outline" size="sm" onclick={doExport}>
+				<Download />
 				{$i18n.t('Export Excel')}
-			</button>
+			</Button>
 		{/if}
 	</div>
 
-	{#if data && displayCcy}
-		<div class="text-[11px] text-gray-400 dark:text-gray-500 px-0.5 mb-1">
-			{$i18n.t('Currency')}: {displayCcy}
-			{#if noRate}<span class="text-amber-600 dark:text-amber-400">({$i18n.t('no rate for')} {$displayCurrency}, {$i18n.t('showing')} {baseCcy})</span>{/if}
+	{#if data && displayCcy && !loading && !loadError}
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+			<span>{$i18n.t('Currency')}: {displayCcy}</span>
+			{#if noRate}
+				<span class="inline-flex items-center gap-1 text-foreground">
+					<TriangleAlert class="size-4 text-warning" />
+					({$i18n.t('no rate for')}
+					{$displayCurrency}, {$i18n.t('showing')}
+					{baseCcy})
+				</span>
+			{/if}
 		</div>
 	{/if}
 
 	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
+		<div class="flex max-w-3xl flex-col gap-2 rounded-md border p-3">
+			{#each Array(10) as _}
+				<Skeleton class="h-6 w-full" />
+			{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Could not load the report.')}</Alert.Title>
+			<Alert.Description>{loadError}</Alert.Description>
+			<Alert.Action>
+				<Button variant="outline" size="sm" onclick={load}>{$i18n.t('Retry')}</Button>
+			</Alert.Action>
+		</Alert.Root>
 	{:else if data}
-		<div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-100/30 dark:border-gray-850/30 overflow-hidden">
-			<table class="w-full text-sm text-left text-gray-900 dark:text-gray-100">
-				<thead class="text-xs font-bold uppercase bg-gray-100 dark:bg-gray-800">
-					<tr class="border-b border-gray-200 dark:border-gray-700">
-						<th class="px-4 py-2">{$i18n.t('Item')}</th>
-						<th class="px-4 py-2 text-right">{$i18n.t('Amount')}</th>
-					</tr>
-				</thead>
-				<tbody>
+		<div class="max-w-3xl min-w-0 overflow-hidden rounded-md border">
+			<Table.Root class={TABLE}>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Item')}</Table.Head>
+						<Table.Head class="w-40 min-w-32 text-right">{$i18n.t('Amount')}</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
 					<!-- Operating Activities -->
-					<tr class="bg-blue-50/50 dark:bg-blue-900/10 border-b border-gray-100 dark:border-gray-850">
-						<td colspan="2" class="px-4 py-2 font-semibold text-blue-800 dark:text-blue-300">{$i18n.t('Operating Activities')}</td>
-					</tr>
-					<tr class="border-b border-gray-50 dark:border-gray-850/30 text-xs">
-						<td class="px-4 py-1.5 pl-8">{$i18n.t('Net Income')}</td>
-						<td class="px-4 py-1.5 text-right font-mono"><ReportAmount value={data.net_income} {...fxProps} /></td>
-					</tr>
+					{@render group($i18n.t('Operating Activities'))}
+					{@render line($i18n.t('Net Income'), data.net_income)}
 					{#if data.depreciation}
-						<tr class="border-b border-gray-50 dark:border-gray-850/30 text-xs">
-							<td class="px-4 py-1.5 pl-8">{$i18n.t('Add: Depreciation')}</td>
-							<td class="px-4 py-1.5 text-right font-mono"><ReportAmount value={data.depreciation} {...fxProps} /></td>
-						</tr>
+						{@render line($i18n.t('Add: Depreciation'), data.depreciation)}
 					{/if}
 					{#each data.working_capital_changes ?? [] as item}
-						<tr class="border-b border-gray-50 dark:border-gray-850/30 text-xs">
-							<td class="px-4 py-1.5 pl-8 text-gray-600 dark:text-gray-400">{item.account_code} {item.account_name}</td>
-							<td class="px-4 py-1.5 text-right font-mono {item.change < 0 ? 'text-red-600 dark:text-red-400' : ''}"><ReportAmount value={item.change} {...fxProps} /></td>
-						</tr>
+						{@render accountLine(item)}
 					{/each}
-					<tr class="bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-gray-700 font-semibold text-xs">
-						<td class="px-4 py-2">{$i18n.t('Cash from Operations')}</td>
-						<td class="px-4 py-2 text-right font-mono"><ReportAmount value={data.cash_from_operations} {...fxProps} /></td>
-					</tr>
+					{@render subtotal($i18n.t('Cash from Operations'), data.cash_from_operations)}
 
 					<!-- Investing Activities -->
-					<tr class="bg-amber-50/50 dark:bg-amber-900/10 border-b border-gray-100 dark:border-gray-850">
-						<td colspan="2" class="px-4 py-2 font-semibold text-amber-800 dark:text-amber-300">{$i18n.t('Investing Activities')}</td>
-					</tr>
+					{@render group($i18n.t('Investing Activities'))}
 					{#each data.investing_activities ?? [] as item}
-						<tr class="border-b border-gray-50 dark:border-gray-850/30 text-xs">
-							<td class="px-4 py-1.5 pl-8 text-gray-600 dark:text-gray-400">{item.account_code} {item.account_name}</td>
-							<td class="px-4 py-1.5 text-right font-mono {item.change < 0 ? 'text-red-600 dark:text-red-400' : ''}"><ReportAmount value={item.change} {...fxProps} /></td>
-						</tr>
+						{@render accountLine(item)}
 					{/each}
-					<tr class="bg-amber-50 dark:bg-amber-900/20 border-b border-gray-200 dark:border-gray-700 font-semibold text-xs">
-						<td class="px-4 py-2">{$i18n.t('Cash from Investing')}</td>
-						<td class="px-4 py-2 text-right font-mono"><ReportAmount value={data.cash_from_investing} {...fxProps} /></td>
-					</tr>
+					{@render subtotal($i18n.t('Cash from Investing'), data.cash_from_investing)}
 
 					<!-- Financing Activities -->
-					<tr class="bg-purple-50/50 dark:bg-purple-900/10 border-b border-gray-100 dark:border-gray-850">
-						<td colspan="2" class="px-4 py-2 font-semibold text-purple-800 dark:text-purple-300">{$i18n.t('Financing Activities')}</td>
-					</tr>
+					{@render group($i18n.t('Financing Activities'))}
 					{#each data.financing_activities ?? [] as item}
-						<tr class="border-b border-gray-50 dark:border-gray-850/30 text-xs">
-							<td class="px-4 py-1.5 pl-8 text-gray-600 dark:text-gray-400">{item.account_code} {item.account_name}</td>
-							<td class="px-4 py-1.5 text-right font-mono {item.change < 0 ? 'text-red-600 dark:text-red-400' : ''}"><ReportAmount value={item.change} {...fxProps} /></td>
-						</tr>
+						{@render accountLine(item)}
 					{/each}
-					<tr class="bg-purple-50 dark:bg-purple-900/20 border-b border-gray-200 dark:border-gray-700 font-semibold text-xs">
-						<td class="px-4 py-2">{$i18n.t('Cash from Financing')}</td>
-						<td class="px-4 py-2 text-right font-mono"><ReportAmount value={data.cash_from_financing} {...fxProps} /></td>
-					</tr>
-
-					<!-- Summary -->
-					<tr class="bg-gray-100 dark:bg-gray-800 font-bold text-sm">
-						<td class="px-4 py-3">{$i18n.t('Net Change in Cash')}</td>
-						<td class="px-4 py-3 text-right font-mono {data.net_change_in_cash < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}"><ReportAmount value={data.net_change_in_cash} {...fxProps} /></td>
-					</tr>
-					<tr class="border-b border-gray-100 dark:border-gray-850 text-xs">
-						<td class="px-4 py-1.5">{$i18n.t('Opening Cash')}</td>
-						<td class="px-4 py-1.5 text-right font-mono"><ReportAmount value={data.opening_cash} {...fxProps} /></td>
-					</tr>
-					<tr class="bg-green-50 dark:bg-green-900/20 font-bold text-sm">
-						<td class="px-4 py-3">{$i18n.t('Closing Cash')}</td>
-						<td class="px-4 py-3 text-right font-mono"><ReportAmount value={data.closing_cash} {...fxProps} /></td>
-					</tr>
-				</tbody>
-			</table>
+					{@render subtotal($i18n.t('Cash from Financing'), data.cash_from_financing)}
+				</Table.Body>
+				<!-- Summary -->
+				<Table.Footer>
+					<Table.Row class="font-semibold hover:bg-transparent">
+						<Table.Cell>{$i18n.t('Net Change in Cash')}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums"
+							><ReportAmount value={data.net_change_in_cash} {...fxProps} /></Table.Cell
+						>
+					</Table.Row>
+					<Table.Row class="hover:bg-transparent">
+						<Table.Cell>{$i18n.t('Opening Cash')}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums"
+							><ReportAmount value={data.opening_cash} {...fxProps} /></Table.Cell
+						>
+					</Table.Row>
+					<Table.Row class="border-t font-semibold hover:bg-transparent">
+						<Table.Cell>{$i18n.t('Closing Cash')}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums"
+							><ReportAmount value={data.closing_cash} {...fxProps} /></Table.Cell
+						>
+					</Table.Row>
+				</Table.Footer>
+			</Table.Root>
 		</div>
+	{:else}
+		<Empty.Root class="max-w-3xl border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><FileSpreadsheet /></Empty.Media>
+				<Empty.Title>{$i18n.t('Cash Flow')}</Empty.Title>
+				<Empty.Description>{$i18n.t('Choose a period, then Generate.')}</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{/if}
 </div>

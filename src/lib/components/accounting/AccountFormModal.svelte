@@ -1,12 +1,18 @@
 <script lang="ts">
-	import { onMount, onDestroy, getContext, createEventDispatcher, tick } from 'svelte';
-	import { fade } from 'svelte/transition';
-	import { flyAndScale } from '$lib/utils/transitions';
+	import { getContext, createEventDispatcher } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { createAccount, updateAccount } from '$lib/apis/accounting';
 
-	const i18n = getContext('i18n');
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+
+	const i18n: any = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let show = false;
@@ -20,13 +26,12 @@
 	let code = '';
 	let name = '';
 	let account_type = 'asset';
-	let parent_id: number | null = null;
+	// '' = top level (a null option value does not survive the select wrapper)
+	let parent_id: number | '' = '';
 	let description = '';
 	let opening_debit: number | null = null;
 	let opening_credit: number | null = null;
 	let submitting = false;
-
-	let modalElement: HTMLElement | null = null;
 
 	$: if (show) {
 		initForm();
@@ -41,7 +46,7 @@
 			code = account.code || '';
 			name = account.name || '';
 			account_type = account.account_type || 'asset';
-			parent_id = account.parent_id || null;
+			parent_id = account.parent_id || '';
 			description = account.description || '';
 			opening_debit = parseFloat(account.opening_debit) || null;
 			opening_credit = parseFloat(account.opening_credit) || null;
@@ -49,20 +54,15 @@
 			code = '';
 			name = '';
 			account_type = 'asset';
-			parent_id = null;
+			parent_id = '';
 			description = '';
 			opening_debit = null;
 			opening_credit = null;
 		}
 	};
 
-	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') {
-			show = false;
-		}
-	};
-
-	const handleSubmit = async () => {
+	const handleSubmit = async (e?: Event) => {
+		e?.preventDefault();
 		if (!code.trim() || !name.trim()) {
 			toast.error($i18n.t('Code and Name are required'));
 			return;
@@ -76,7 +76,7 @@
 				account_type,
 				description: description.trim() || null,
 				opening_debit: opening_debit || 0,
-				opening_credit: opening_credit || 0,
+				opening_credit: opening_credit || 0
 			};
 			if (parent_id) {
 				payload.parent_id = parent_id;
@@ -98,203 +98,128 @@
 			submitting = false;
 		}
 	};
-
-	$: if (show && modalElement) {
-		window.addEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'hidden';
-	}
-
-	$: if (!show) {
-		window.removeEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'unset';
-	}
-
-	onDestroy(() => {
-		window.removeEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'unset';
-	});
 </script>
 
-{#if show}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
-		bind:this={modalElement}
-		class="fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-99999999 overflow-hidden overscroll-contain"
-		in:fade={{ duration: 10 }}
-		on:mousedown={() => {
-			show = false;
-		}}
-	>
-		<div
-			class="m-auto max-w-full w-[32rem] mx-2 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm rounded-4xl max-h-[100dvh] shadow-3xl border border-white dark:border-gray-900"
-			in:flyAndScale
-			on:mousedown={(e) => {
-				e.stopPropagation();
-			}}
-		>
-			<div class="px-[1.75rem] py-6 flex flex-col">
-				<div class="text-lg font-medium dark:text-gray-200 mb-4">
-					{account ? $i18n.t('Edit Account') : $i18n.t('Add Account')}
+<Dialog.Root bind:open={show}>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>
+				{account ? $i18n.t('Edit Account') : $i18n.t('Add Account')}
+			</Dialog.Title>
+			{#if account}
+				<Dialog.Description>
+					<span class="font-mono text-[13px]">{account.code}</span>
+					{account.name}
+				</Dialog.Description>
+			{/if}
+		</Dialog.Header>
+
+		<form id="account-form" class="grid gap-4" onsubmit={handleSubmit}>
+			<div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
+				<div class="grid gap-2">
+					<Label for="account-code">{$i18n.t('Code')}</Label>
+					<Input
+						id="account-code"
+						type="text"
+						bind:value={code}
+						placeholder={$i18n.t('e.g. 1000')}
+						class="font-mono text-[13px]"
+						required
+					/>
 				</div>
-
-				<form
-					class="flex flex-col gap-3"
-					on:submit|preventDefault={handleSubmit}
-				>
-					<!-- Code -->
-					<div>
-						<label
-							for="account-code"
-							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-						>
-							{$i18n.t('Code')}
-						</label>
-						<input
-							id="account-code"
-							type="text"
-							bind:value={code}
-							placeholder={$i18n.t('e.g. 1000')}
-							class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-							required
-						/>
-					</div>
-
-					<!-- Name -->
-					<div>
-						<label
-							for="account-name"
-							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-						>
-							{$i18n.t('Name')}
-						</label>
-						<input
-							id="account-name"
-							type="text"
-							bind:value={name}
-							placeholder={$i18n.t('e.g. Cash')}
-							class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-							required
-						/>
-					</div>
-
-					<!-- Account Type -->
-					<div>
-						<label
-							for="account-type"
-							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-						>
-							{$i18n.t('Account Type')}
-						</label>
-						<select
-							id="account-type"
-							bind:value={account_type}
-							on:change={() => {
-								parent_id = null;
-							}}
-							class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition capitalize"
-						>
-							{#each ACCOUNT_TYPES as t}
-								<option value={t}>{$i18n.t(t.charAt(0).toUpperCase() + t.slice(1))}</option>
-							{/each}
-						</select>
-					</div>
-
-					<!-- Parent Account -->
-					<div>
-						<label
-							for="account-parent"
-							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-						>
-							{$i18n.t('Parent Account')}
-						</label>
-						<select
-							id="account-parent"
-							bind:value={parent_id}
-							class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-						>
-							<option value={null}>{$i18n.t('None (top-level)')}</option>
-							{#each filteredParents as p}
-								<option value={p.id}>{p.code} - {p.name}</option>
-							{/each}
-						</select>
-					</div>
-
-					<!-- Description -->
-					<div>
-						<label
-							for="account-description"
-							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-						>
-							{$i18n.t('Description')}
-						</label>
-						<textarea
-							id="account-description"
-							bind:value={description}
-							placeholder={$i18n.t('Optional description')}
-							rows="2"
-							class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition resize-none"
-						></textarea>
-					</div>
-
-					<!-- Opening Balance -->
-					<div>
-						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-							{$i18n.t('Opening Balance')}
-						</label>
-						<div class="flex gap-3">
-							<div class="flex-1">
-								<label for="ob-debit" class="block text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Debit')}</label>
-								<input
-									id="ob-debit"
-									type="number"
-									step="0.01"
-									min="0"
-									bind:value={opening_debit}
-									placeholder="0.00"
-									class="w-full rounded-lg px-4 py-2 text-sm font-mono dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-								/>
-							</div>
-							<div class="flex-1">
-								<label for="ob-credit" class="block text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5">{$i18n.t('Credit')}</label>
-								<input
-									id="ob-credit"
-									type="number"
-									step="0.01"
-									min="0"
-									bind:value={opening_credit}
-									placeholder="0.00"
-									class="w-full rounded-lg px-4 py-2 text-sm font-mono dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-								/>
-							</div>
-						</div>
-					</div>
-
-					<!-- Actions -->
-					<div class="mt-3 flex justify-between gap-1.5">
-						<button
-							type="button"
-							class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white font-medium w-full py-2 rounded-3xl transition"
-							on:click={() => {
-								show = false;
-							}}
-						>
-							{$i18n.t('Cancel')}
-						</button>
-						<button
-							type="submit"
-							class="text-sm bg-gray-900 hover:bg-gray-850 text-gray-100 dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium w-full py-2 rounded-3xl transition disabled:opacity-50"
-							disabled={submitting}
-						>
-							{submitting
-								? $i18n.t('Saving...')
-								: account
-									? $i18n.t('Update')
-									: $i18n.t('Create')}
-						</button>
-					</div>
-				</form>
+				<div class="grid gap-2">
+					<Label for="account-name">{$i18n.t('Name', { context: 'gnos3' })}</Label>
+					<Input
+						id="account-name"
+						type="text"
+						bind:value={name}
+						placeholder={$i18n.t('e.g. Cash')}
+						required
+					/>
+				</div>
 			</div>
-		</div>
-	</div>
-{/if}
+
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid gap-2">
+					<Label for="account-type">{$i18n.t('Account Type')}</Label>
+					<NativeSelect.Root
+						id="account-type"
+						class="w-full"
+						bind:value={account_type}
+						onchange={() => {
+							parent_id = '';
+						}}
+					>
+						{#each ACCOUNT_TYPES as t}
+							<NativeSelect.Option value={t}
+								>{$i18n.t(t.charAt(0).toUpperCase() + t.slice(1))}</NativeSelect.Option
+							>
+						{/each}
+					</NativeSelect.Root>
+				</div>
+				<div class="grid gap-2">
+					<Label for="account-parent">{$i18n.t('Parent Account')}</Label>
+					<NativeSelect.Root id="account-parent" class="w-full" bind:value={parent_id}>
+						<NativeSelect.Option value="">{$i18n.t('None (top-level)')}</NativeSelect.Option>
+						{#each filteredParents as p}
+							<NativeSelect.Option value={p.id}>{p.code} - {p.name}</NativeSelect.Option>
+						{/each}
+					</NativeSelect.Root>
+				</div>
+			</div>
+
+			<div class="grid gap-2">
+				<Label for="account-description">{$i18n.t('Description')}</Label>
+				<Textarea
+					id="account-description"
+					bind:value={description}
+					placeholder={$i18n.t('Optional description')}
+					rows={2}
+					class="resize-none"
+				/>
+			</div>
+
+			<fieldset class="grid gap-2">
+				<legend class="mb-2 text-sm font-medium">{$i18n.t('Opening Balance')}</legend>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="grid gap-1.5">
+						<Label for="ob-debit" class="font-normal text-muted-foreground"
+							>{$i18n.t('Debit')}</Label
+						>
+						<Input
+							id="ob-debit"
+							type="number"
+							step="0.01"
+							min="0"
+							bind:value={opening_debit}
+							placeholder="0.00"
+							class="text-right tabular-nums"
+						/>
+					</div>
+					<div class="grid gap-1.5">
+						<Label for="ob-credit" class="font-normal text-muted-foreground"
+							>{$i18n.t('Credit')}</Label
+						>
+						<Input
+							id="ob-credit"
+							type="number"
+							step="0.01"
+							min="0"
+							bind:value={opening_credit}
+							placeholder="0.00"
+							class="text-right tabular-nums"
+						/>
+					</div>
+				</div>
+			</fieldset>
+		</form>
+
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (show = false)}>{$i18n.t('Cancel')}</Button>
+			<Button type="submit" form="account-form" disabled={submitting}>
+				{#if submitting}<Spinner />{/if}
+				{submitting ? $i18n.t('Saving...') : account ? $i18n.t('Update') : $i18n.t('Create')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

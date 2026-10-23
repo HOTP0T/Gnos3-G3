@@ -18,10 +18,10 @@
 	type Role = 'viewer' | 'accountant' | 'admin' | 'none';
 	const ROLES: { value: Role | ''; label: string }[] = [
 		{ value: '', label: '(default — from group permissions)' },
-		{ value: 'viewer', label: 'viewer' },
-		{ value: 'accountant', label: 'accountant' },
-		{ value: 'admin', label: 'admin' },
-		{ value: 'none', label: 'none (explicit deny)' }
+		{ value: 'viewer', label: 'Viewer' },
+		{ value: 'accountant', label: 'Accountant' },
+		{ value: 'admin', label: 'Admin' },
+		{ value: 'none', label: 'None (explicit deny)' }
 	];
 
 	let loaded = false;
@@ -36,7 +36,7 @@
 		try {
 			memberships = await listCompanyMemberships();
 		} catch (err: any) {
-			toast.error(err?.detail ?? 'Failed to load memberships');
+			toast.error(err?.detail ?? $i18n.t('Failed to load memberships'));
 			memberships = [];
 		}
 	};
@@ -59,16 +59,21 @@
 		try {
 			if (newValue === '') {
 				await deleteCompanyMembership(userId, companyId).catch((err) => {
-					if (err?.detail !== 'Membership not found') throw err;
+					if (err?.status !== 404) throw err; // already gone
 				});
-				toast.success('Override removed (falls back to group permissions)');
+				toast.success($i18n.t('Override removed (falls back to group permissions)'));
 			} else {
 				await upsertCompanyMembership(userId, companyId, newValue);
-				toast.success(`Set ${newValue} on company ${companyId}`);
+				toast.success(
+					$i18n.t('Set {{role}} on company {{company}}', {
+						role: $i18n.t(ROLES.find((r) => r.value === newValue)?.label ?? newValue),
+						company: companyId
+					})
+				);
 			}
 			await reloadMemberships();
 		} catch (err: any) {
-			toast.error(err?.detail ?? 'Save failed');
+			toast.error(err?.detail ?? $i18n.t('Save failed'));
 		} finally {
 			saving[key] = false;
 			saving = saving;
@@ -90,7 +95,7 @@
 				role: u.role
 			}));
 		} catch (err: any) {
-			toast.error('Failed to load users: ' + (err?.detail ?? err));
+			toast.error(`${$i18n.t('Failed to load users')}: ${err?.detail ?? err}`);
 		}
 
 		try {
@@ -100,7 +105,7 @@
 				name: c.name
 			}));
 		} catch (err: any) {
-			toast.error('Failed to load companies: ' + (err?.detail ?? err));
+			toast.error(`${$i18n.t('Failed to load companies')}: ${err?.detail ?? err}`);
 		}
 
 		await reloadMemberships();
@@ -121,13 +126,13 @@
 	<div class="px-4 md:px-6 py-4 max-w-5xl mx-auto">
 		<h1 class="text-xl font-medium mb-1">{$i18n.t('Company Permissions')}</h1>
 		<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-			Per-company role overrides on top of group permissions. Resolution order: this
-			table → group's <code>companies.&lt;id&gt;</code> → group's <code>companies.*</code> →
-			deny. Admins bypass entirely.
+			{$i18n.t(
+				'Per-company role overrides on top of group permissions. Resolution order: this table → the group\'s permission for the company → the group\'s permission for all companies → no access. Admins bypass it entirely.'
+			)}
 		</p>
 
 		<div class="mb-4">
-			<label class="block text-sm font-medium mb-1" for="user-select">User</label>
+			<label class="block text-sm font-medium mb-1" for="user-select">{$i18n.t('User')}</label>
 			<select
 				id="user-select"
 				bind:value={selectedUserId}
@@ -147,22 +152,22 @@
 				<div
 					class="mb-4 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950 text-sm text-amber-800 dark:text-amber-200"
 				>
-					This user has the global <strong>admin</strong> role. They bypass per-company
-					checks regardless of overrides set here. Changes still save but will not
-					affect their access.
+					{$i18n.t(
+						'This user has a global admin role. They bypass per-company checks regardless of overrides set here. Changes still save but will not affect their access.'
+					)}
 				</div>
 			{/if}
 
 			{#if companies.length === 0}
 				<p class="text-sm text-gray-500 italic">
-					No companies exist yet — create one under Accounting → Companies first.
+					{$i18n.t('No companies exist yet — create one under Accounting → Companies first.')}
 				</p>
 			{:else}
 				<table class="w-full text-sm border-collapse">
 					<thead>
 						<tr class="border-b border-gray-200 dark:border-gray-800">
-							<th class="text-left py-2 px-3 font-medium">Company</th>
-							<th class="text-left py-2 px-3 font-medium w-72">Role override</th>
+							<th class="text-left py-2 px-3 font-medium">{$i18n.t('Company')}</th>
+							<th class="text-left py-2 px-3 font-medium w-72">{$i18n.t('Role override')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -187,7 +192,7 @@
 										class="w-full px-2 py-1.5 rounded-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-sm disabled:opacity-50"
 									>
 										{#each ROLES as opt (opt.value)}
-											<option value={opt.value}>{opt.label}</option>
+											<option value={opt.value}>{$i18n.t(opt.label)}</option>
 										{/each}
 									</select>
 								</td>

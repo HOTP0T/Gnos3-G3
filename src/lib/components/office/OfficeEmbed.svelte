@@ -81,7 +81,7 @@
 		await autoRun;
 		syncing = true;
 		syncError = false;
-		syncMessage = 'Importing your saved Office files…';
+		syncMessage = $i18n.t('Importing your saved Office files…');
 		publishSyncState();
 		try {
 			const response = await fetch(`${WEBUI_API_BASE_URL}/office-knowledge/sync`, {
@@ -92,21 +92,24 @@
 			if (!response.ok)
 				throw new Error(
 					typeof result.detail === 'string'
-						? result.detail
-						: 'Office import failed. Please try again.'
+						? $i18n.t(result.detail)
+						: $i18n.t('Office import failed. Please try again.')
 				);
 			knowledgeId = result.knowledge_id || null;
 			if (result.errors) {
 				syncError = true;
-				syncMessage = `${result.files} file(s) indexed; ${result.errors} need attention. ${result.failures?.[0]?.reason || 'Try again.'}`;
+				syncMessage = `${$i18n.t('{{files}} file(s) indexed; {{errors}} need attention.', {
+					files: result.files,
+					errors: result.errors
+				})} ${result.failures?.[0]?.reason || $i18n.t('Try again.')}`;
 			} else {
 				syncMessage = result.files
-					? `${result.files} file(s) available in Office Files.`
-					: 'Office Files is ready. Saved documents are added automatically.';
+					? $i18n.t('{{files}} file(s) available in Office Files.', { files: result.files })
+					: $i18n.t('Office Files is ready. Saved documents are added automatically.');
 			}
 		} catch (error) {
 			syncError = true;
-			syncMessage = error instanceof Error ? error.message : 'Office import failed.';
+			syncMessage = error instanceof Error ? error.message : $i18n.t('Office import failed.');
 		} finally {
 			syncing = false;
 			publishSyncState();
@@ -143,7 +146,7 @@
 				const theme = currentTheme();
 				sentTheme = theme;
 				const lang = localStorage.getItem('locale') || 'en-US';
-				iframeSrc = `${OFFICE_BASE_URL}/sso?office_build=office-20261013-8&gnos3_token=${encodeURIComponent(exchangeToken)}&theme=${theme}&lang=${encodeURIComponent(lang)}`;
+				iframeSrc = `${OFFICE_BASE_URL}/sso?gnos3_token=${encodeURIComponent(exchangeToken)}&theme=${theme}&lang=${encodeURIComponent(lang)}`;
 			} catch (err) {
 				error = err instanceof Error ? err.message : String(err);
 			} finally {

@@ -2,6 +2,19 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
+	import dayjs from 'dayjs';
+
+	import Search from '@lucide/svelte/icons/search';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Ban from '@lucide/svelte/icons/ban';
+	import Building from '@lucide/svelte/icons/building';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import RotateCw from '@lucide/svelte/icons/rotate-cw';
+	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+	import List from '@lucide/svelte/icons/list';
 
 	import {
 		getCompanies,
@@ -13,22 +26,46 @@
 		getPeriodTemplates
 	} from '$lib/apis/accounting';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
 	import CompanyFormModal from '$lib/components/accounting/CompanyFormModal.svelte';
-	import { user, isAdmin} from '$lib/stores';
+	import CompanyLogo from '$lib/components/accounting/CompanyLogo.svelte';
+	import { user, isAdmin } from '$lib/stores';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	// RBAC: Add Company creates a new company → requires modules.accounting.admin
 	// (the user must have global admin on the accounting module). Admins bypass.
-	$: canCreateCompany =
-		$isAdmin ||
-		Boolean($user?.permissions?.modules?.accounting?.admin);
+	$: canCreateCompany = $isAdmin || Boolean($user?.permissions?.modules?.accounting?.admin);
 
 	let loading = true;
+	let loadError = '';
 	let companies: any[] = [];
 	let query = '';
-	let searchDebounceTimer: ReturnType<typeof setTimeout>;
+
+	// Cards or a compact list; remembered in this browser.
+	const VIEW_KEY = 'accounting-companies-view';
+	let view: 'grid' | 'list' = 'grid';
+
+	const setView = (v: string) => {
+		if (v !== 'grid' && v !== 'list') return; // clicking the pressed item reports ''
+		view = v;
+		try {
+			localStorage.setItem(VIEW_KEY, view);
+		} catch {}
+	};
 
 	// Modal state
 	let showFormModal = false;
@@ -48,15 +85,19 @@
 	$: filteredCompanies = companies.filter((c) =>
 		c.name.toLowerCase().includes(query.toLowerCase())
 	);
+	$: activeCount = companies.filter((c) => c.is_active).length;
+	$: inactiveCount = companies.length - activeCount;
 
 	const loadCompanies = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			const res = await getCompanies();
-			const list = Array.isArray(res) ? res : res?.companies ?? [];
+			const list = Array.isArray(res) ? res : (res?.companies ?? []);
 			companies = list;
 		} catch (err: any) {
-			toast.error(err?.detail || `${err}`);
+			loadError = err?.detail || `${err}`;
+			toast.error(loadError);
 		}
 		loading = false;
 	};
@@ -121,429 +162,339 @@
 		await loadCompanies();
 	};
 
-	const handleCardClick = (company: any) => {
-		goto(`/accounting/company/${company.id}/dashboard`);
+	const companyHref = (company: any) => `/accounting/company/${company.id}/dashboard`;
+
+	// A click anywhere on a list row opens the company; the link and the menu keep their own.
+	const openFromRow = (e: MouseEvent, company: any) => {
+		if ((e.target as HTMLElement).closest('a, button')) return;
+		goto(companyHref(company));
 	};
 
-	const handleDuplicateKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') {
-			showDuplicateModal = false;
-		}
+	const fiscalStart = (company: any) => Number(company.fiscal_year_start_month ?? 1) || 1;
+
+	// "31 Mar": the last day of the fiscal year.
+	const fiscalYearEnd = (company: any) =>
+		dayjs()
+			.month(fiscalStart(company) - 2)
+			.endOf('month')
+			.format('D MMM');
+
+	// "China · CNY", plus "FY to 31 Mar" when the fiscal year is not the calendar year.
+	const companyMeta = (company: any) => {
+		const parts = [company.country, company.currency].filter(Boolean);
+		if (fiscalStart(company) !== 1) parts.push(`${$i18n.t('FY to')} ${fiscalYearEnd(company)}`);
+		return parts.join(' · ');
 	};
-
-	const handleDeactivateKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') {
-			showDeactivateConfirm = false;
-		}
-	};
-
-	$: if (showDuplicateModal) {
-		window.addEventListener('keydown', handleDuplicateKeyDown);
-	} else {
-		window.removeEventListener('keydown', handleDuplicateKeyDown);
-	}
-
-	$: if (showDeactivateConfirm) {
-		window.addEventListener('keydown', handleDeactivateKeyDown);
-	} else {
-		window.removeEventListener('keydown', handleDeactivateKeyDown);
-	}
 
 	onMount(() => {
+		try {
+			const v = localStorage.getItem(VIEW_KEY);
+			if (v === 'grid' || v === 'list') view = v;
+		} catch {}
 		loadCompanies();
 	});
 </script>
 
-<CompanyFormModal
-	bind:show={showFormModal}
-	company={editingCompany}
-	on:save={handleFormSave}
-/>
+<CompanyFormModal bind:show={showFormModal} company={editingCompany} on:save={handleFormSave} />
 
-{#if loading}
-	<div class="flex justify-center my-10">
-		<Spinner className="size-5" />
-	</div>
-{:else}
-	<div class="py-3 space-y-4">
-		<!-- Header with search and add button -->
-		<div
-			class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2"
-		>
-			<div class="flex items-center gap-3">
-				<h2 class="text-lg font-medium dark:text-gray-200">
-					{$i18n.t('Companies')}
-				</h2>
-				<span class="text-sm text-gray-500 dark:text-gray-400">
-					{filteredCompanies.length}
-				</span>
-			</div>
+{#snippet companyMenu(company: any)}
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="ghost" size="icon-xs" aria-label={$i18n.t('Company actions')}>
+					<Ellipsis />
+				</Button>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end" class="w-48">
+			<DropdownMenu.Item onSelect={() => handleEditCompany(company)}>
+				<Pencil />{$i18n.t('Edit')}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onSelect={() => handleDuplicateCompany(company)}>
+				<Copy />{$i18n.t('Duplicate')}
+			</DropdownMenu.Item>
+			{#if company.is_active}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item variant="destructive" onSelect={() => handleDeactivate(company)}>
+					<Ban />{$i18n.t('Deactivate')}
+				</DropdownMenu.Item>
+			{/if}
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
+{/snippet}
 
-			<div class="flex items-center gap-2 w-full md:w-auto">
-				<!-- Search -->
-				<div class="flex flex-1 md:flex-none items-center">
-					<div class="self-center ml-1 mr-3">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							class="w-4 h-4 text-gray-400"
-						>
-							<path
-								fill-rule="evenodd"
-								d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-					</div>
-					<input
-						class="w-full md:w-64 text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent dark:text-gray-200"
-						bind:value={query}
-						aria-label={$i18n.t('Search')}
-						placeholder={$i18n.t('Search companies...')}
-					/>
-				</div>
-
-				<!-- Add Company Button (admin-only) -->
-				{#if canCreateCompany}
-					<button
-						class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition whitespace-nowrap"
-						on:click={handleAddCompany}
-					>
-						{$i18n.t('Add Company')}
-					</button>
-				{/if}
-			</div>
+<div class="flex flex-col gap-4">
+	<!-- Page head: title + counts, search and the one primary action -->
+	<div class="flex flex-wrap items-end justify-between gap-3">
+		<div class="min-w-0">
+			<h1 class="text-2xl font-semibold tracking-tight">{$i18n.t('Companies')}</h1>
+			{#if !loading && !loadError}
+				<p class="text-sm text-muted-foreground tabular-nums">
+					{activeCount}
+					{$i18n.t('active')}
+					{#if inactiveCount}· {inactiveCount} {$i18n.t('inactive')}{/if}
+				</p>
+			{/if}
 		</div>
 
-		<!-- Company Cards Grid -->
-		{#if filteredCompanies.length === 0}
-			<div class="flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="1.5"
-					stroke="currentColor"
-					class="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z"
-					/>
-				</svg>
-				{#if query}
-					<p class="text-sm">{$i18n.t('No companies match your search')}</p>
-				{:else}
-					<p class="text-sm">{$i18n.t('No companies yet')}</p>
-					<p class="text-xs mt-1">{$i18n.t('Create your first company to get started')}</p>
-				{/if}
+		<div class="flex w-full items-center gap-2 sm:w-auto">
+			<div class="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input
+					type="search"
+					class="h-8 pl-8"
+					bind:value={query}
+					aria-label={$i18n.t('Search')}
+					placeholder={$i18n.t('Search companies...')}
+				/>
 			</div>
-		{:else}
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-				{#each filteredCompanies as company (company.id)}
-					<!-- svelte-ignore a11y-click-events-have-key-events -->
-					<!-- svelte-ignore a11y-no-static-element-interactions -->
-					<div
-						class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30 hover:border-blue-300 dark:hover:border-blue-700 cursor-pointer transition group {!company.is_active
-							? 'opacity-60'
-							: ''}"
-						on:click={() => handleCardClick(company)}
+
+			<ToggleGroup.Root
+				type="single"
+				variant="outline"
+				size="sm"
+				value={view}
+				onValueChange={(v) => setView(v)}
+				aria-label={$i18n.t('View')}
+			>
+				<ToggleGroup.Item value="grid" aria-label={$i18n.t('Cards')} title={$i18n.t('Cards')}>
+					<LayoutGrid />
+				</ToggleGroup.Item>
+				<ToggleGroup.Item value="list" aria-label={$i18n.t('List')} title={$i18n.t('List')}>
+					<List />
+				</ToggleGroup.Item>
+			</ToggleGroup.Root>
+
+			<!-- Add Company (accounting admins) -->
+			{#if canCreateCompany}
+				<Button size="sm" onclick={handleAddCompany}>
+					<Plus />{$i18n.t('Add Company')}
+				</Button>
+			{/if}
+		</div>
+	</div>
+
+	{#if loading && view === 'list'}
+		<div class="flex flex-col gap-px overflow-hidden rounded-md border" aria-busy="true">
+			{#each Array(8) as _}<Skeleton class="h-12 rounded-none" />{/each}
+		</div>
+	{:else if loading}
+		<div
+			class="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-4"
+			aria-busy="true"
+		>
+			{#each Array(6) as _}<Skeleton class="h-[7.5rem] rounded-xl" />{/each}
+		</div>
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t("Couldn't load companies.")}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={loadCompanies}>
+					<RotateCw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{:else if filteredCompanies.length === 0}
+		<Empty.Root class="border border-dashed">
+			<Empty.Header>
+				<Empty.Media variant="icon"><Building /></Empty.Media>
+				{#if query}
+					<Empty.Title>{$i18n.t('No companies match your search')}</Empty.Title>
+				{:else}
+					<Empty.Title>{$i18n.t('No companies yet')}</Empty.Title>
+					<Empty.Description
+						>{$i18n.t('Create your first company to get started')}</Empty.Description
 					>
-						<div class="flex justify-between items-start mb-3">
-							<div class="flex-1 min-w-0">
-								<div class="flex items-center gap-2">
-									<h3
-										class="text-sm font-medium dark:text-gray-200 truncate"
-									>
-										{company.name}
-									</h3>
-									{#if !company.is_active}
-										<span
-											class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+				{/if}
+			</Empty.Header>
+			{#if query}
+				<Empty.Content>
+					<Button variant="outline" size="sm" onclick={() => (query = '')}>
+						{$i18n.t('Clear search')}
+					</Button>
+				</Empty.Content>
+			{:else if canCreateCompany}
+				<Empty.Content>
+					<Button size="sm" onclick={handleAddCompany}>
+						<Plus />{$i18n.t('Add Company')}
+					</Button>
+				</Empty.Content>
+			{/if}
+		</Empty.Root>
+	{:else if view === 'list'}
+		<div class="overflow-hidden rounded-md border">
+			<Table.Root>
+				<Table.Header class="bg-muted/50">
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{$i18n.t('Company')}</Table.Head>
+						<Table.Head class="hidden md:table-cell">{$i18n.t('Country')}</Table.Head>
+						<Table.Head>{$i18n.t('Currency')}</Table.Head>
+						<Table.Head class="hidden lg:table-cell">{$i18n.t('Year end')}</Table.Head>
+						<Table.Head class="hidden xl:table-cell">{$i18n.t('Chart of Accounts')}</Table.Head>
+						<Table.Head class="w-12"><span class="sr-only">{$i18n.t('Actions')}</span></Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each filteredCompanies as company (company.id)}
+						<Table.Row class="cursor-pointer" onclick={(e) => openFromRow(e, company)}>
+							<Table.Cell class="max-w-0 w-full py-1.5">
+								<div class="flex min-w-0 items-center gap-3">
+									<CompanyLogo {company} size="sm" />
+									<div class="flex min-w-0 flex-col">
+										<div class="flex min-w-0 items-center gap-2">
+											<a
+												href={companyHref(company)}
+												title={company.name}
+												class="truncate font-medium outline-none hover:underline focus-visible:underline"
+												>{company.name}</a
+											>
+											{#if !company.is_active}
+												<Badge variant="secondary">{$i18n.t('Inactive')}</Badge>
+											{/if}
+										</div>
+										{#if company.description}
+											<span
+												class="truncate text-xs text-muted-foreground"
+												title={company.description}>{company.description}</span
+											>
+										{/if}
+									</div>
+								</div>
+							</Table.Cell>
+							<Table.Cell class="hidden text-muted-foreground md:table-cell"
+								>{company.country || '—'}</Table.Cell
+							>
+							<Table.Cell class="font-mono text-xs">{company.currency}</Table.Cell>
+							<Table.Cell class="hidden text-muted-foreground tabular-nums lg:table-cell"
+								>{fiscalYearEnd(company)}</Table.Cell
+							>
+							<Table.Cell
+								class="hidden max-w-[16rem] truncate text-muted-foreground xl:table-cell"
+								title={company.chart_template_name ?? ''}
+								>{company.chart_template_name || '—'}</Table.Cell
+							>
+							<Table.Cell class="py-1.5 text-right">{@render companyMenu(company)}</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
+	{:else}
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-4">
+			{#each filteredCompanies as company (company.id)}
+				<!-- The name is the link; it stretches over the card so the whole card opens it. -->
+				<Card.Root
+					size="sm"
+					class="relative transition-colors hover:bg-accent/40 has-[a:focus-visible]:ring-[3px] has-[a:focus-visible]:ring-ring/50"
+				>
+					<Card.Header
+						class="gap-x-3 has-data-[slot=card-action]:grid-cols-[auto_minmax(0,1fr)_auto]"
+					>
+						<CompanyLogo {company} class="row-span-2 self-center" />
+						<Card.Title class="col-start-2 min-w-0 truncate leading-5">
+							<a
+								href={companyHref(company)}
+								title={company.name}
+								class="outline-none after:absolute after:inset-0 after:rounded-xl after:content-['']"
+								>{company.name}</a
+							>
+						</Card.Title>
+						<Card.Description
+							class="col-span-2 col-start-2 truncate tabular-nums"
+							title={companyMeta(company)}>{companyMeta(company)}</Card.Description
+						>
+						<!-- one row high, so the description below can use the full width -->
+						<Card.Action class="relative z-10 col-start-3 row-span-1 -my-1">
+							{@render companyMenu(company)}
+						</Card.Action>
+					</Card.Header>
+					{#if company.description || company.chart_template_name || company.period_template_name || !company.is_active}
+						<Card.Content class="flex flex-col gap-2">
+							{#if company.description}
+								<p class="truncate text-muted-foreground" title={company.description}>
+									{company.description}
+								</p>
+							{/if}
+							{#if company.chart_template_name || company.period_template_name || !company.is_active}
+								<div class="flex flex-wrap gap-1.5">
+									{#if company.chart_template_name}
+										<Badge
+											variant="outline"
+											class="max-w-full truncate"
+											title={$i18n.t('Chart of Accounts Template')}
+											>{company.chart_template_name}</Badge
 										>
-											{$i18n.t('Inactive')}
-										</span>
+									{/if}
+									{#if company.period_template_name}
+										<Badge
+											variant="outline"
+											class="max-w-full truncate"
+											title={$i18n.t('Accounting Period Template')}
+											>{company.period_template_name}</Badge
+										>
+									{/if}
+									{#if !company.is_active}
+										<Badge variant="secondary">{$i18n.t('Inactive')}</Badge>
 									{/if}
 								</div>
-								{#if company.description}
-									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-										{company.description}
-									</p>
-								{/if}
-							</div>
-
-							<!-- Action buttons -->
-							<div
-								class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition ml-2 flex-shrink-0"
-							>
-								<button
-									class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
-									aria-label={$i18n.t('Edit')}
-									title={$i18n.t('Edit')}
-									on:click|stopPropagation={() => handleEditCompany(company)}
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-3.5 h-3.5"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-										/>
-									</svg>
-								</button>
-								<button
-									class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
-									aria-label={$i18n.t('Duplicate')}
-									title={$i18n.t('Duplicate')}
-									on:click|stopPropagation={() => handleDuplicateCompany(company)}
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-3.5 h-3.5"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
-										/>
-									</svg>
-								</button>
-								{#if company.is_active}
-									<button
-										class="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-										aria-label={$i18n.t('Deactivate')}
-										title={$i18n.t('Deactivate')}
-										on:click|stopPropagation={() => handleDeactivate(company)}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke-width="1.5"
-											stroke="currentColor"
-											class="w-3.5 h-3.5"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636"
-											/>
-										</svg>
-									</button>
-								{/if}
-							</div>
-						</div>
-
-						<!-- Card details -->
-						<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-							{#if company.country}
-								<div class="flex items-center gap-1">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-3 h-3"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418"
-										/>
-									</svg>
-									<span>{company.country}</span>
-								</div>
 							{/if}
-							<div class="flex items-center gap-1">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke-width="1.5"
-									stroke="currentColor"
-									class="w-3 h-3"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"
-									/>
-								</svg>
-								<span>{company.currency}</span>
-							</div>
-							{#if company.chart_template_name}
-								<div class="flex items-center gap-1">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-3 h-3"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75z"
-										/>
-									</svg>
-									<span>{company.chart_template_name}</span>
-								</div>
-							{/if}
-							{#if company.period_template_name}
-								<div class="flex items-center gap-1">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-3 h-3"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"
-										/>
-									</svg>
-									<span>{company.period_template_name}</span>
-								</div>
-							{/if}
-						</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	</div>
-{/if}
-
-<!-- Duplicate Company Modal -->
-{#if showDuplicateModal}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
-		class="fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-99999999 overflow-hidden overscroll-contain"
-		on:mousedown={() => {
-			showDuplicateModal = false;
-		}}
-	>
-		<div
-			class="m-auto max-w-full w-[28rem] mx-2 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm rounded-4xl max-h-[100dvh] shadow-3xl border border-white dark:border-gray-900"
-			on:mousedown|stopPropagation
-		>
-			<div class="px-[1.75rem] py-6 flex flex-col">
-				<div class="text-lg font-medium dark:text-gray-200 mb-4">
-					{$i18n.t('Duplicate Company')}
-				</div>
-
-				<form
-					class="flex flex-col gap-3"
-					on:submit|preventDefault={confirmDuplicate}
-				>
-					<div>
-						<label
-							for="duplicate-name"
-							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-						>
-							{$i18n.t('New Company Name')}
-						</label>
-						<input
-							id="duplicate-name"
-							type="text"
-							bind:value={duplicateName}
-							placeholder={$i18n.t('Enter company name')}
-							class="w-full rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 bg-gray-50 outline-hidden border border-gray-200 dark:border-gray-800 focus:border-blue-500 transition"
-							required
-						/>
-					</div>
-
-					<div class="text-xs text-gray-500 dark:text-gray-400">
-						{$i18n.t('This will copy the chart of accounts and period configuration from')}
-						<span class="font-medium">{duplicatingCompany?.name}</span>.
-					</div>
-
-					<div class="mt-3 flex justify-between gap-1.5">
-						<button
-							type="button"
-							class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white font-medium w-full py-2 rounded-3xl transition"
-							on:click={() => {
-								showDuplicateModal = false;
-							}}
-						>
-							{$i18n.t('Cancel')}
-						</button>
-						<button
-							type="submit"
-							class="text-sm bg-gray-900 hover:bg-gray-850 text-gray-100 dark:bg-gray-100 dark:hover:bg-white dark:text-gray-800 font-medium w-full py-2 rounded-3xl transition disabled:opacity-50"
-							disabled={duplicating}
-						>
-							{duplicating ? $i18n.t('Duplicating...') : $i18n.t('Duplicate')}
-						</button>
-					</div>
-				</form>
-			</div>
+						</Card.Content>
+					{/if}
+				</Card.Root>
+			{/each}
 		</div>
-	</div>
-{/if}
+	{/if}
+</div>
 
-<!-- Deactivate Confirmation Modal -->
-{#if showDeactivateConfirm}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
-		class="fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-99999999 overflow-hidden overscroll-contain"
-		on:mousedown={() => {
-			showDeactivateConfirm = false;
-		}}
-	>
-		<div
-			class="m-auto max-w-full w-[28rem] mx-2 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm rounded-4xl max-h-[100dvh] shadow-3xl border border-white dark:border-gray-900"
-			on:mousedown|stopPropagation
-		>
-			<div class="px-[1.75rem] py-6 flex flex-col">
-				<div class="text-lg font-medium dark:text-gray-200 mb-2">
-					{$i18n.t('Deactivate Company')}
-				</div>
+<!-- Duplicate Company -->
+<Dialog.Root bind:open={showDuplicateModal}>
+	<Dialog.Content class="sm:max-w-lg">
+		<form class="contents" on:submit|preventDefault={confirmDuplicate}>
+			<Dialog.Header>
+				<Dialog.Title>{$i18n.t('Duplicate Company')}</Dialog.Title>
+				<Dialog.Description>
+					{$i18n.t('This will copy the chart of accounts and period configuration from')}
+					<span class="font-medium text-foreground">{duplicatingCompany?.name}</span
+					>{duplicatingCompany?.name?.endsWith('.') ? '' : '.'}
+				</Dialog.Description>
+			</Dialog.Header>
 
-				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-					{$i18n.t('Are you sure you want to deactivate')}
-					<span class="font-medium dark:text-gray-200">{deactivatingCompany?.name}</span>?
-					{$i18n.t('This company will no longer appear in active views.')}
-				</p>
-
-				<div class="flex justify-between gap-1.5">
-					<button
-						type="button"
-						class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white font-medium w-full py-2 rounded-3xl transition"
-						on:click={() => {
-							showDeactivateConfirm = false;
-						}}
-					>
-						{$i18n.t('Cancel')}
-					</button>
-					<button
-						type="button"
-						class="text-sm bg-red-600 hover:bg-red-700 text-white font-medium w-full py-2 rounded-3xl transition disabled:opacity-50"
-						disabled={deactivating}
-						on:click={confirmDeactivate}
-					>
-						{deactivating ? $i18n.t('Deactivating...') : $i18n.t('Deactivate')}
-					</button>
-				</div>
+			<div class="flex flex-col gap-2">
+				<Label for="duplicate-name">{$i18n.t('New Company Name')}</Label>
+				<Input
+					id="duplicate-name"
+					type="text"
+					bind:value={duplicateName}
+					placeholder={$i18n.t('Enter company name')}
+					required
+				/>
 			</div>
-		</div>
-	</div>
-{/if}
+
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (showDuplicateModal = false)}>
+					{$i18n.t('Cancel')}
+				</Button>
+				<Button type="submit" disabled={duplicating}>
+					{#if duplicating}<Spinner />{$i18n.t('Duplicating...')}{:else}{$i18n.t('Duplicate')}{/if}
+				</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Deactivate Company -->
+<ConfirmDialog
+	bind:open={showDeactivateConfirm}
+	title={$i18n.t('Deactivate Company')}
+	description={deactivatingCompany
+		? `${$i18n.t('Are you sure you want to deactivate')} ${deactivatingCompany.name}? ${$i18n.t('This company will no longer appear in active views.')}`
+		: ''}
+	confirmLabel={$i18n.t('Deactivate')}
+	destructive
+	onconfirm={confirmDeactivate}
+	oncancel={() => (deactivatingCompany = null)}
+/>

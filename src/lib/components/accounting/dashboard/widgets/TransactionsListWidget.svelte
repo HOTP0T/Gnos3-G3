@@ -1,17 +1,23 @@
 <script lang="ts">
-	// Recent transactions (or drafts, via options.status). Scrollable table.
+	// Recent transactions (or drafts, via options.status). Scrollable dense table; a row opens the
+	// entry (click or Enter).
 	import { onMount, getContext } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import dayjs from 'dayjs';
+	import Receipt from '@lucide/svelte/icons/receipt';
 	import { getTransactions } from '$lib/apis/accounting';
-	import Badge from '$lib/components/common/Badge.svelte';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
+	import WidgetState from '../WidgetState.svelte';
 	import { rowMoney } from '../format';
 
 	export let companyId: number;
 	export let options: { status?: 'all' | 'draft'; limit?: number } = {};
 
 	const i18n: any = getContext('i18n');
+	const T = (k: string) => ($i18n?.t ? $i18n.t(k) : k);
 	const displayCurrency = getContext<Writable<string>>('displayCurrency');
 	const exchangeRates = getContext<Writable<any[]>>('exchangeRates');
 	const companyCurrencyCtx = getContext<Writable<string>>('companyCurrency');
@@ -19,77 +25,98 @@
 
 	let rows: any[] = [];
 	let loading = true;
+	let error = false;
 	$: status = options?.status ?? 'all';
 	$: limit = options?.limit ?? 20;
 
 	onMount(load);
 	async function load() {
 		loading = true;
+		error = false;
 		try {
 			const res = await getTransactions({
 				company_id: companyId,
 				limit,
 				...(status === 'draft' ? { status: 'draft' } : {})
 			});
-			rows = Array.isArray(res) ? res : res?.transactions ?? res?.items ?? [];
+			rows = Array.isArray(res) ? res : (res?.transactions ?? res?.items ?? []);
 		} catch {
 			rows = [];
+			error = true;
 		}
 		loading = false;
 	}
 
-	const statusType = (s: string) => (s === 'posted' ? 'success' : s === 'voided' ? 'error' : 'muted');
-	const typeColor = (tt: string) => {
-		switch (tt) {
-			case 'invoice': return 'bg-blue-500/20 text-blue-700 dark:text-blue-200';
-			case 'payment':
-			case 'payment_in':
-			case 'payment_out': return 'bg-purple-500/20 text-purple-700 dark:text-purple-200';
-			case 'bill': return 'bg-orange-500/20 text-orange-700 dark:text-orange-200';
-			default: return 'bg-gray-500/20 text-gray-700 dark:text-gray-200';
-		}
-	};
+	const open = (tx: any) => goto(`/accounting/company/${companyId}/entries?id=${tx.id}`);
+	const typeLabel = (tt: string | null | undefined) => (tt ? tt.replace(/_/g, ' ') : '—');
 </script>
 
 {#if loading}
-	<div class="h-full flex items-center justify-center text-xs text-gray-400">{i18n?.t ? i18n.t('Loading…') : 'Loading…'}</div>
+	<WidgetState state="loading" rows={6} class="px-4 pb-4" />
+{:else if error}
+	<WidgetState state="error" onretry={load} class="px-4 pb-4" />
 {:else if rows.length === 0}
-	<div class="h-full flex items-center justify-center text-xs text-gray-400">{i18n?.t ? i18n.t('No transactions') : 'No transactions'}</div>
+	<WidgetState state="empty" icon={Receipt} message={T('No transactions')} class="px-4 pb-4" />
 {:else}
-	<div class="h-full overflow-y-auto -mx-1">
-		<table class="w-full text-xs text-left text-gray-500 dark:text-gray-400">
-			<thead class="text-[10px] uppercase text-gray-500 dark:text-gray-400 sticky top-0 bg-white dark:bg-gray-900">
-				<tr class="border-b border-gray-100 dark:border-gray-850/40">
-					<th class="px-1.5 py-1.5">{i18n?.t ? i18n.t('Date') : 'Date'}</th>
-					<th class="px-1.5 py-1.5">{i18n?.t ? i18n.t('Type') : 'Type'}</th>
-					<th class="px-1.5 py-1.5">{i18n?.t ? i18n.t('Description') : 'Description'}</th>
-					<th class="px-1.5 py-1.5 text-right">{i18n?.t ? i18n.t('Total') : 'Total'}</th>
-					<th class="px-1.5 py-1.5">{i18n?.t ? i18n.t('Status') : 'Status'}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each rows as tx}
-					{@const mv = rowMoney(tx.total ?? tx.amount ?? 0, tx.currency, nativeCurrency, $displayCurrency, $exchangeRates ?? [], tx.transaction_date, tx.exchange_rate)}
-					<tr
-						class="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850/50 transition border-b border-gray-50 dark:border-gray-850/20"
-						on:click={() => goto(`/accounting/company/${companyId}/entries?id=${tx.id}`)}
+	<!-- The body scrolls; the inner table container must not, so the header can stick. -->
+	<div class="h-full overflow-y-auto border-t [&_[data-slot=table-container]]:overflow-visible">
+		<Table.Root class="text-[13px]">
+			<Table.Header class="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--border)]">
+				<Table.Row class="border-0 hover:bg-transparent">
+					<Table.Head class="h-8 pl-4 text-muted-foreground">{T('Date')}</Table.Head>
+					<Table.Head class="h-8 text-muted-foreground">{T('Type')}</Table.Head>
+					<Table.Head class="h-8 text-muted-foreground">{T('Description')}</Table.Head>
+					<Table.Head class="h-8 text-right text-muted-foreground">{T('Total')}</Table.Head>
+					<Table.Head class="h-8 pr-4 text-muted-foreground">{T('Status')}</Table.Head>
+				</Table.Row>
+			</Table.Header>
+			<Table.Body>
+				{#each rows as tx (tx.id)}
+					{@const mv = rowMoney(
+						tx.total ?? tx.amount ?? 0,
+						tx.currency,
+						nativeCurrency,
+						$displayCurrency,
+						$exchangeRates ?? [],
+						tx.transaction_date,
+						tx.exchange_rate
+					)}
+					<Table.Row
+						class="cursor-pointer"
+						tabindex={0}
+						onclick={() => open(tx)}
+						onkeydown={(e: KeyboardEvent) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								open(tx);
+							}
+						}}
 					>
-						<td class="px-1.5 py-1">{tx.transaction_date ? dayjs(tx.transaction_date).format('YYYY-MM-DD') : '-'}</td>
-						<td class="px-1.5 py-1">
-							<span class="text-[10px] font-medium {typeColor(tx.transaction_type)} px-1 rounded uppercase">{tx.transaction_type ?? '-'}</span>
-						</td>
-						<td class="px-1.5 py-1 max-w-[160px] truncate">{tx.description ?? tx.memo ?? '-'}</td>
-						<td class="px-1.5 py-1 text-right tabular-nums">
+						<Table.Cell class="py-1.5 pl-4 tabular-nums">
+							{tx.transaction_date ? dayjs(tx.transaction_date).format('YYYY-MM-DD') : '—'}
+						</Table.Cell>
+						<Table.Cell class="py-1.5">
+							<Badge variant="outline" class="font-normal">{typeLabel(tx.transaction_type)}</Badge>
+						</Table.Cell>
+						<Table.Cell
+							class="max-w-[14rem] truncate py-1.5"
+							title={tx.description ?? tx.memo ?? ''}
+						>
+							{tx.description ?? tx.memo ?? '—'}
+						</Table.Cell>
+						<Table.Cell class="py-1.5 text-right tabular-nums">
 							{#if mv.converting && mv.hasRate}
-								{mv.display} <span class="text-[9px] text-gray-400">{mv.to}</span>
+								{mv.display} <span class="text-xs text-muted-foreground">{mv.to}</span>
 							{:else}
-								{mv.original} <span class="text-[9px] text-gray-400">{mv.from}</span>
+								{mv.original} <span class="text-xs text-muted-foreground">{mv.from}</span>
 							{/if}
-						</td>
-						<td class="px-1.5 py-1"><Badge type={statusType(tx.status)} content={tx.status ?? 'draft'} /></td>
-					</tr>
+						</Table.Cell>
+						<Table.Cell class="py-1.5 pr-4">
+							<StatusBadge kind="entry" status={tx.status ?? 'draft'} />
+						</Table.Cell>
+					</Table.Row>
 				{/each}
-			</tbody>
-		</table>
+			</Table.Body>
+		</Table.Root>
 	</div>
 {/if}

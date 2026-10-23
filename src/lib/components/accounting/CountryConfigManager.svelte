@@ -2,12 +2,30 @@
 	import { onMount, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import { getCountryConfigs, updateCountryConfig } from '$lib/apis/accounting';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Globe from '@lucide/svelte/icons/globe';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 
-	const i18n = getContext('i18n');
+	import { getCountryConfigs, updateCountryConfig } from '$lib/apis/accounting';
+	import { CIT_KIND_TERMS, TAX_KIND_TERMS } from '$lib/utils/taxTerms';
+
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as InputGroup from '$lib/components/ui/input-group/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+
+	const i18n: any = getContext('i18n');
 
 	let loading = true;
+	let loadError = '';
 	let saving = false;
 	let configs: any[] = [];
 	let selected = '';
@@ -15,6 +33,11 @@
 	let newCountryName = '';
 
 	const FREQ = ['monthly', 'quarterly', 'yearly'];
+	const FREQ_LABELS: Record<string, string> = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+	// What the taxes are: screens and the books name them from these, in their
+	// own language. The official names below are the country's, kept for reference.
+	const TAX_KINDS = Object.keys(TAX_KIND_TERMS);
+	const CIT_KINDS = Object.keys(CIT_KIND_TERMS);
 
 	// Rates are stored as decimals (0.20) but shown/edited as percentages (20).
 	const pct = (v: any) =>
@@ -24,6 +47,8 @@
 	function toForm(c: any) {
 		return {
 			country: c.country,
+			tax_kind: c.tax_kind ?? 'vat',
+			cit_kind: c.cit_kind ?? 'cit',
 			tax_name: c.tax_name ?? '',
 			tax_name_full: c.tax_name_full ?? '',
 			currency: c.currency ?? '',
@@ -86,6 +111,7 @@
 
 	const load = async () => {
 		loading = true;
+		loadError = '';
 		try {
 			const res = await getCountryConfigs();
 			configs = Array.isArray(res) ? res : [];
@@ -94,6 +120,7 @@
 			}
 			selectCountry();
 		} catch (err: any) {
+			loadError = `${err?.detail ?? err}`;
 			toast.error(`${$i18n.t('Failed to load country settings')}: ${err?.detail ?? err}`);
 		}
 		loading = false;
@@ -131,6 +158,8 @@
 				.map((s) => Number(s) / 100)
 				.filter((n) => !isNaN(n));
 			const payload = {
+				tax_kind: form.tax_kind || 'vat',
+				cit_kind: form.cit_kind || 'cit',
 				tax_name: form.tax_name || form.country,
 				tax_name_full: form.tax_name_full || null,
 				currency: form.currency || 'USD',
@@ -157,7 +186,10 @@
 				cit_frequency: form.cit_frequency || 'yearly',
 				cit_tiers: parseTiers(form.cit_tiers),
 				cit_reduction_rate: dec(form.cit_reduction_rate),
-				cit_reduction_cap: form.cit_reduction_cap === '' || form.cit_reduction_cap === null ? null : Number(form.cit_reduction_cap),
+				cit_reduction_cap:
+					form.cit_reduction_cap === '' || form.cit_reduction_cap === null
+						? null
+						: Number(form.cit_reduction_cap),
 				cit_provisional: !!form.cit_provisional,
 				tax_year_start_month: Number(form.tax_year_start_month) || 1,
 				withholds_iit: !!form.withholds_iit,
@@ -177,237 +209,529 @@
 
 	onMount(load);
 
-	const inputCls =
-		'w-full text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition';
-	const labelCls = 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1';
+	// Settings rows (design system → Settings): label and description on the left, control on the right
+	const rowCls = 'flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6';
+	const switchRowCls = 'flex items-center gap-3 py-3';
+	const labelColCls = 'grid min-w-0 gap-1';
+	const descCls = 'text-sm text-muted-foreground';
+	const textCls = 'w-full sm:w-72 sm:shrink-0';
+	const shortCls = 'w-full sm:w-40 sm:shrink-0';
+	const pctCls = 'h-9 w-full sm:w-40 sm:shrink-0';
+	const numCls = 'text-right tabular-nums';
+	const cardHeaderCls = 'border-b py-4 [.border-b]:pb-4';
 </script>
 
-<div class="py-2">
-	<div class="text-xs text-gray-400 dark:text-gray-500 px-0.5 mb-3">
-		{$i18n.t(
-			'Per-country tax parameters. These drive the tax module (VAT/IS/IR) and override the built-in defaults. Rates are entered as percentages.'
-		)}
+<div class="flex max-w-4xl flex-col gap-4">
+	<div class="grid max-w-3xl gap-1">
+		<h2 class="text-lg font-semibold">{$i18n.t('Countries')}</h2>
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				'Per-country tax parameters. These drive the tax module (VAT, corporate and individual income tax) and override the built-in defaults. Rates are entered as percentages.'
+			)}
+		</p>
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center my-10"><Spinner className="size-5" /></div>
-	{:else}
-		<!-- Country picker + add + save -->
-		<div class="flex flex-col md:flex-row md:items-end gap-2 mb-4">
-			<div class="flex-1">
-				<label for="cc-country" class={labelCls}>{$i18n.t('Country')}</label>
-				<select id="cc-country" bind:value={selected} on:change={selectCountry} class={inputCls}>
-					{#each configs as c}
-						<option value={c.country}>{c.country}</option>
+		<div class="flex flex-wrap items-end gap-3">
+			<Skeleton class="h-9 w-64" />
+			<Skeleton class="h-9 w-56" />
+		</div>
+		{#each Array(2) as _}
+			<Card.Root>
+				<Card.Header><Skeleton class="h-5 w-40" /></Card.Header>
+				<Card.Content class="flex flex-col gap-4">
+					{#each Array(3) as __}
+						<div class="flex items-center justify-between gap-6">
+							<Skeleton class="h-4 w-48" />
+							<Skeleton class="h-9 w-56" />
+						</div>
 					{/each}
-				</select>
+				</Card.Content>
+			</Card.Root>
+		{/each}
+	{:else if loadError}
+		<Alert.Root variant="destructive">
+			<CircleAlert />
+			<Alert.Title>{$i18n.t('Failed to load country settings')}</Alert.Title>
+			<Alert.Description>
+				<p>{loadError}</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={load}>
+					<RotateCcw />{$i18n.t('Retry')}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{:else}
+		<!-- Country picker + add -->
+		<div class="flex flex-wrap items-end gap-3">
+			<div class="grid w-full gap-2 sm:w-auto">
+				<Label for="cc-country">{$i18n.t('Country')}</Label>
+				<NativeSelect.Root
+					id="cc-country"
+					class="w-full sm:w-64"
+					value={selected}
+					onchange={(e: Event) => {
+						selected = (e.currentTarget as HTMLSelectElement).value;
+						selectCountry();
+					}}
+				>
+					{#each configs as c}
+						<NativeSelect.Option value={c.country}>{c.country}</NativeSelect.Option>
+					{/each}
+				</NativeSelect.Root>
 			</div>
-			<div class="flex items-end gap-2">
-				<input
-					type="text"
+			<div class="flex w-full items-center gap-2 sm:w-auto">
+				<Input
+					class="sm:w-52"
 					bind:value={newCountryName}
 					placeholder={$i18n.t('Add country…')}
-					class="text-sm rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-850 dark:text-gray-200 border border-gray-200 dark:border-gray-800 outline-hidden focus:border-blue-500 transition"
-					on:keydown={(e) => e.key === 'Enter' && addCountry()}
+					aria-label={$i18n.t('Add country…')}
+					onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && addCountry()}
 				/>
-				<button
-					class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition"
-					on:click={addCountry}
-				>
-					{$i18n.t('Add')}
-				</button>
+				<Button variant="outline" onclick={addCountry}>
+					<Plus />{$i18n.t('Add')}
+				</Button>
 			</div>
 		</div>
 
 		{#if form}
-			<div class="space-y-3">
-				<!-- General -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-					<div class="text-sm font-medium dark:text-gray-200 mb-3">{$i18n.t('General')}</div>
-					<div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-						<div>
-							<label class={labelCls} for="cc-taxname">{$i18n.t('Tax name')}</label>
-							<input id="cc-taxname" class={inputCls} bind:value={form.tax_name} placeholder="TVA / VAT / 增值税" />
+			<!-- General -->
+			<Card.Root class="gap-0 py-0">
+				<Card.Header class={cardHeaderCls}>
+					<Card.Title>{$i18n.t('General')}</Card.Title>
+				</Card.Header>
+				<Card.Content class="divide-y">
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-taxkind">{$i18n.t('Tax type')}</Label>
+							<p class={descCls}>
+								{$i18n.t('How screens and entries name this tax, in their own language.')}
+							</p>
 						</div>
-						<div class="md:col-span-2">
-							<label class={labelCls} for="cc-taxnamefull">{$i18n.t('Full name')}</label>
-							<input id="cc-taxnamefull" class={inputCls} bind:value={form.tax_name_full} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-currency">{$i18n.t('Currency')}</label>
-							<input id="cc-currency" class={inputCls} bind:value={form.currency} maxlength="3" placeholder="EUR" />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-freq">{$i18n.t('Filing frequency')}</label>
-							<select id="cc-freq" class={inputCls} bind:value={form.filing_frequency}>
-								{#each FREQ as f}<option value={f}>{$i18n.t(f)}</option>{/each}
-							</select>
-						</div>
+						<NativeSelect.Root id="cc-taxkind" class={shortCls} bind:value={form.tax_kind}>
+							{#each TAX_KINDS as k}<NativeSelect.Option value={k}
+									>{$i18n.t(TAX_KIND_TERMS[k])}</NativeSelect.Option
+								>{/each}
+						</NativeSelect.Root>
 					</div>
-				</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-taxname">{$i18n.t('Official tax name')}</Label>
+							<p class={descCls}>{$i18n.t("In the country's language, for reference")}</p>
+						</div>
+						<Input
+							id="cc-taxname"
+							class={textCls}
+							bind:value={form.tax_name}
+							placeholder="TVA / VAT / 增值税"
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-taxnamefull">{$i18n.t('Official full name')}</Label>
+						</div>
+						<Input id="cc-taxnamefull" class={textCls} bind:value={form.tax_name_full} />
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-currency">{$i18n.t('Currency')}</Label>
+						</div>
+						<Input
+							id="cc-currency"
+							class={shortCls}
+							bind:value={form.currency}
+							maxlength={3}
+							placeholder="EUR"
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-freq">{$i18n.t('Filing frequency')}</Label>
+						</div>
+						<NativeSelect.Root id="cc-freq" class={shortCls} bind:value={form.filing_frequency}>
+							{#each FREQ as f}<NativeSelect.Option value={f}>{$i18n.t(FREQ_LABELS[f])}</NativeSelect.Option
+								>{/each}
+						</NativeSelect.Root>
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-				<!-- VAT -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-					<div class="text-sm font-medium dark:text-gray-200 mb-3">{$i18n.t('VAT / Sales tax')}</div>
-					<div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-						<div>
-							<label class={labelCls} for="cc-vat">{$i18n.t('Standard rate')} (%)</label>
-							<input id="cc-vat" type="number" step="0.01" class={inputCls} bind:value={form.vat_standard_rate} />
+			<!-- VAT -->
+			<Card.Root class="gap-0 py-0">
+				<Card.Header class={cardHeaderCls}>
+					<Card.Title>{$i18n.t('VAT / Sales tax')}</Card.Title>
+				</Card.Header>
+				<Card.Content class="divide-y">
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-vat">{$i18n.t('Standard rate')}</Label>
 						</div>
-						<div class="md:col-span-3">
-							<label class={labelCls} for="cc-reduced">{$i18n.t('Reduced rates')} (%, {$i18n.t('comma-separated')})</label>
-							<input id="cc-reduced" class={inputCls} bind:value={form.vat_reduced_rates} placeholder="10, 5.5, 2.1" />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-colpat">{$i18n.t('Collected acct pattern')}</label>
-							<input id="cc-colpat" class={inputCls} bind:value={form.collected_pattern} placeholder="4457%" />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-dedpat">{$i18n.t('Deductible acct pattern')}</label>
-							<input id="cc-dedpat" class={inputCls} bind:value={form.deductible_pattern} placeholder="4456%" />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-payc">{$i18n.t('Settlement payable code')}</label>
-							<input id="cc-payc" class={inputCls} bind:value={form.settlement_payable_code} placeholder="4455" />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-recc">{$i18n.t('Settlement receivable code')}</label>
-							<input id="cc-recc" class={inputCls} bind:value={form.settlement_receivable_code} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-lcol">{$i18n.t('Collected label')}</label>
-							<input id="cc-lcol" class={inputCls} bind:value={form.collected_label} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-lded">{$i18n.t('Deductible label')}</label>
-							<input id="cc-lded" class={inputCls} bind:value={form.deductible_label} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-lpay">{$i18n.t('Payable label')}</label>
-							<input id="cc-lpay" class={inputCls} bind:value={form.payable_label} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-lrec">{$i18n.t('Receivable label')}</label>
-							<input id="cc-lrec" class={inputCls} bind:value={form.receivable_label} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-ldec">{$i18n.t('Declaration label')}</label>
-							<input id="cc-ldec" class={inputCls} bind:value={form.declaration_label} />
-						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-vat"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.vat_standard_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
 					</div>
-				</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-reduced">{$i18n.t('Reduced rates')}</Label>
+							<p class={descCls}>{$i18n.t('comma-separated')}</p>
+						</div>
+						<InputGroup.Root class="h-9 w-full sm:w-72 sm:shrink-0">
+							<InputGroup.Input
+								id="cc-reduced"
+								class={numCls}
+								bind:value={form.vat_reduced_rates}
+								placeholder="10, 5.5, 2.1"
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-colpat">{$i18n.t('Collected acct pattern')}</Label>
+						</div>
+						<Input
+							id="cc-colpat"
+							class="{shortCls} font-mono text-[13px] md:text-[13px]"
+							bind:value={form.collected_pattern}
+							placeholder="4457%"
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-dedpat">{$i18n.t('Deductible acct pattern')}</Label>
+						</div>
+						<Input
+							id="cc-dedpat"
+							class="{shortCls} font-mono text-[13px] md:text-[13px]"
+							bind:value={form.deductible_pattern}
+							placeholder="4456%"
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-payc">{$i18n.t('Settlement payable code')}</Label>
+						</div>
+						<Input
+							id="cc-payc"
+							class="{shortCls} font-mono text-[13px] md:text-[13px]"
+							bind:value={form.settlement_payable_code}
+							placeholder="4455"
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-recc">{$i18n.t('Settlement receivable code')}</Label>
+						</div>
+						<Input
+							id="cc-recc"
+							class="{shortCls} font-mono text-[13px] md:text-[13px]"
+							bind:value={form.settlement_receivable_code}
+						/>
+					</div>
+					<p class="{descCls} py-3">
+						{$i18n.t(
+							"Official terms in the country's language, kept for reference. Screens use the Gnos3 language; entries use each company's books language."
+						)}
+					</p>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-lcol">{$i18n.t('Collected label')}</Label>
+						</div>
+						<Input id="cc-lcol" class={textCls} bind:value={form.collected_label} />
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-lded">{$i18n.t('Deductible label')}</Label>
+						</div>
+						<Input id="cc-lded" class={textCls} bind:value={form.deductible_label} />
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-lpay">{$i18n.t('Payable label')}</Label>
+						</div>
+						<Input id="cc-lpay" class={textCls} bind:value={form.payable_label} />
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-lrec">{$i18n.t('Receivable label')}</Label>
+						</div>
+						<Input id="cc-lrec" class={textCls} bind:value={form.receivable_label} />
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-ldec">{$i18n.t('Declaration label')}</Label>
+						</div>
+						<Input id="cc-ldec" class={textCls} bind:value={form.declaration_label} />
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-				<!-- Surcharges -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-					<div class="text-sm font-medium dark:text-gray-200 mb-1">{$i18n.t('VAT surcharges')}</div>
-					<div class="text-xs text-gray-400 dark:text-gray-500 mb-3">
-						{$i18n.t('Levied on VAT payable (e.g. China urban-construction / education / local-education).')}
+			<!-- Surcharges -->
+			<Card.Root class="gap-0 py-0">
+				<Card.Header class={cardHeaderCls}>
+					<Card.Title>{$i18n.t('VAT surcharges')}</Card.Title>
+					<Card.Description>
+						{$i18n.t(
+							'Levied on VAT payable (e.g. China urban-construction / education / local-education).'
+						)}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="divide-y">
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-su">{$i18n.t('Urban construction')}</Label>
+						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-su"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.surcharge_urban_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
 					</div>
-					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-						<div>
-							<label class={labelCls} for="cc-su">{$i18n.t('Urban construction')} (%)</label>
-							<input id="cc-su" type="number" step="0.01" class={inputCls} bind:value={form.surcharge_urban_rate} />
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-se">{$i18n.t('Education surcharge')}</Label>
 						</div>
-						<div>
-							<label class={labelCls} for="cc-se">{$i18n.t('Education surcharge')} (%)</label>
-							<input id="cc-se" type="number" step="0.01" class={inputCls} bind:value={form.surcharge_education_rate} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-sl">{$i18n.t('Local education surcharge')} (%)</label>
-							<input id="cc-sl" type="number" step="0.01" class={inputCls} bind:value={form.surcharge_local_education_rate} />
-						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-se"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.surcharge_education_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
 					</div>
-				</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-sl">{$i18n.t('Local education surcharge')}</Label>
+						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-sl"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.surcharge_local_education_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-				<!-- Jurisdiction shape -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-					<div class="text-sm font-medium dark:text-gray-200 mb-1">{$i18n.t('What this country levies')}</div>
-					<div class="text-[11px] text-gray-400 dark:text-gray-500 mb-3">
-						{$i18n.t('Hong Kong: no VAT, a yearly two-tier Profits Tax with provisional prepayments, no salary withholding, MPF. Everything below is read by the Tax tab, the booking engine and the closing checklist.')}
+			<!-- Jurisdiction shape -->
+			<Card.Root class="gap-0 py-0">
+				<Card.Header class={cardHeaderCls}>
+					<Card.Title>{$i18n.t('What this country levies')}</Card.Title>
+					<Card.Description>
+						{$i18n.t(
+							'Hong Kong: no VAT, a yearly two-tier Profits Tax with provisional prepayments, no salary withholding, MPF. Everything below is read by the Tax tab, the booking engine and the closing checklist.'
+						)}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="divide-y">
+					<div class={switchRowCls}>
+						<Checkbox id="cc-hasvat" bind:checked={form.has_vat} />
+						<Label for="cc-hasvat" class="leading-snug">{$i18n.t('Levies VAT / GST')}</Label>
 					</div>
-					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-						<label class="flex items-center gap-2 text-sm dark:text-gray-200">
-							<input type="checkbox" bind:checked={form.has_vat} />
-							{$i18n.t('Levies VAT / GST')}
-						</label>
-						<label class="flex items-center gap-2 text-sm dark:text-gray-200">
-							<input type="checkbox" bind:checked={form.withholds_iit} />
-							{$i18n.t('Employer withholds personal income tax')}
-						</label>
-						<label class="flex items-center gap-2 text-sm dark:text-gray-200">
-							<input type="checkbox" bind:checked={form.cit_provisional} />
-							{$i18n.t('Tax office bills provisional (prepaid) income tax')}
-						</label>
-						<div>
-							<label class={labelCls} for="cc-tysm">{$i18n.t('Year of assessment starts in month')}</label>
-							<input id="cc-tysm" type="number" min="1" max="12" class={inputCls} bind:value={form.tax_year_start_month} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-payroll">{$i18n.t('Mandatory pension scheme')}</label>
-							<select id="cc-payroll" class={inputCls} bind:value={form.payroll_scheme}>
-								<option value="">{$i18n.t('— none —')}</option>
-								<option value="mpf">MPF (Hong Kong)</option>
-							</select>
-						</div>
+					<div class={switchRowCls}>
+						<Checkbox id="cc-iit" bind:checked={form.withholds_iit} />
+						<Label for="cc-iit" class="leading-snug"
+							>{$i18n.t('Employer withholds personal income tax')}</Label
+						>
 					</div>
-				</div>
+					<div class={switchRowCls}>
+						<Checkbox id="cc-prov" bind:checked={form.cit_provisional} />
+						<Label for="cc-prov" class="leading-snug"
+							>{$i18n.t('Tax office bills provisional (prepaid) income tax')}</Label
+						>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-tysm">{$i18n.t('Year of assessment starts in month')}</Label>
+							<p class={descCls}>1–12</p>
+						</div>
+						<Input
+							id="cc-tysm"
+							type="number"
+							min="1"
+							max="12"
+							class="w-full sm:w-24 sm:shrink-0 {numCls}"
+							bind:value={form.tax_year_start_month}
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-payroll">{$i18n.t('Mandatory pension scheme')}</Label>
+						</div>
+						<NativeSelect.Root id="cc-payroll" class={shortCls} bind:value={form.payroll_scheme}>
+							<NativeSelect.Option value="">{$i18n.t('— none —')}</NativeSelect.Option>
+							<NativeSelect.Option value="mpf">{$i18n.t('MPF (Hong Kong)')}</NativeSelect.Option>
+						</NativeSelect.Root>
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-				<!-- Income taxes -->
-				<div class="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100/30 dark:border-gray-850/30">
-					<div class="text-sm font-medium dark:text-gray-200 mb-3">{$i18n.t('Income taxes (IS / IR)')}</div>
-					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-						<div>
-							<label class={labelCls} for="cc-citlabel">{$i18n.t('Corporate tax name')}</label>
-							<input id="cc-citlabel" type="text" class={inputCls} placeholder="IS / 企业所得税 / Profits Tax" bind:value={form.cit_label} />
+			<!-- Income taxes -->
+			<Card.Root class="gap-0 py-0">
+				<Card.Header class={cardHeaderCls}>
+					<Card.Title>{$i18n.t('Income taxes')}</Card.Title>
+				</Card.Header>
+				<Card.Content class="divide-y">
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-citkind">{$i18n.t('Corporate tax type')}</Label>
 						</div>
-						<div>
-							<label class={labelCls} for="cc-citfreq">{$i18n.t('Computed')}</label>
-							<select id="cc-citfreq" class={inputCls} bind:value={form.cit_frequency}>
-								<option value="yearly">{$i18n.t('Yearly')}</option>
-								<option value="quarterly">{$i18n.t('Quarterly (cumulative prepayments)')}</option>
-							</select>
-						</div>
-						<div>
-							<label class={labelCls} for="cc-cit">{$i18n.t('Corporate (IS/CIT) rate')} (%)</label>
-							<input id="cc-cit" type="number" step="0.01" class={inputCls} bind:value={form.cit_rate} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-tiers">{$i18n.t('Tiered rates')} <span class="text-gray-400">(up_to:rate%, …)</span></label>
-							<input id="cc-tiers" type="text" class={inputCls} placeholder="2000000:8.25, :16.5" bind:value={form.cit_tiers} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-citp">{$i18n.t('CIT preferential rate')} (%)</label>
-							<input id="cc-citp" type="number" step="0.01" class={inputCls} bind:value={form.cit_preferential_rate} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-red">{$i18n.t('One-off tax reduction')} (%)</label>
-							<input id="cc-red" type="number" step="0.01" class={inputCls} bind:value={form.cit_reduction_rate} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-redcap">{$i18n.t('Reduction cap (amount)')}</label>
-							<input id="cc-redcap" type="number" step="0.01" class={inputCls} bind:value={form.cit_reduction_cap} />
-						</div>
-						<div>
-							<label class={labelCls} for="cc-ir">{$i18n.t('Individual (IR) rate')} (%)</label>
-							<input id="cc-ir" type="number" step="0.01" class={inputCls} bind:value={form.ir_rate} />
-						</div>
+						<NativeSelect.Root id="cc-citkind" class={textCls} bind:value={form.cit_kind}>
+							{#each CIT_KINDS as k}<NativeSelect.Option value={k}
+									>{$i18n.t(CIT_KIND_TERMS[k])}</NativeSelect.Option
+								>{/each}
+						</NativeSelect.Root>
 					</div>
-				</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-citlabel">{$i18n.t('Official corporate tax name')}</Label>
+							<p class={descCls}>{$i18n.t("In the country's language, for reference")}</p>
+						</div>
+						<Input
+							id="cc-citlabel"
+							type="text"
+							class={textCls}
+							placeholder="IS / 企业所得税 / Profits Tax"
+							bind:value={form.cit_label}
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-citfreq">{$i18n.t('Computed')}</Label>
+						</div>
+						<NativeSelect.Root id="cc-citfreq" class={textCls} bind:value={form.cit_frequency}>
+							<NativeSelect.Option value="yearly">{$i18n.t('Yearly')}</NativeSelect.Option>
+							<NativeSelect.Option value="quarterly"
+								>{$i18n.t('Quarterly (cumulative prepayments)')}</NativeSelect.Option
+							>
+						</NativeSelect.Root>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-cit">{$i18n.t('Corporate income tax rate')}</Label>
+						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-cit"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.cit_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-tiers">{$i18n.t('Tiered rates')}</Label>
+							<p class={descCls}>up_to:rate%, …</p>
+						</div>
+						<Input
+							id="cc-tiers"
+							type="text"
+							class="{textCls} tabular-nums"
+							placeholder="2000000:8.25, :16.5"
+							bind:value={form.cit_tiers}
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-citp">{$i18n.t('CIT preferential rate')}</Label>
+						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-citp"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.cit_preferential_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-red">{$i18n.t('One-off tax reduction')}</Label>
+						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-red"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.cit_reduction_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-redcap">{$i18n.t('Reduction cap (amount)')}</Label>
+						</div>
+						<Input
+							id="cc-redcap"
+							type="number"
+							step="0.01"
+							class="{shortCls} {numCls}"
+							bind:value={form.cit_reduction_cap}
+						/>
+					</div>
+					<div class={rowCls}>
+						<div class={labelColCls}>
+							<Label for="cc-ir">{$i18n.t('Individual income tax rate')}</Label>
+						</div>
+						<InputGroup.Root class={pctCls}>
+							<InputGroup.Input
+								id="cc-ir"
+								type="number"
+								step="0.01"
+								class={numCls}
+								bind:value={form.ir_rate}
+							/>
+							<InputGroup.Addon align="inline-end">%</InputGroup.Addon>
+						</InputGroup.Root>
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-				<div class="flex justify-end">
-					<button
-						class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white transition disabled:opacity-50"
-						on:click={save}
-						disabled={saving}
-					>
-						{saving ? $i18n.t('Saving...') : $i18n.t('Save')}
-					</button>
-				</div>
+			<!-- Save once, at the end; kept in view while scrolling -->
+			<div
+				class="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t bg-background py-3"
+			>
+				<span class="min-w-0 truncate text-sm text-muted-foreground">{form.country}</span>
+				<Button onclick={save} disabled={saving}>
+					{#if saving}<Spinner />{/if}
+					{saving ? $i18n.t('Saving...') : $i18n.t('Save')}
+				</Button>
 			</div>
 		{:else}
-			<div class="text-sm text-gray-400 dark:text-gray-500 py-6 text-center">
-				{$i18n.t('No country selected.')}
-			</div>
+			<Empty.Root class="border">
+				<Empty.Header>
+					<Empty.Media variant="icon"><Globe /></Empty.Media>
+					<Empty.Title>{$i18n.t('No country selected.')}</Empty.Title>
+					<Empty.Description>
+						{$i18n.t('Add a country above to set its tax parameters.')}
+					</Empty.Description>
+				</Empty.Header>
+			</Empty.Root>
 		{/if}
 	{/if}
 </div>
