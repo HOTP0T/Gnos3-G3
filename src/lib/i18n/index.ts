@@ -46,8 +46,22 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 		: ['querystring', 'localStorage', 'navigator'];
 	const fallbackDefaultLocale = defaultLocale ? [defaultLocale] : ['en-US'];
 
-	const loadResource = (language: string, namespace: string) =>
-		import(`./locales/${language}/${namespace}.json`);
+	// Gnos3's own strings (modules, accounting, design-system primitives) live in
+	// gnos3.json next to Open WebUI's translation.json, so upstream merges never
+	// touch them. Merged over upstream; an empty value keeps upstream's.
+	// Keep in step with the code: `node scripts/i18n-gnos3.mjs`. (The glob sits
+	// here, not at module level: i18next-parser imports this file under Node.)
+	const gnos3Locales = import.meta.glob('./locales/*/gnos3.json');
+	const loadResource = async (language: string, namespace: string) => {
+		const upstream = (await import(`./locales/${language}/${namespace}.json`)).default;
+		const own = gnos3Locales[`./locales/${language}/gnos3.json`];
+		if (namespace !== 'translation' || !own) return upstream;
+		const ours = ((await own()) as { default: Record<string, string> }).default;
+		return {
+			...upstream,
+			...Object.fromEntries(Object.entries(ours).filter(([, value]) => value))
+		};
+	};
 
 	i18next
 		.use(resourcesToBackend(loadResource))

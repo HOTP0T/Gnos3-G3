@@ -26,7 +26,12 @@ export default {
 	namespaceSeparator: false,
 	output: 'src/lib/i18n/locales/$LOCALE/$NAMESPACE.json',
 	pluralSeparator: '_',
-	input: 'src/**/*.{js,svelte}',
+	// Gnos3's own screens keep their strings in gnos3.json (npm run i18n:gnos3).
+	input: [
+		'src/**/*.{js,svelte}',
+		'!src/lib/components/{accounting,invoices,business-cards,data-nav,gnos3-ui,ui,office,finances}/**',
+		'!src/routes/(app)/{accounting,invoices,business-cards,office,finances}/**'
+	],
 	sort: true,
 	verbose: true,
 	failOnWarnings: false,

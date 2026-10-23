@@ -2286,16 +2286,5 @@
 	"Your usage stats have been successfully synced.": "已成功同步您的使用統計資料。",
 	"YouTube": "YouTube",
 	"Youtube Language": "YouTube 語言",
-	"Youtube Proxy URL": "YouTube 代理伺服器 URL",
-	"This closes the whole period {{name}}, **from {{start}} to {{end}}** — not only the month you checked ({{from}} to {{to}}). No entry dated in that range can be added, changed or voided afterwards. To close one month at a time, set up monthly periods under Settings → Accounting Periods.": "這將結帳整個期間 {{name}}，**從 {{start}} 至 {{end}}**，而不只是您檢查的月份（{{from}} 至 {{to}}）。結帳後，該日期範圍內的憑證將無法新增、修改或作廢。如需按月結帳，請在 設定 → 會計期間 中設定按月的會計期間。",
-	"Close {{name}} (**{{start}} to {{end}}**)? No entry dated in this period can be added, changed or voided afterwards.": "確認結帳 {{name}}（**{{start}} 至 {{end}}**）？結帳後，該期間內的憑證將無法新增、修改或作廢。",
-	"Accounting Periods": "會計期間",
-	"Close Period": "結帳",
-	"Office": "Office",
-	"Loading Office…": "正在載入 Office…",
-	"Could not load Office.": "無法載入 Office。",
-	"Module Permissions": "模組權限",
-	"Reprocess": "重新處理",
-	"Post entries": "過帳傳票",
-	"Administer": "管理"
+	"Youtube Proxy URL": "YouTube 代理伺服器 URL"
 }
