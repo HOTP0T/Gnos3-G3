@@ -46,7 +46,7 @@
 			]
 		},
 		{ key: 'finances', label: 'Finances', flags: [] },
-		{ key: 'office', label: 'Office', flags: [] }
+		{ key: 'office', label: 'SmartOffice', flags: [] }
 	];
 
 	// Only modules installed on this server; all of them if the dispatcher
@@ -102,7 +102,7 @@
 <div class="space-y-2">
 	{#if showModules}
 		<!-- {$i18n.t('Invoices')} {$i18n.t('Business cards')} {$i18n.t('Accounting')}
-		{$i18n.t('Finances')} {$i18n.t('Office')} {$i18n.t('Edit')} {$i18n.t('Reprocess')}
+		{$i18n.t('Finances')} {$i18n.t('SmartOffice')} {$i18n.t('Edit')} {$i18n.t('Reprocess')}
 		{$i18n.t('Delete')} {$i18n.t('Post entries')} {$i18n.t('Administer')} -->
 		<div>
 			<div class=" mb-2 text-sm font-medium">{$i18n.t('Module Permissions')}</div>

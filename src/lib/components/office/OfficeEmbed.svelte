@@ -42,7 +42,7 @@
 		if (event.data?.type === 'office-knowledge:open' && knowledgeId)
 			void goto(`/workspace/knowledge/${encodeURIComponent(knowledgeId)}`);
 	};
-	// Keeps the user's private "Office Files" knowledge base current without a
+	// Keeps the user's private "SmartOffice Files" knowledge base current without a
 	// click: when Office has loaded, every few minutes while it is open, and once
 	// more on leaving. Office is only usable inside this page, so every change
 	// happens while it is mounted. Quiet: only the knowledge link is updated.
@@ -81,7 +81,7 @@
 		await autoRun;
 		syncing = true;
 		syncError = false;
-		syncMessage = $i18n.t('Importing your saved Office files…');
+		syncMessage = $i18n.t('Importing your saved SmartOffice files…');
 		publishSyncState();
 		try {
 			const response = await fetch(`${WEBUI_API_BASE_URL}/office-knowledge/sync`, {
@@ -93,7 +93,7 @@
 				throw new Error(
 					typeof result.detail === 'string'
 						? $i18n.t(result.detail)
-						: $i18n.t('Office import failed. Please try again.')
+						: $i18n.t('SmartOffice import failed. Please try again.')
 				);
 			knowledgeId = result.knowledge_id || null;
 			if (result.errors) {
@@ -104,12 +104,12 @@
 				})} ${result.failures?.[0]?.reason || $i18n.t('Try again.')}`;
 			} else {
 				syncMessage = result.files
-					? $i18n.t('{{files}} file(s) available in Office Files.', { files: result.files })
-					: $i18n.t('Office Files is ready. Saved documents are added automatically.');
+					? $i18n.t('{{files}} file(s) available in SmartOffice Files.', { files: result.files })
+					: $i18n.t('SmartOffice Files is ready. Saved documents are added automatically.');
 			}
 		} catch (error) {
 			syncError = true;
-			syncMessage = error instanceof Error ? error.message : $i18n.t('Office import failed.');
+			syncMessage = error instanceof Error ? error.message : $i18n.t('SmartOffice import failed.');
 		} finally {
 			syncing = false;
 			publishSyncState();
@@ -174,7 +174,7 @@
 		     open as normal tabs; clipboard + fullscreen: copy/paste and the slideshow. -->
 			<FullHeightIframe
 				src={iframeSrc}
-				title="Office"
+				title="SmartOffice"
 				allowScripts={true}
 				allowForms={true}
 				allowSameOrigin={true}
@@ -187,11 +187,11 @@
 			/>
 		{:else if loading}
 			<div class="flex items-center justify-center h-full text-gray-500 text-sm">
-				{$i18n.t('Loading Office…')}
+				{$i18n.t('Loading SmartOffice…')}
 			</div>
 		{:else}
 			<div class="flex flex-col items-center justify-center h-full gap-2 text-gray-500 text-sm">
-				<div>{$i18n.t('Could not load Office.')}</div>
+				<div>{$i18n.t('Could not load SmartOffice.')}</div>
 				{#if error}<div class="text-xs text-gray-400">{error}</div>{/if}
 			</div>
 		{/if}

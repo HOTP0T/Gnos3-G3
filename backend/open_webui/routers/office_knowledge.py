@@ -1,6 +1,6 @@
-"""Current-user Office import into the user's private "Office Files" knowledge base.
+"""Current-user Office import into the user's private "SmartOffice Files" knowledge base.
 
-Run by the Office page in Gnos3 (on open, every few minutes while open, on
+Run by the SmartOffice page in Gnos3 (on open, every few minutes while open, on
 leave, and by the Sync files button). Files deleted in Office leave the base
 too. No all-user job: only the signed-in user's own files are read.
 """
@@ -26,6 +26,11 @@ from open_webui.utils.access_control import has_permission
 router = APIRouter()
 log = logging.getLogger(__name__)
 locks = {}
+KB_NAME = 'SmartOffice Files'
+KB_DESCRIPTION = 'Your SmartOffice documents, kept in sync while SmartOffice is open. Sync files in SmartOffice imports the latest saved versions.'
+# Bases created before the SmartOffice rename (2026-10-26); renamed on their next sync.
+LEGACY_KB_NAME = 'Office Files'
+LEGACY_KB_DESCRIPTION = 'Your Office documents. Use Sync my Office files to import the latest saved versions.'
 
 async def permitted(request, user):
     if user.role not in ('user','admin','superadmin'):
@@ -45,8 +50,14 @@ async def private_knowledge(user, create=True):
         if not row and not create:
             return None
         if not row:
-            row=Knowledge(id=identity,user_id=user.id,name='Office Files',description='Your Office documents. Use Sync my Office files to import the latest saved versions.',meta={'office_module':True},created_at=int(time.time()),updated_at=int(time.time()))
+            row=Knowledge(id=identity,user_id=user.id,name=KB_NAME,description=KB_DESCRIPTION,meta={'office_module':True},created_at=int(time.time()),updated_at=int(time.time()))
             db.add(row)
+            await db.commit()
+        elif row.name.startswith(LEGACY_KB_NAME):
+            # Keeps any suffix ("Office Files - Max"); a base the user renamed is left alone.
+            row.name=KB_NAME+row.name[len(LEGACY_KB_NAME):]
+            if row.description==LEGACY_KB_DESCRIPTION:row.description=KB_DESCRIPTION
+            row.updated_at=int(time.time())
             await db.commit()
     return identity
 
@@ -103,11 +114,11 @@ async def import_file(request,client,headers,knowledge_id,user,source):
             await ASYNC_VECTOR_DB_CLIENT.delete(collection_name=knowledge_id,filter={'file_id':file_id})
         await update_meta(file_id,user,{'office_synced_hash':source['hash'],'office_sync_status':'ready' if content.strip() else 'empty','office_sync_error':None})
     except Exception:
-        await update_meta(file_id,user,{'office_sync_status':'failed','office_sync_error':'Indexing failed. Try Sync my Office files again.'})
+        await update_meta(file_id,user,{'office_sync_status':'failed','office_sync_error':'Indexing failed. Use Sync files in SmartOffice to try again.'})
         raise
 
 async def remove_missing(knowledge_id,user,present_ids):
-    """Files deleted in Office leave the user's Office Files base as well."""
+    """Files deleted in Office leave the user's SmartOffice Files base as well."""
     from open_webui.retrieval.vector.async_client import ASYNC_VECTOR_DB_CLIENT
     removed=0
     for file in await Knowledges.get_files_by_id(knowledge_id):
@@ -128,9 +139,9 @@ async def remove_missing(knowledge_id,user,present_ids):
 @router.post('/sync')
 async def synchronize(request:Request,auto:bool=False,user=Depends(get_verified_user)):
     """auto=true: background run from the Office page; creates no empty base."""
-    if not await permitted(request,user):raise HTTPException(403,'Office and knowledge workspace access are required')
+    if not await permitted(request,user):raise HTTPException(403,'SmartOffice access is required')
     lock=locks.setdefault(user.id,asyncio.Lock())
-    if lock.locked():raise HTTPException(409,'Your Office files are already being imported')
+    if lock.locked():raise HTTPException(409,'Your SmartOffice files are already being imported')
     async with lock:
         token,_=create_k4mi_exchange_token(user,audience='gnos3-module:office')
         url=os.environ.get('OFFICE_MODULE_URL','http://assistant:8080').rstrip('/')
@@ -138,15 +149,15 @@ async def synchronize(request:Request,auto:bool=False,user=Depends(get_verified_
             try:
                 exchange=await client.post('/api/auth/exchange',json={'gnos3_token':token});exchange.raise_for_status()
             except httpx.HTTPError:
-                raise HTTPException(502,'Cannot sign in to Office for import. Check the module connection and shared SSO configuration.')
+                raise HTTPException(502,'Cannot sign in to SmartOffice for import. Check the module connection and shared SSO configuration.')
             headers={'Authorization':'Bearer '+exchange.json()['access_token']}
             try:
                 manifest=await client.get('/api/knowledge-export',headers=headers);manifest.raise_for_status()
             except httpx.HTTPError:
-                raise HTTPException(502,'Cannot read your saved Office files. Check the Office module is available.')
+                raise HTTPException(502,'Cannot read your saved SmartOffice files. Check the SmartOffice module is available.')
             sources=manifest.json()['files']
             if not isinstance(sources,list) or any(not isinstance(source,dict) or not isinstance(source.get('id'),str) or not isinstance(source.get('hash'),str) for source in sources):
-                raise HTTPException(502,'Invalid Office manifest')
+                raise HTTPException(502,'Invalid SmartOffice manifest')
             knowledge_id=await private_knowledge(user,create=not auto or bool(sources))
             if not sources:
                 removed=await remove_missing(knowledge_id,user,set()) if knowledge_id else 0

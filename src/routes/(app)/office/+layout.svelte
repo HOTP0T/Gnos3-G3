@@ -22,7 +22,7 @@
 </script>
 
 <svelte:head>
-	<title>{$i18n.t('Office')} &bull; {$WEBUI_NAME}</title>
+	<title>{$i18n.t('SmartOffice')} &bull; {$WEBUI_NAME}</title>
 </svelte:head>
 
 {#if loaded}
@@ -53,7 +53,7 @@
 							</button>
 						</Tooltip>
 					</div>
-					<div class="self-center text-sm font-medium">{$i18n.t('Office')}</div>
+					<div class="self-center text-sm font-medium">{$i18n.t('SmartOffice')}</div>
 				</div>
 			</nav>
 		{/if}

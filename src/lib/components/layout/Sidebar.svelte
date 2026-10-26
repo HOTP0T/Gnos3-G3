@@ -1382,7 +1382,7 @@
 								href="/office"
 								on:click={itemClickHandler}
 								draggable="false"
-								aria-label={$i18n.t('Office')}
+								aria-label={$i18n.t('SmartOffice')}
 							>
 								<div class="self-center">
 									<svg
@@ -1401,7 +1401,7 @@
 									</svg>
 								</div>
 								<div class="flex self-center translate-y-[0.5px]">
-									<div class="self-center text-sm font-primary">{$i18n.t('Office')}</div>
+									<div class="self-center text-sm font-primary">{$i18n.t('SmartOffice')}</div>
 								</div>
 							</a>
 						</div>
