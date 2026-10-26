@@ -663,6 +663,14 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning(f'RBAC seed failed (non-fatal): {exc}')
 
+    # One-time settings changes shipped with an update (stored settings never
+    # see new compose defaults). Each step runs once per box.
+    try:
+        from open_webui.utils.settings_upgrade import apply_settings_upgrades
+        await apply_settings_upgrades(app)
+    except Exception as exc:
+        log.warning(f'Settings upgrade failed (non-fatal): {exc}')
+
     if SAFE_MODE:
         await Functions.deactivate_all_functions()
 

@@ -59,7 +59,10 @@ class ChromaClient(VectorDBBase):
 
     def has_collection(self, collection_name: str) -> bool:
         # Check if the collection exists based on the collection name.
-        collection_names = self.client.list_collections()
+        # chromadb 1.x lists Collection objects, not names: comparing those to a
+        # name was always False, so overwrites and the Reindex button appended
+        # duplicate chunks and removed files left their vectors behind.
+        collection_names = [getattr(c, 'name', c) for c in self.client.list_collections()]
         return collection_name in collection_names
 
     def delete_collection(self, collection_name: str):

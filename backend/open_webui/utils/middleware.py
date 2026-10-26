@@ -1958,7 +1958,11 @@ async def chat_completion_files_handler(
         all_full_context = all(item.get('context') == 'full' for item in files)
 
         queries = []
-        if not all_full_context:
+        if all(item.get('type') == 'web_search' for item in files):
+            # Only web search results: retrieve with the search queries
+            # instead of asking the model for a second set.
+            queries = list(dict.fromkeys(q for item in files for q in item.get('queries', [])))
+        elif not all_full_context:
             try:
                 queries_response = await generate_queries(
                     request,

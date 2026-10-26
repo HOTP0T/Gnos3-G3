@@ -18,8 +18,10 @@ def process_metadata(
     # and sanitizes strings for database storage (strips null bytes and invalid surrogates).
     result = {}
     for key, value in metadata.items():
-        # Skip large fields
-        if key in KEYS_TO_EXCLUDE:
+        # Skip large fields, and empty ones: Chroma rejects None values, which
+        # failed every chunk of a file whose metadata had one (Office files'
+        # office_sync_error after a successful sync).
+        if key in KEYS_TO_EXCLUDE or value is None:
             continue
         # Convert non-serializable fields to strings
         if isinstance(value, (datetime, list, dict)):

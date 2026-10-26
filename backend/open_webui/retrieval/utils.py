@@ -1327,7 +1327,9 @@ async def get_sources_from_items(
                     continue
 
             try:
-                if full_context:
+                # Web search results always go through retrieval: pasted whole,
+                # a dozen pages are ~40k tokens and overflow the model's context.
+                if full_context and item.get('type') != 'web_search':
                     # Sync helper makes blocking VECTOR_DB_CLIENT calls;
                     # offload so the async caller's event loop stays free.
                     query_result = await asyncio.to_thread(get_all_items_from_collections, collection_names)
@@ -1455,13 +1457,11 @@ class RerankCompressor(BaseDocumentCompressor):
         if reranking:
             scores = await asyncio.to_thread(self.reranking_function, query, documents)
         else:
-            from sentence_transformers import util
-
-            query_embedding = await self.embedding_function(query, RAG_EMBEDDING_QUERY_PREFIX)
-            document_embedding = await self.embedding_function(
-                [doc.page_content for doc in documents], RAG_EMBEDDING_CONTENT_PREFIX
-            )
-            scores = util.cos_sim(query_embedding, document_embedding)[0]
+            # No reranking model: keep the keyword + vector fusion order. Scoring
+            # the candidates by embedding similarity instead re-embedded every one
+            # of them (~20 s per query on a 170-document base) and pushed exact
+            # keyword hits (invoice and reference numbers) out of the results.
+            scores = [1.0 - i / len(documents) for i in range(len(documents))]
 
         if scores is not None:
             docs_with_scores = list(
@@ -1470,7 +1470,8 @@ class RerankCompressor(BaseDocumentCompressor):
                     scores.tolist() if not isinstance(scores, list) else scores,
                 )
             )
-            if self.r_score:
+            # The threshold is a reranker score; fusion positions are not scores.
+            if self.r_score and reranking:
                 docs_with_scores = [(d, s) for d, s in docs_with_scores if s >= self.r_score]
 
             result = sorted(docs_with_scores, key=operator.itemgetter(1), reverse=True)
