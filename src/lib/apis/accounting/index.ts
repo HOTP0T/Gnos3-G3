@@ -763,6 +763,14 @@ export const importBankStatement = async (bankAccountId: number, file: File, cur
 	return apiUpload(`/bank-accounts/${bankAccountId}/import`, formData, { currency });
 };
 
+/** The recent statement imports of a bank account, newest first. */
+export const getStatementImports = async (bankAccountId: number) =>
+	apiGet(`/bank-accounts/${bankAccountId}/imports`);
+
+/** Remove the lines of one import; refused (409) when one is already matched or paid. */
+export const undoStatementImport = async (bankAccountId: number, batchId: string) =>
+	apiDelete(`/bank-accounts/${bankAccountId}/imports/${encodeURIComponent(batchId)}`);
+
 export const matchBankStatement = async (lineId: number, transactionId: number) =>
 	apiPost(`/bank-statements/${lineId}/match`, undefined, { transaction_id: transactionId });
 

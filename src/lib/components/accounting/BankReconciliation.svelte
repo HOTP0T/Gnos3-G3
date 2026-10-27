@@ -18,8 +18,11 @@
 		editBankStatementLine,
 		getTransactions,
 		downloadBankStatementTemplate,
-		createMatchGroup
+		createMatchGroup,
+		getStatementImports,
+		undoStatementImport
 	} from '$lib/apis/accounting';
+	import { uiLocale } from '$lib/utils/uiLocale';
 	import PaymentFormModal from '$lib/components/accounting/PaymentFormModal.svelte';
 	import TransactionFormModal from '$lib/components/accounting/TransactionFormModal.svelte';
 
@@ -136,6 +139,10 @@
 	let importCurrency = '';
 	let importFileInput: HTMLInputElement | null = null;
 	let importing = false;
+	// Recent imports of the selected account, each undoable until a line is in use.
+	let recentImports: any[] = [];
+	let undoTarget: { batch_id: string; lines: number } | null = null;
+	let showUndoConfirm = false;
 
 	// Inline reference editing
 	let editingRefLineId: number | null = null;
@@ -327,6 +334,34 @@
 	const openImportModal = () => {
 		importCurrency = selectedBankCurrency || 'EUR';
 		showImportModal = true;
+		loadImports();
+	};
+
+	const loadImports = async () => {
+		recentImports = selectedBankId ? await getStatementImports(selectedBankId).catch(() => []) : [];
+	};
+
+	const askUndoImport = (batch: { batch_id: string; lines: number }) => {
+		undoTarget = batch;
+		showUndoConfirm = true;
+	};
+
+	const doUndoImport = async () => {
+		if (!selectedBankId || !undoTarget) return;
+		try {
+			const res = await undoStatementImport(selectedBankId, undoTarget.batch_id);
+			toast.success($i18n.t('Import undone: {{count}} lines removed', { count: res.deleted }));
+			await loadStatements();
+			await loadImports();
+		} catch (err: any) {
+			toast.error(err?.detail ?? `${err}`);
+		}
+		undoTarget = null;
+	};
+
+	const importDay = (iso: string) => {
+		const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+		return new Date(y, m - 1, d).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
 	};
 
 	const handleImport = async () => {
@@ -338,7 +373,14 @@
 		try {
 			const currency = importCurrency || selectedBankCurrency || undefined;
 			const res = await importBankStatement(selectedBankId, importFileInput.files[0], currency);
-			toast.success($i18n.t(`Imported ${res.imported} lines`));
+			toast.success($i18n.t(`Imported ${res.imported} lines`), {
+				action: res.imported
+					? {
+							label: $i18n.t('Undo'),
+							onClick: () => askUndoImport({ batch_id: res.batch_id, lines: res.imported })
+						}
+					: undefined
+			});
 			showImportModal = false;
 			await loadStatements();
 		} catch (err: any) {
@@ -875,6 +917,36 @@
 			<Button variant="outline" class="w-full" onclick={downloadBankStatementTemplate}>
 				<Download />{$i18n.t('Download Sample Template (.xlsx)')}
 			</Button>
+			{#if recentImports.length}
+				<div class="grid gap-1.5">
+					<p class="text-sm font-medium">{$i18n.t('Recent imports')}</p>
+					<ul class="divide-y rounded-lg border">
+						{#each recentImports as batch (batch.batch_id)}
+							<li class="flex items-center gap-3 px-3 py-2 text-sm">
+								<div class="min-w-0 flex-1">
+									<p class="truncate">
+										{$i18n.t('{{count}} lines', { count: batch.lines })} ·
+										{importDay(batch.first_date)} – {importDay(batch.last_date)}
+									</p>
+									<p class="text-xs text-muted-foreground">
+										{$i18n.t('Imported {{date}}', { date: importDay(batch.imported_at) })}{#if batch.in_use}
+											· {$i18n.t('{{count}} in use', { count: batch.in_use })}{/if}
+									</p>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={batch.in_use > 0}
+									title={batch.in_use
+										? $i18n.t('Unmatch its lines before undoing this import')
+										: undefined}
+									onclick={() => askUndoImport(batch)}>{$i18n.t('Undo')}</Button
+								>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 		</div>
 		<Dialog.Footer>
 			<Button
@@ -2167,6 +2239,21 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<ConfirmDialog
+	bind:open={showUndoConfirm}
+	title={$i18n.t('Undo this import?')}
+	description={$i18n.t(
+		'The {{count}} lines of this import are removed from the statement. Nothing else changes; you can import the file again.',
+		{ count: undoTarget?.lines ?? 0 }
+	)}
+	confirmLabel={$i18n.t('Undo import')}
+	destructive
+	onconfirm={doUndoImport}
+	oncancel={() => {
+		undoTarget = null;
+	}}
+/>
 
 <ConfirmDialog
 	bind:open={showUnmatchConfirm}
