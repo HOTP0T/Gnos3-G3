@@ -58,6 +58,7 @@ from open_webui.utils.oauth import auth_manager_config
 from pydantic import BaseModel
 
 from open_webui.utils.misc import parse_duration, validate_email_format
+from open_webui.utils.k4mi_groups import ADMIN_TIER_ROLES, k4mi_token_group_names
 from open_webui.utils.auth import (
     validate_password,
     verify_password,
@@ -239,7 +240,7 @@ async def get_session_user(
 @router.get('/permissions/resolved')
 async def get_resolved_permissions(
     request: Request,
-    user=Depends(get_verified_user),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
     """
@@ -253,7 +254,13 @@ async def get_resolved_permissions(
     endpoint at GET /. Identity is included because Gnos3's JWT today only
     carries `id`, so the modules need this endpoint to learn the caller's role
     (for admin-bypass) and email/name (for audit logs).
+
+    `pending` users (expense-portal employees) are answered too, with no
+    permissions: a module must be able to tell "a live pending account" from
+    "a deleted user or a revoked token" (which get 401 here).
     """
+    if user.role not in {'user', 'admin', 'superadmin'}:
+        return {'id': user.id, 'email': user.email, 'name': user.name, 'role': user.role, 'permissions': {}}
     permissions = await get_permissions(user.id, request.app.state.config.USER_PERMISSIONS, db=db)
     return {
         'id': user.id,
@@ -1526,6 +1533,16 @@ class K4miExchangeTokenResponse(BaseModel):
     expires_at: int
 
 
+async def _k4mi_token_groups(user, db: AsyncSession) -> list[str]:
+    """The `groups` claim of a K4mi token: the user's own groups, plus, for an
+    admin or superadmin, every group granting k4mi.documents.admin (see
+    utils/k4mi_groups.py). Without the latter an admin in no group saw no
+    document in K4mi."""
+    member_groups = await Groups.get_groups_by_member_id(user.id, db=db)
+    all_groups = await Groups.get_all_groups(db=db) if user.role in ADMIN_TIER_ROLES else []
+    return k4mi_token_group_names(user.role, member_groups, all_groups)
+
+
 @router.post('/k4mi/exchange-token', response_model=K4miExchangeTokenResponse)
 async def k4mi_exchange_token(
     request: Request,
@@ -1541,8 +1558,7 @@ async def k4mi_exchange_token(
     `{K4MI_BASE_URL}/sso/login?token=<jwt>&next=<path>` to install a Django
     session and reach the requested K4mi path.
     """
-    user_groups = await Groups.get_groups_by_member_id(user.id, db=db)
-    group_names = [g.name for g in user_groups if g.name]
+    group_names = await _k4mi_token_groups(user, db)
 
     # mfa_verified stays False in Phase 4: K4mi's _provision_user only rejects
     # the token when K4mi-local MFA is enabled for the user (rare for SSO
@@ -1580,8 +1596,7 @@ async def k4mi_open(
     import os
     from urllib.parse import urlencode
 
-    user_groups = await Groups.get_groups_by_member_id(user.id, db=db)
-    group_names = [g.name for g in user_groups if g.name]
+    group_names = await _k4mi_token_groups(user, db)
     token, _expires_at = create_k4mi_exchange_token(
         user,
         groups=group_names,
@@ -1619,7 +1634,14 @@ async def k4mi_open(
     ):
         target = '/'
 
-    qs = urlencode({'token': token, 'next': target})
+    params = {'token': token, 'next': target}
+    # K4mi follows the theme picked in Gnos3: the frontend keeps it in this
+    # cookie (routes/+layout.svelte) and K4mi's sign-in saves it as the user's
+    # dark-mode setting.
+    theme = request.cookies.get('gnos3_theme')
+    if theme in ('system', 'dark', 'light'):
+        params['theme'] = theme
+    qs = urlencode(params)
     return RedirectResponse(
         url=f'{base}/sso/login?{qs}',
         status_code=status.HTTP_303_SEE_OTHER,

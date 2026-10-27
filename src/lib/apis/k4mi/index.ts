@@ -17,6 +17,10 @@ import { K4MI_BASE_URL, WEBUI_API_BASE_URL } from '$lib/constants';
 export const k4miDocHref = (docId: number | string): string =>
 	`${WEBUI_API_BASE_URL}/auths/k4mi/open?doc_id=${encodeURIComponent(String(docId))}`;
 
+/** K4mi's home page, signed in the same way (sidebar entry). A plain href, so a
+ * left, middle or "open in new tab" click all go through the SSO hand-off. */
+export const K4MI_HOME_HREF = `${WEBUI_API_BASE_URL}/auths/k4mi/open`;
+
 export interface K4miExchangeTokenResponse {
 	token: string;
 	expires_at: number;

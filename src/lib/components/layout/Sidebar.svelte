@@ -91,7 +91,8 @@
 	import { updateUserSettings } from '$lib/apis/users';
 	import { checkActiveChats } from '$lib/apis/tasks';
 	import { createNoteHandler } from '$lib/components/notes/utils';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, K4MI_BASE_URL } from '$lib/constants';
+	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { K4MI_HOME_HREF } from '$lib/apis/k4mi';
 
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
@@ -1241,12 +1242,13 @@
 							{/if}
 						{/each}
 
-						<!-- K4mi Documents -->
+						<!-- K4mi Documents: through Gnos3's SSO redirect (/auths/k4mi/open), like the
+						     document links, so K4mi opens signed in instead of on its login page. -->
 						<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 							<a
 								id="sidebar-k4mi-button"
 								class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-								href={K4MI_BASE_URL}
+								href={K4MI_HOME_HREF}
 								target="_blank"
 								rel="noopener noreferrer"
 								on:click={itemClickHandler}
