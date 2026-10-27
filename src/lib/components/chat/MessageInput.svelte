@@ -500,10 +500,36 @@
 		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.terminal ?? true
 	);
 
+	// Gnos3: the Anonymise switch (filter `gnos3_anonymise`, installed by the backend) only shows
+	// while the Anonymiser module is up and the user may use it; its name follows the UI language.
+	import { isAdmin } from '$lib/stores';
+	import { enabledModules, modulesLoaded } from '$lib/stores/modules';
+	$: anonymiserAllowed =
+		$enabledModules.some((m) => m.name === 'anonymiser') &&
+		($isAdmin || Boolean($_user?.permissions?.modules?.anonymiser?.read));
+	// A remembered selection the user can no longer see would refuse every message
+	// (the filter fails closed); drop it once the module list has really loaded.
+	$: if ($modulesLoaded && !anonymiserAllowed && selectedFilterIds?.includes('gnos3_anonymise')) {
+		selectedFilterIds = selectedFilterIds.filter((id) => id !== 'gnos3_anonymise');
+	}
+
 	let toggleFilters = [];
 	$: toggleFilters = (atSelectedModel?.id ? [atSelectedModel.id] : selectedModels)
 		.map((id) => ($models.find((model) => model.id === id) || {})?.filters ?? [])
-		.reduce((acc, filters) => acc.filter((f1) => filters.some((f2) => f2.id === f1.id)));
+		.reduce((acc, filters) => acc.filter((f1) => filters.some((f2) => f2.id === f1.id)))
+		// Gnos3: see anonymiserAllowed above.
+		.filter((f) => f.id !== 'gnos3_anonymise' || anonymiserAllowed)
+		.map((f) =>
+			f.id === 'gnos3_anonymise'
+				? {
+						...f,
+						name: $i18n.t('Anonymise'),
+						description: $i18n.t(
+							'Hide names, contact details and numbers from the AI. You still see them in the answer.'
+						)
+					}
+				: f
+		);
 
 	let showToolsButton = false;
 	$: showToolsButton = ($tools ?? []).length > 0 || ($toolServers ?? []).length > 0;

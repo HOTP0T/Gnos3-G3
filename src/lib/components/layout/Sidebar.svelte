@@ -71,6 +71,9 @@
 	$: officeEnabled = _modulesNow.some((m) => m.name === 'office');
 	$: officeVisible =
 		officeEnabled && ($isAdmin || Boolean($user?.permissions?.modules?.office?.read));
+	$: anonymiserEnabled = _modulesNow.some((m) => m.name === 'anonymiser');
+	$: anonymiserVisible =
+		anonymiserEnabled && ($isAdmin || Boolean($user?.permissions?.modules?.anonymiser?.read));
 
 	import {
 		getChatList,
@@ -1402,6 +1405,39 @@
 								</div>
 								<div class="flex self-center translate-y-[0.5px]">
 									<div class="self-center text-sm font-primary">{$i18n.t('SmartOffice')}</div>
+								</div>
+							</a>
+						</div>
+							{/if}
+							<!-- Anonymiser (visible when the anonymiser module is enabled + read perm) -->
+							{#if anonymiserVisible}
+						<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
+							<a
+								id="sidebar-anonymiser-button"
+								class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+								href="/anonymiser"
+								on:click={itemClickHandler}
+								draggable="false"
+								aria-label={$i18n.t('Anonymiser')}
+							>
+								<div class="self-center">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke-width="2"
+										stroke="currentColor"
+										class="size-4.5"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+										/>
+									</svg>
+								</div>
+								<div class="flex self-center translate-y-[0.5px]">
+									<div class="self-center text-sm font-primary">{$i18n.t('Anonymiser')}</div>
 								</div>
 							</a>
 						</div>

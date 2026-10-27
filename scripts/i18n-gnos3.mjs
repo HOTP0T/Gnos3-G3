@@ -41,11 +41,13 @@ const GNOS3_DIRS = [
 	'src/lib/components/ui',
 	'src/lib/components/office',
 	'src/lib/components/finances',
+	'src/lib/components/anonymiser',
 	'src/routes/(app)/accounting',
 	'src/routes/(app)/invoices',
 	'src/routes/(app)/business-cards',
 	'src/routes/(app)/office',
-	'src/routes/(app)/finances'
+	'src/routes/(app)/finances',
+	'src/routes/(app)/anonymiser'
 ];
 const GNOS3_FILES = [
 	'src/lib/utils/taxTerms.ts',

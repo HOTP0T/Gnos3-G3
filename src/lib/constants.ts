@@ -21,6 +21,10 @@ export const BUSINESS_CARDS_API_BASE_URL = browser
 	? `http://${location.hostname}:8002`
 	: '';
 
+export const ANONYMISER_API_BASE_URL = browser
+	? `http://${location.hostname}:8005`
+	: '';
+
 export const DISPATCHER_API_BASE_URL = browser
 	? `http://${location.hostname}:8090`
 	: '';

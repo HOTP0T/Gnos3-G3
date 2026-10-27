@@ -663,6 +663,13 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning(f'RBAC seed failed (non-fatal): {exc}')
 
+    # Anonymiser: install / refresh the "Anonymise" chat switch (a filter function).
+    try:
+        from open_webui.utils.anonymiser_seed import ensure_anonymise_filter
+        await ensure_anonymise_filter(app)
+    except Exception as exc:
+        log.warning(f'Anonymiser seed failed (non-fatal): {exc}')
+
     # One-time settings changes shipped with an update (stored settings never
     # see new compose defaults). Each step runs once per box.
     try:

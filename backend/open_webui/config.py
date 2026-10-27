@@ -1630,6 +1630,7 @@ DEFAULT_USER_PERMISSIONS = {
             'write': False,   # reserved; the module manages its own data via SSO
         },
         'office': {'read': False},
+        'anonymiser': {'read': False},
     },
     'k4mi': {
         'documents': {
