@@ -1,12 +1,7 @@
 <script>
 	import { io } from 'socket.io-client';
-	import { spring } from 'svelte/motion';
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
 	import { Toaster, toast } from 'svelte-sonner';
-
-	let loadingProgress = spring(0, {
-		stiffness: 0.05
-	});
 
 	import { onMount, tick, setContext, onDestroy } from 'svelte';
 	import {
@@ -111,6 +106,12 @@
 	let heartbeatInterval = null;
 
 	const BREAKPOINT = 768;
+
+	// K4mi follows the theme chosen here: /auths/k4mi/open reads this cookie and hands the
+	// choice to K4mi's sign-in. Cookies ignore the port, so the dev backend on :8080 gets it too.
+	$: if (typeof document !== 'undefined' && $theme) {
+		document.cookie = `gnos3_theme=${encodeURIComponent($theme)}; path=/; max-age=31536000; SameSite=Lax`;
+	}
 
 	const setupSocket = async (enableWebsocket) => {
 		const _socket = io(`${WEBUI_BASE_URL}` || undefined, {
@@ -769,23 +770,23 @@
 			return;
 		}
 		if (event.type === 'theme:update' && event.data?.theme) {
-			const newTheme = event.data.theme;
+			// OLED Dark and Her are gone; a desktop app still sending them gets the closest theme.
+			const newTheme =
+				event.data.theme === 'oled-dark'
+					? 'dark'
+					: event.data.theme === 'her'
+						? 'light'
+						: event.data.theme;
 			localStorage.setItem('theme', newTheme);
 			theme.set(newTheme);
 
 			// Apply theme classes (mirrors logic from chat/Settings/General.svelte)
-			const themes = ['dark', 'light', 'oled-dark'];
-			let themeToApply =
-				newTheme === 'oled-dark' ? 'dark' : newTheme === 'her' ? 'light' : newTheme;
+			let themeToApply = newTheme;
 			if (newTheme === 'system') {
 				themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 			}
-			themes
-				.filter((e) => e !== themeToApply)
-				.forEach((e) => {
-					e.split(' ').forEach((cls) => document.documentElement.classList.remove(cls));
-				});
-			themeToApply.split(' ').forEach((cls) => document.documentElement.classList.add(cls));
+			document.documentElement.classList.remove('dark', 'light');
+			document.documentElement.classList.add(themeToApply);
 			return;
 		}
 		if (event.type === 'models:refresh') {
@@ -1071,35 +1072,8 @@
 
 		await tick();
 
-		if (
-			document.documentElement.classList.contains('her') &&
-			document.getElementById('progress-bar')
-		) {
-			loadingProgress.subscribe((value) => {
-				const progressBar = document.getElementById('progress-bar');
-
-				if (progressBar) {
-					progressBar.style.width = `${value}%`;
-				}
-			});
-
-			await loadingProgress.set(100);
-
-			document.getElementById('splash-screen')?.remove();
-
-			const audio = new Audio(`/audio/greeting.mp3`);
-			const playAudio = () => {
-				audio.play();
-				document.removeEventListener('click', playAudio);
-			};
-
-			document.addEventListener('click', playAudio);
-
-			loaded = true;
-		} else {
-			document.getElementById('splash-screen')?.remove();
-			loaded = true;
-		}
+		document.getElementById('splash-screen')?.remove();
+		loaded = true;
 
 		// Auto-show SyncStatsModal when opened with ?sync=true (from community)
 		if (

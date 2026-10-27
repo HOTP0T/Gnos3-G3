@@ -85,8 +85,7 @@
   Gnos3's values. The shadcn-svelte components in $lib/components/ui and the module screens
   (accounting, invoices, business cards) use them: bg-background, text-muted-foreground,
   border-input, bg-primary, ring-ring/50, text-success, bg-chart-3…
-  Most values are steps of the gray / blue ramps above. Dark ones point at the ramp on
-  purpose: the OLED theme overrides gray-800…950 inline, and these follow.
+  Most values are steps of the gray / blue ramps above.
 */
 :root {
 	--radius: 0.625rem;

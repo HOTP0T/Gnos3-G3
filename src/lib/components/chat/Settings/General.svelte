@@ -14,7 +14,7 @@
 	export let getModels: Function;
 
 	// General
-	let themes = ['dark', 'light', 'oled-dark'];
+	let themes = ['dark', 'light'];
 	let selectedTheme = 'system';
 
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
@@ -124,17 +124,10 @@
 	});
 
 	const applyTheme = (_theme: string) => {
-		let themeToApply = _theme === 'oled-dark' ? 'dark' : _theme === 'her' ? 'light' : _theme;
+		let themeToApply = _theme;
 
 		if (_theme === 'system') {
 			themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-		}
-
-		if (themeToApply === 'dark' && !_theme.includes('oled')) {
-			// Drop the OLED overrides so the theme's own grays (tailwind.css) apply again.
-			['800', '850', '900', '950'].forEach((step) =>
-				document.documentElement.style.removeProperty(`--color-gray-${step}`)
-			);
 		}
 
 		themes
@@ -159,29 +152,12 @@
 				metaThemeColor.setAttribute('content', systemTheme === 'light' ? '#ffffff' : '#0a1019');
 			} else {
 				console.log('Setting meta theme color: ' + _theme);
-				metaThemeColor.setAttribute(
-					'content',
-					_theme === 'dark'
-						? '#0a1019'
-						: _theme === 'oled-dark'
-							? '#000000'
-							: _theme === 'her'
-								? '#983724'
-								: '#ffffff'
-				);
+				metaThemeColor.setAttribute('content', _theme === 'dark' ? '#0a1019' : '#ffffff');
 			}
 		}
 
 		if (typeof window !== 'undefined' && window.applyTheme) {
 			window.applyTheme();
-		}
-
-		if (_theme.includes('oled')) {
-			document.documentElement.style.setProperty('--color-gray-800', '#101010');
-			document.documentElement.style.setProperty('--color-gray-850', '#050505');
-			document.documentElement.style.setProperty('--color-gray-900', '#000000');
-			document.documentElement.style.setProperty('--color-gray-950', '#000000');
-			document.documentElement.classList.add('dark');
 		}
 
 		console.log(_theme);
@@ -212,11 +188,7 @@
 					>
 						<option value="system">⚙️ {$i18n.t('System')}</option>
 						<option value="dark">🌑 {$i18n.t('Dark')}</option>
-						<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
 						<option value="light">☀️ {$i18n.t('Light')}</option>
-						{#if $config?.features?.enable_easter_eggs}
-							<option value="her">🌷 Her</option>
-						{/if}
 					</select>
 				</div>
 			</div>
