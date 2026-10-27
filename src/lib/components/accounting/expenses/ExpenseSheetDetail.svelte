@@ -12,6 +12,7 @@
 		downloadExpenseSheetExcel
 	} from '$lib/apis/accounting';
 	import dayjs from 'dayjs';
+	import { user, isAdmin } from '$lib/stores';
 
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import FileDown from '@lucide/svelte/icons/file-down';
@@ -33,6 +34,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -50,13 +52,16 @@
 	export let companyId: number;
 	export let sheetId: number;
 
+	// Deleting a sheet is for accounting admins (the server answers 403 otherwise).
+	$: canDelete = $isAdmin || Boolean($user?.permissions?.modules?.accounting?.admin);
+	$: sheetsHref = `/accounting/company/${companyId}/expenses?tab=sheets`;
+
 	let sheet: any = null;
 	let loading = true;
 	let showPicker = false;
 	let candidates: any[] = [];
 	let selectedIds = new Set<number>();
 	let note = '';
-	let userInfo = '';
 	let rejectionReason = '';
 	let transitionTarget = '';
 	let transitioning = false;
@@ -169,14 +174,24 @@
 		}
 	};
 
-	const removeLine = async (invoiceId: number) => {
+	// A line is an invoice (accountant flow) or an employee's expense (portal
+	// flow). A removed expense stays approved and goes back to "To reimburse".
+	let removingKey = '';
+	const removeLine = async (l: any) => {
+		const isItem = l.source === 'expense_item';
+		const id = isItem ? l.expense_item_id : l.invoice_id;
+		if (!id || removingKey) return;
+		removingKey = `${l.source}:${id}`;
 		try {
-			sheet = await updateExpenseSheet(sheetId, {
-				remove_invoice_ids: [invoiceId]
-			});
+			sheet = await updateExpenseSheet(
+				sheetId,
+				isItem ? { remove_expense_item_ids: [id] } : { remove_invoice_ids: [id] }
+			);
 			toast.success($i18n.t('Receipt removed'));
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
+		} finally {
+			removingKey = '';
 		}
 	};
 
@@ -189,7 +204,7 @@
 		try {
 			await deleteExpenseSheet(sheetId);
 			toast.success($i18n.t('Sheet deleted'));
-			goto(`/accounting/company/${companyId}/expenses`);
+			goto(sheetsHref);
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
 		}
@@ -201,17 +216,21 @@
 		rejectionReason = '';
 	};
 
+	// The server records who did it from the sign-in; only a rejection needs a reason.
+	$: reasonMissing = transitionTarget === 'reject' && !rejectionReason.trim();
+
 	const confirmTransition = async () => {
 		if (transitioning) return; // guard against double-submit (double-click)
+		if (reasonMissing) return;
 		transitioning = true;
 		try {
+			const done = transitionCopy.message;
 			sheet = await transitionExpenseSheet(sheetId, {
 				target: transitionTarget as any,
 				note: note || undefined,
-				user_info: userInfo || undefined,
-				rejection_reason: transitionTarget === 'reject' ? rejectionReason || undefined : undefined
+				rejection_reason: transitionTarget === 'reject' ? rejectionReason.trim() : undefined
 			});
-			toast.success($i18n.t(`Sheet ${transitionTarget}`));
+			toast.success($i18n.t(done));
 			transitionTarget = '';
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
@@ -220,29 +239,42 @@
 		}
 	};
 
-	// What each transition dialog says (the title asks, the button repeats the verb).
-	const TRANSITION_COPY: Record<string, { title: string; description: string; confirm: string }> = {
+	// What each transition dialog says (the title asks, the button repeats the
+	// verb, the message is the toast once it is done).
+	const TRANSITION_COPY: Record<
+		string,
+		{ title: string; description: string; confirm: string; message: string }
+	> = {
 		submit: {
 			title: 'Submit this sheet?',
 			description: 'It goes to an approver.',
-			confirm: 'Submit'
+			confirm: 'Submit',
+			message: 'Sheet submitted'
 		},
 		approve: {
 			title: 'Approve this sheet?',
 			description: 'Approving builds the reimbursement journal entry as a draft.',
-			confirm: 'Approve'
+			confirm: 'Approve',
+			message: 'Sheet approved'
 		},
-		reject: { title: 'Reject this sheet?', description: '', confirm: 'Reject' },
+		reject: {
+			title: 'Reject this sheet?',
+			description: '',
+			confirm: 'Reject',
+			message: 'Sheet rejected'
+		},
 		mark_paid: {
 			title: 'Mark this sheet paid?',
 			description: 'Marking it paid posts the reimbursement journal entry.',
-			confirm: 'Mark Paid'
+			confirm: 'Mark Paid',
+			message: 'Sheet marked paid'
 		}
 	};
 	$: transitionCopy = TRANSITION_COPY[transitionTarget] ?? {
 		title: transitionTarget,
 		description: '',
-		confirm: 'Confirm'
+		confirm: 'Confirm',
+		message: 'Sheet updated'
 	};
 
 	const fmtTime = (v: string | null | undefined) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '');
@@ -303,12 +335,7 @@
 		<CircleAlert />
 		<Alert.Title>{$i18n.t('Sheet not found')}</Alert.Title>
 		<Alert.Description>
-			<Button
-				variant="outline"
-				size="sm"
-				class="mt-2"
-				href="/accounting/company/{companyId}/expenses"
-			>
+			<Button variant="outline" size="sm" class="mt-2" href={sheetsHref}>
 				<ArrowLeft />{$i18n.t('All sheets')}
 			</Button>
 		</Alert.Description>
@@ -316,12 +343,7 @@
 {:else}
 	<div class="flex flex-col gap-4">
 		<div>
-			<Button
-				variant="ghost"
-				size="sm"
-				class="-ml-2 pl-1.5"
-				href="/accounting/company/{companyId}/expenses"
-			>
+			<Button variant="ghost" size="sm" class="-ml-2 pl-1.5" href={sheetsHref}>
 				<ArrowLeft />{$i18n.t('All sheets')}
 			</Button>
 		</div>
@@ -352,14 +374,16 @@
 				{/if}
 
 				{#if sheet.status === 'draft'}
-					<Button
-						variant="outline"
-						size="sm"
-						class="text-destructive hover:text-destructive"
-						onclick={handleDelete}
-					>
-						<Trash2 />{$i18n.t('Delete')}
-					</Button>
+					{#if canDelete}
+						<Button
+							variant="outline"
+							size="sm"
+							class="text-destructive hover:text-destructive"
+							onclick={handleDelete}
+						>
+							<Trash2 />{$i18n.t('Delete')}
+						</Button>
+					{/if}
 					<Button variant="outline" size="sm" onclick={openPicker}>
 						<Plus />{$i18n.t('Add Receipts')}
 					</Button>
@@ -671,13 +695,14 @@
 										</Table.Cell>
 										{#if sheet.status === 'draft'}
 											<Table.Cell class="text-right">
-												{#if l.invoice_id}
+												{#if l.invoice_id || l.expense_item_id}
 													<Tip content={$i18n.t('Remove from sheet')}>
 														<Button
 															variant="ghost"
 															size="icon-xs"
 															aria-label={$i18n.t('Remove from sheet')}
-															onclick={() => removeLine(l.invoice_id)}
+															disabled={!!removingKey}
+															onclick={() => removeLine(l)}
 														>
 															<X />
 														</Button>
@@ -838,14 +863,16 @@
 				</Dialog.Description>
 			</Dialog.Header>
 			<div class="grid gap-4">
-				<div class="grid gap-1.5">
-					<Label for="es-tr-user">{$i18n.t('Your name (for audit log)')}</Label>
-					<Input id="es-tr-user" bind:value={userInfo} placeholder={$i18n.t('Optional')} />
-				</div>
 				{#if transitionTarget === 'reject'}
 					<div class="grid gap-1.5">
-						<Label for="es-tr-reason">{$i18n.t('Rejection reason')}</Label>
-						<Input id="es-tr-reason" bind:value={rejectionReason} />
+						<Label for="es-tr-reason">{$i18n.t('Rejection reason')} *</Label>
+						<Textarea
+							id="es-tr-reason"
+							rows={3}
+							required
+							aria-required="true"
+							bind:value={rejectionReason}
+						/>
 					</div>
 				{/if}
 				<div class="grid gap-1.5">
@@ -857,7 +884,7 @@
 				<Button variant="outline" onclick={() => (transitionTarget = '')}
 					>{$i18n.t('Cancel')}</Button
 				>
-				<Button disabled={transitioning} onclick={confirmTransition}>
+				<Button disabled={transitioning || reasonMissing} onclick={confirmTransition}>
 					{#if transitioning}<Spinner />{/if}
 					{transitioning ? $i18n.t('Working...') : $i18n.t(transitionCopy.confirm)}
 				</Button>

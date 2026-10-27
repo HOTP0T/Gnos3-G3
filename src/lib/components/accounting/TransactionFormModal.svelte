@@ -65,6 +65,21 @@
 	export let accounts: any[] = [];
 	export let companyId: number;
 	export let bankStatementLineId: number | null = null; // when set, shows "Direct Match" option
+	// A new entry started from somewhere else (a bank statement line): the date,
+	// texts, currency and lines it opens with. Nothing is saved until the person
+	// completes the entry; lines left without an account still block saving.
+	export let prefill: {
+		transaction_date?: string;
+		currency?: string;
+		reference?: string;
+		description?: string;
+		lines?: Array<{
+			account_id: number | null;
+			debit: number | null;
+			credit: number | null;
+			description?: string;
+		}>;
+	} | null = null;
 
 	// Determine read-only mode for posted/voided transactions
 	$: readOnly = transaction && (transaction.status === 'posted' || transaction.status === 'voided');
@@ -178,7 +193,7 @@
 		lastShow = show;
 		if (show) {
 			loadBaseCurrency().then(() => {
-				if (!transaction) formData.currency = baseCurrency;
+				if (!transaction) formData.currency = prefill?.currency || baseCurrency;
 				refreshRate();
 			});
 		}
@@ -426,22 +441,26 @@
 			}
 		} else {
 			formData = {
-				transaction_date: new Date().toISOString().slice(0, 10),
+				transaction_date: prefill?.transaction_date || new Date().toISOString().slice(0, 10),
 				transaction_type: 'others',
-				currency: baseCurrency || 'USD',
+				currency: prefill?.currency || baseCurrency || 'USD',
 				exchange_rate: '',
-				reference: '',
-				description: '',
+				reference: prefill?.reference ?? '',
+				description: prefill?.description ?? '',
 				invoice_id: null
 			};
 			invoiceLabel = '';
 			extraInvoices = [];
 			attachmentUrls = [];
 			rateGapNote = '';
-			lines = [
-				{ account_id: null, debit: null, credit: null, description: '' },
-				{ account_id: null, debit: null, credit: null, description: '' }
-			];
+			lines = (prefill?.lines ?? []).map((l) => ({
+				account_id: l.account_id ?? null,
+				debit: l.debit ?? null,
+				credit: l.credit ?? null,
+				description: l.description ?? ''
+			}));
+			while (lines.length < 2)
+				lines.push({ account_id: null, debit: null, credit: null, description: '' });
 		}
 	}
 

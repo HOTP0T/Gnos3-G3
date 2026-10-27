@@ -7,7 +7,15 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
-	import { WEBUI_NAME, config, user, showSidebar, knowledge, isAdmin} from '$lib/stores';
+	import {
+		WEBUI_NAME,
+		config,
+		user,
+		showSidebar,
+		knowledge,
+		isAdmin,
+		isSuperadmin
+	} from '$lib/stores';
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -104,7 +112,12 @@
 			return;
 		}
 
-		defaultPermissions = await getUserDefaultPermissions(localStorage.token);
+		// Admins may read the defaults (they prefill new groups); a failure here
+		// must not leave the page blank, so fall back to the built-in defaults.
+		defaultPermissions = await getUserDefaultPermissions(localStorage.token).catch((error) => {
+			toast.error(`${error}`);
+			return {};
+		});
 		await setGroups();
 		loaded = true;
 	});
@@ -221,37 +234,41 @@
 		{/if}
 	</div>
 
-	<EditGroupModal
-		bind:show={showDefaultPermissionsModal}
-		tabs={['permissions']}
-		bind:permissions={defaultPermissions}
-		custom={false}
-		onSubmit={updateDefaultPermissionsHandler}
-	/>
+	<!-- Default permissions apply to every user: platform-level, superadmin only
+	     (the save endpoint refuses admins). -->
+	{#if $isSuperadmin}
+		<EditGroupModal
+			bind:show={showDefaultPermissionsModal}
+			tabs={['permissions']}
+			bind:permissions={defaultPermissions}
+			custom={false}
+			onSubmit={updateDefaultPermissionsHandler}
+		/>
 
-	<button
-		class="flex items-center justify-between rounded-lg w-full transition mt-4"
-		aria-haspopup="dialog"
-		on:click={() => {
-			showDefaultPermissionsModal = true;
-		}}
-	>
-		<div class="flex items-center gap-2.5">
-			<div class="p-1.5 bg-black/5 dark:bg-white/10 rounded-full">
-				<UsersSolid className="size-4" />
-			</div>
+		<button
+			class="flex items-center justify-between rounded-lg w-full transition mt-4"
+			aria-haspopup="dialog"
+			on:click={() => {
+				showDefaultPermissionsModal = true;
+			}}
+		>
+			<div class="flex items-center gap-2.5">
+				<div class="p-1.5 bg-black/5 dark:bg-white/10 rounded-full">
+					<UsersSolid className="size-4" />
+				</div>
 
-			<div class="text-left">
-				<div class=" text-sm font-medium">{$i18n.t('Default permissions')}</div>
+				<div class="text-left">
+					<div class=" text-sm font-medium">{$i18n.t('Default permissions')}</div>
 
-				<div class="flex text-xs mt-0.5">
-					{$i18n.t('applies to all users with the "user" role')}
+					<div class="flex text-xs mt-0.5">
+						{$i18n.t('applies to all users with the "user" role')}
+					</div>
 				</div>
 			</div>
-		</div>
 
-		<div>
-			<ChevronRight strokeWidth="2.5" />
-		</div>
-	</button>
+			<div>
+				<ChevronRight strokeWidth="2.5" />
+			</div>
+		</button>
+	{/if}
 {/if}

@@ -114,9 +114,54 @@
 	$: allDraftsSelected =
 		draftTransactions.length > 0 && draftTransactions.every((t) => selectedIds.has(t.id));
 
-	const toggleSelectAll = () => {
-		if (allDraftsSelected) selectedIds = new Set();
-		else selectedIds = new Set(draftTransactions.map((t) => t.id));
+	// "Select all drafts" selects every draft matching the filters, on every page —
+	// not only the rows on screen. `matchingDraftIds` is that set, so the bar can
+	// say "All 57 drafts selected" until the person unticks one.
+	let matchingDraftIds: number[] | null = null;
+	let selectingAll = false;
+	$: allMatchingSelected =
+		!!matchingDraftIds &&
+		matchingDraftIds.length > 1 &&
+		selectedIds.size === matchingDraftIds.length &&
+		matchingDraftIds.every((id) => selectedIds.has(id));
+
+	const clearSelection = () => {
+		selectedIds = new Set();
+		matchingDraftIds = null;
+	};
+
+	const fetchMatchingDraftIds = async (): Promise<number[]> => {
+		const params = { ...filterParams(), status: 'draft' };
+		const res = await getTransactions({ ...params, ids_only: true });
+		if (Array.isArray(res?.ids)) return res.ids;
+		// A module from before `ids_only` answers with a page: read every page instead.
+		const ids: number[] = [];
+		for (let offset = 0; ; offset += 500) {
+			const page = await getTransactions({ ...params, limit: 500, offset });
+			const rows: Array<{ id: number }> = page?.transactions ?? [];
+			ids.push(...rows.map((t) => t.id));
+			if (rows.length < 500 || ids.length >= (page?.total ?? 0)) return ids;
+		}
+	};
+
+	const toggleSelectAll = async () => {
+		if (allDraftsSelected || allMatchingSelected) {
+			clearSelection();
+			return;
+		}
+		// The Unbalanced toggle filters this page only, so "all" means the drafts shown.
+		if (filterUnbalanced) {
+			selectedIds = new Set(draftTransactions.map((t) => t.id));
+			return;
+		}
+		selectingAll = true;
+		try {
+			matchingDraftIds = await fetchMatchingDraftIds();
+			selectedIds = new Set(matchingDraftIds);
+		} catch (err) {
+			toast.error((err as { detail?: string })?.detail ?? `${err}`);
+		}
+		selectingAll = false;
 	};
 	const toggleSelect = (id: number) => {
 		if (selectedIds.has(id)) selectedIds.delete(id);
@@ -137,7 +182,7 @@
 					`${result.skipped} ${$i18n.t('not posted')}: ${(result.errors ?? []).slice(0, 3).join(' · ')}`
 				);
 			}
-			selectedIds = new Set();
+			clearSelection();
 			await loadTransactions();
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
@@ -151,7 +196,7 @@
 		try {
 			const result = await bulkDeleteDrafts(companyId, [...selectedIds]);
 			toast.success(`${result?.deleted ?? 0} ${$i18n.t('drafts deleted')}`);
-			selectedIds = new Set();
+			clearSelection();
 			await loadTransactions();
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
@@ -252,28 +297,31 @@
 		);
 
 	// ─── Data loading ────────────────────────────────────────────────────────────
+	// The server-side filters, shared by the page and by "select all drafts".
+	const filterParams = () => {
+		const params: Record<string, any> = { company_id: companyId };
+		if (filterType) params.type = filterType;
+		if (filterStatus) params.status = filterStatus;
+		if (filterDateFrom) params.date_from = filterDateFrom;
+		if (filterDateTo) params.date_to = filterDateTo;
+		if (searchQuery) params.search = searchQuery;
+		// invoice_id filter from the URL (an invoice's "show entries" link)
+		if (browser) {
+			const urlInvoiceId = $pageStore.url.searchParams.get('invoice_id');
+			if (urlInvoiceId) params.invoice_id = parseInt(urlInvoiceId);
+		}
+		return params;
+	};
+
 	const loadTransactions = async () => {
 		loading = true;
 		loadError = '';
 		try {
-			const params: Record<string, any> = {
+			const res = await getTransactions({
+				...filterParams(),
 				limit: perPage,
-				offset: (currentPage - 1) * perPage,
-				company_id: companyId
-			};
-			if (filterType) params.type = filterType;
-			if (filterStatus) params.status = filterStatus;
-			if (filterDateFrom) params.date_from = filterDateFrom;
-			if (filterDateTo) params.date_to = filterDateTo;
-			if (searchQuery) params.search = searchQuery;
-
-			// Check for invoice_id filter from URL
-			if (browser) {
-				const urlInvoiceId = $pageStore.url.searchParams.get('invoice_id');
-				if (urlInvoiceId) params.invoice_id = parseInt(urlInvoiceId);
-			}
-
-			const res = await getTransactions(params);
+				offset: (currentPage - 1) * perPage
+			});
 			if (Array.isArray(res)) {
 				transactions = res;
 				total = res.length;
@@ -305,13 +353,16 @@
 		clearTimeout(searchDebounce);
 		searchDebounce = setTimeout(() => {
 			currentPage = 1;
+			clearSelection();
 			loadTransactions();
 		}, 300);
 	};
 
 	// ─── Filter changes ──────────────────────────────────────────────────────────
+	// The selection is dropped: drafts picked under other filters would be posted unseen.
 	const handleFilterChange = () => {
 		currentPage = 1;
+		clearSelection();
 		loadTransactions();
 	};
 
@@ -558,8 +609,12 @@
 					aria-label={$i18n.t('Bulk actions')}
 				>
 					<span class="mr-1 tabular-nums">
-						<span class="font-medium">{selectedIds.size}</span>
-						{$i18n.t('selected')}
+						{#if allMatchingSelected}
+							{$i18n.t('All {{count}} drafts selected', { count: selectedIds.size })}
+						{:else}
+							<span class="font-medium">{selectedIds.size}</span>
+							{$i18n.t('selected')}
+						{/if}
 					</span>
 					<Button size="xs" onclick={handleBulkPost}>{$i18n.t('Post Selected')}</Button>
 					<Button
@@ -575,7 +630,7 @@
 							variant="ghost"
 							size="icon-xs"
 							aria-label={$i18n.t('Clear selection')}
-							onclick={() => (selectedIds = new Set())}
+							onclick={clearSelection}
 						>
 							<X />
 						</Button>
@@ -719,9 +774,9 @@
 					<Table.Row class="hover:bg-transparent">
 						<Table.Head class="w-10 pl-3">
 							<Checkbox
-								checked={allDraftsSelected}
-								indeterminate={selectedIds.size > 0 && !allDraftsSelected}
-								disabled={draftTransactions.length === 0}
+								checked={allDraftsSelected || allMatchingSelected}
+								indeterminate={selectedIds.size > 0 && !allDraftsSelected && !allMatchingSelected}
+								disabled={draftTransactions.length === 0 || selectingAll}
 								onCheckedChange={toggleSelectAll}
 								aria-label={$i18n.t('Select all drafts')}
 							/>

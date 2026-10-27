@@ -17,6 +17,9 @@
 	const i18n: any = getContext('i18n');
 
 	export let companyId: number;
+	// Called when the server answers 403: the user is not an approver here
+	// (the page then shows the sheets instead of an error).
+	export let onForbidden: () => void = () => {};
 
 	let loading = true;
 	let loadError = '';
@@ -67,7 +70,11 @@
 		try {
 			stats = await getExpenseStats(companyId);
 		} catch (e: any) {
-			loadError = e?.message ?? 'Failed to load stats';
+			loadError = e?.message ?? $i18n.t('Failed to load stats');
+			if (e?.status === 403) {
+				onForbidden();
+				return;
+			}
 			toast.error(loadError);
 		} finally {
 			loading = false;

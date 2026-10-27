@@ -251,9 +251,11 @@ class UserPermissions(BaseModel):
     settings: SettingsPermissions
 
 
-# Platform-level: changing default permissions for ALL new users — superadmin only.
+# Reading the defaults is open to admins: the Groups page (group CRUD is
+# admin-or-above) loads them to prefill new groups and to mark what every user
+# already has. Changing them stays platform-level, superadmin only (POST below).
 @router.get('/default/permissions', response_model=UserPermissions)
-async def get_default_user_permissions(request: Request, user=Depends(get_admin_user)):
+async def get_default_user_permissions(request: Request, user=Depends(get_admin_or_above_user)):
     return {
         'workspace': WorkspacePermissions(**request.app.state.config.USER_PERMISSIONS.get('workspace', {})),
         'sharing': SharingPermissions(**request.app.state.config.USER_PERMISSIONS.get('sharing', {})),

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy, getContext, tick } from 'svelte';
+	import { onMount, onDestroy, getContext, tick, type ComponentProps } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import { convertAmount } from '$lib/utils/currency';
 	import { toast } from 'svelte-sonner';
@@ -138,6 +138,7 @@
 	let showImportModal = false;
 	let importCurrency = '';
 	let importFileInput: HTMLInputElement | null = null;
+	let importFile: File | null = null;
 	let importing = false;
 	// Recent imports of the selected account, each undoable until a line is in use.
 	let recentImports: any[] = [];
@@ -174,6 +175,7 @@
 	// Create entry modal
 	let showCreateEntryModal = false;
 	let createEntryBslId: number | null = null;
+	let createEntryPrefill: ComponentProps<typeof TransactionFormModal>['prefill'] = null;
 
 	// Payment modal state
 	let showPaymentModal = false;
@@ -333,6 +335,8 @@
 	// Import modal handlers
 	const openImportModal = () => {
 		importCurrency = selectedBankCurrency || 'EUR';
+		importFile = null;
+		if (importFileInput) importFileInput.value = '';
 		showImportModal = true;
 		loadImports();
 	};
@@ -365,15 +369,15 @@
 	};
 
 	const handleImport = async () => {
-		if (!selectedBankId || !importFileInput?.files?.[0]) {
+		if (!selectedBankId || !importFile) {
 			toast.error($i18n.t('Please select a CSV file'));
 			return;
 		}
 		importing = true;
 		try {
 			const currency = importCurrency || selectedBankCurrency || undefined;
-			const res = await importBankStatement(selectedBankId, importFileInput.files[0], currency);
-			toast.success($i18n.t(`Imported ${res.imported} lines`), {
+			const res = await importBankStatement(selectedBankId, importFile, currency);
+			toast.success($i18n.t('Imported {{count}} lines', { count: res.imported ?? 0 }), {
 				action: res.imported
 					? {
 							label: $i18n.t('Undo'),
@@ -395,7 +399,12 @@
 		autoReconciling = true;
 		try {
 			const res = await autoMatchBankStatements(selectedBankId);
-			toast.success($i18n.t(`Matched ${res.matched} lines, ${res.remaining} remaining`));
+			toast.success(
+				$i18n.t('Matched {{matched}} lines, {{remaining}} remaining', {
+					matched: res.matched ?? 0,
+					remaining: res.remaining ?? 0
+				})
+			);
 			await loadStatements();
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
@@ -758,7 +767,37 @@
 	});
 
 	// Create entry from unmatched line — opens the full TransactionFormModal
+	// The entry opens on the line's date, text and currency, with the bank's GL
+	// account on the side the money moved (in → debit the bank, out → credit it).
+	// The counterpart carries the balancing amount but no account: a person picks it.
 	const openCreateEntry = (line: any) => {
+		const signed = parseFloat(line.amount) || 0;
+		const allocated = parseFloat(line.allocated_total || 0) || 0;
+		const open = Math.round((Math.abs(signed) - allocated) * 100) / 100;
+		const amount = open > 0.005 ? open : Math.abs(signed);
+		const inbound = signed > 0;
+		const text = line.description || line.reference || '';
+		const bankGlId = bankAccounts.find((b) => b.id === selectedBankId)?.account_id ?? null;
+		createEntryPrefill = {
+			transaction_date: line.transaction_date ? String(line.transaction_date).slice(0, 10) : '',
+			currency: selectedBankCurrency || undefined,
+			reference: line.reference || '',
+			description: text,
+			lines: [
+				{
+					account_id: bankGlId,
+					debit: inbound ? amount : null,
+					credit: inbound ? null : amount,
+					description: text
+				},
+				{
+					account_id: null,
+					debit: inbound ? null : amount,
+					credit: inbound ? amount : null,
+					description: ''
+				}
+			]
+		};
 		createEntryBslId = line.id;
 		showCreateEntryModal = true;
 	};
@@ -766,6 +805,7 @@
 	const handleCreateEntrySave = async () => {
 		showCreateEntryModal = false;
 		createEntryBslId = null;
+		createEntryPrefill = null;
 		await loadStatements();
 	};
 
@@ -894,14 +934,55 @@
 			<Dialog.Title>{$i18n.t('Import Statement')}</Dialog.Title>
 		</Dialog.Header>
 		<div class="grid gap-4">
-			<div class="grid gap-1.5">
-				<Label for="bank-import-file">{$i18n.t('Bank Statement (CSV or Excel)')} *</Label>
-				<Input
-					id="bank-import-file"
+			<!-- File picker: a button over a hidden input, the chosen file on its own row
+			     (as the other accounting pickers: logo, attachments, opening balances) -->
+			<div class="grid gap-1.5" role="group" aria-labelledby="bank-import-file-label">
+				<div id="bank-import-file-label" class="text-sm leading-none font-medium">
+					{$i18n.t('Bank Statement (CSV or Excel)')} *
+				</div>
+				<input
+					bind:this={importFileInput}
 					type="file"
 					accept=".csv,.xlsx,.xls"
-					bind:ref={importFileInput}
+					class="sr-only"
+					tabindex="-1"
+					aria-hidden="true"
+					onchange={(e) => (importFile = e.currentTarget.files?.[0] ?? null)}
 				/>
+				{#if importFile}
+					<div class="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+						<FileSpreadsheet class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+						<span class="min-w-0 flex-1 truncate" title={importFile.name}>{importFile.name}</span>
+						<Button
+							variant="link"
+							size="xs"
+							class="h-auto px-0"
+							disabled={importing}
+							onclick={() => importFileInput?.click()}>{$i18n.t('Change')}</Button
+						>
+						<Tip content={$i18n.t('Remove file')}>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label={$i18n.t('Remove file')}
+								disabled={importing}
+								onclick={() => {
+									importFile = null;
+									if (importFileInput) importFileInput.value = '';
+								}}
+							>
+								<X />
+							</Button>
+						</Tip>
+					</div>
+				{:else}
+					<div class="flex flex-wrap items-center gap-2">
+						<Button variant="outline" size="sm" onclick={() => importFileInput?.click()}>
+							<Upload />{$i18n.t('Choose file')}
+						</Button>
+						<span class="text-sm text-muted-foreground">{$i18n.t('.csv, .xlsx or .xls')}</span>
+					</div>
+				{/if}
 			</div>
 			<div class="grid gap-1.5">
 				<Label for="bank-import-currency">{$i18n.t('Currency')}</Label>
@@ -956,7 +1037,7 @@
 					showImportModal = false;
 				}}>{$i18n.t('Cancel')}</Button
 			>
-			<Button disabled={importing} onclick={handleImport}>
+			<Button disabled={importing || !importFile} onclick={handleImport}>
 				{#if importing}
 					<Spinner />{$i18n.t('Importing...')}
 				{:else}
@@ -1129,6 +1210,7 @@
 	{accounts}
 	{companyId}
 	bankStatementLineId={createEntryBslId}
+	prefill={createEntryPrefill}
 	on:save={handleCreateEntrySave}
 />
 

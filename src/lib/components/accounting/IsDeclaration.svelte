@@ -13,6 +13,8 @@
 		recordProvisionalTaxPayment,
 		getBankFxContext,
 		getTaxAccounts,
+		getPeriods,
+		getTransactions,
 		type CitAdjustment
 	} from '$lib/apis/accounting';
 	import { fiscalYearStart, fiscalYearEnd, fiscalYearLabel } from '$lib/utils/fiscalYear';
@@ -85,6 +87,16 @@
 	let choice = '';
 
 	const today = () => new Date().toISOString().slice(0, 10);
+	const previousFiscalStart = (start: string) => {
+		const [y, m] = start.split('-').map(Number);
+		return `${y - 1}-${String(m).padStart(2, '0')}-01`;
+	};
+
+	// Where the company's books start (its first accounting period) and whether the
+	// last completed fiscal year holds any entry: a company created this year has no
+	// return to prepare for last year, so the form opens on the current year.
+	let booksStart = '';
+	let prevYearHasEntries: boolean | null = null; // null = unknown
 
 	const buildChoices = () => {
 		const t = today();
@@ -103,18 +115,19 @@
 				start,
 				end: i === 0 ? t : end
 			});
-			// previous fiscal year
-			const [y, m] = start.split('-').map(Number);
-			start = `${y - 1}-${String(m).padStart(2, '0')}-01`;
+			start = previousFiscalStart(start);
 		}
 		choices = out;
 		// Default: the last completed year while its return is still being prepared
-		// (up to 8 months after year-end), otherwise the current year to date.
+		// (up to 8 months after year-end) and the company kept books in it — otherwise
+		// the current year to date.
 		const prev = out[1];
 		const monthsSincePrevEnd =
 			(new Date(t).getFullYear() - new Date(prev.end).getFullYear()) * 12 +
 			(new Date(t).getMonth() - new Date(prev.end).getMonth());
-		const pick = cfg?.cit_frequency === 'yearly' && monthsSincePrevEnd <= 8 ? prev : out[0];
+		const prevHasBooks = (!booksStart || booksStart <= prev.end) && prevYearHasEntries !== false;
+		const pick =
+			cfg?.cit_frequency === 'yearly' && monthsSincePrevEnd <= 8 && prevHasBooks ? prev : out[0];
 		choice = pick.key;
 		periodStart = pick.start;
 		periodEnd = pick.end;
@@ -254,6 +267,31 @@
 			accounts = Array.isArray(a) ? a : (a?.items ?? a?.accounts ?? []);
 		} catch {
 			accounts = [];
+		}
+		try {
+			const res = await getPeriods({ company_id: companyId });
+			const periods: Array<{ start_date?: string }> = Array.isArray(res)
+				? res
+				: (res?.periods ?? []);
+			booksStart =
+				periods
+					.map((p) => String(p?.start_date ?? '').slice(0, 10))
+					.filter(Boolean)
+					.sort()[0] ?? '';
+		} catch {
+			booksStart = '';
+		}
+		try {
+			const prevStart = previousFiscalStart(fiscalYearStart(today(), fyStartMonth));
+			const r = await getTransactions({
+				company_id: companyId,
+				date_from: prevStart,
+				date_to: fiscalYearEnd(prevStart, fyStartMonth),
+				limit: 1
+			});
+			prevYearHasEntries = (r?.total ?? 0) > 0;
+		} catch {
+			prevYearHasEntries = null;
 		}
 		buildChoices();
 		prefillFromFiling();

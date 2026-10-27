@@ -31,11 +31,17 @@
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
 	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
+	import { user, isAdmin } from '$lib/stores';
 
 	const i18n: any = getContext('i18n');
 	export let companyId: number;
+
+	// Deleting a category is for accounting admins (the server answers 403 otherwise).
+	$: canDelete = $isAdmin || Boolean($user?.permissions?.modules?.accounting?.admin);
+	let saving = false;
 
 	let categories: any[] = [];
 	let accounts: any[] = [];
@@ -109,6 +115,7 @@
 	};
 
 	const handleSubmit = async () => {
+		if (saving) return;
 		if (!form.label.trim()) {
 			toast.error($i18n.t('Label is required'));
 			return;
@@ -117,6 +124,7 @@
 			toast.error($i18n.t('Key is required'));
 			return;
 		}
+		saving = true;
 		try {
 			if (editingId) {
 				await updateExpenseCategory(editingId, {
@@ -142,6 +150,8 @@
 			await load();
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
+		} finally {
+			saving = false;
 		}
 	};
 
@@ -279,7 +289,9 @@
 							<Table.Cell class="py-1.5">
 								{#if cat.is_active}
 									<Badge variant="status"
-										><CircleCheck class="text-success" aria-hidden="true" />{$i18n.t('Active', { context: 'gnos3' })}</Badge
+										><CircleCheck class="text-success" aria-hidden="true" />{$i18n.t('Active', {
+											context: 'gnos3'
+										})}</Badge
 									>
 								{:else}
 									<Badge variant="status"
@@ -299,7 +311,7 @@
 											<Pencil />
 										</Button>
 									</Tip>
-									{#if !cat.is_builtin}
+									{#if !cat.is_builtin && canDelete}
 										<Tip content={$i18n.t('Delete')}>
 											<Button
 												variant="ghost"
@@ -378,7 +390,8 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={resetForm}>{$i18n.t('Cancel')}</Button>
-			<Button onclick={handleSubmit}>
+			<Button disabled={saving} onclick={handleSubmit}>
+				{#if saving}<Spinner />{/if}
 				{editingId ? $i18n.t('Update') : $i18n.t('Create')}
 			</Button>
 		</Dialog.Footer>

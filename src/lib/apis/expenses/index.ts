@@ -49,6 +49,10 @@ export interface ExpenseItem {
 	reimbursable: boolean;
 	has_receipt: boolean;
 	receipt_filename?: string | null;
+	// Without a receipt: the employee's reason, or the mileage driven.
+	no_receipt_reason?: string | null;
+	mileage_distance?: string | null;
+	mileage_rate?: string | null;
 	status: ExpenseStatus;
 	submitted_at?: string | null;
 	approved_at?: string | null;
@@ -96,15 +100,22 @@ function authHeaders(): Record<string, string> {
 	};
 }
 
-async function parseError(res: Response): Promise<Error> {
+// The thrown error keeps the HTTP status, so a screen can tell "not allowed"
+// (403) from a failure.
+export type ExpenseApiError = Error & { status?: number };
+
+async function parseError(res: Response): Promise<ExpenseApiError> {
 	let detail = `HTTP ${res.status}`;
 	try {
 		const body = await res.json();
-		if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+		if (body?.detail)
+			detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
 	} catch {
 		/* ignore */
 	}
-	return new Error(detail);
+	const err: ExpenseApiError = new Error(detail);
+	err.status = res.status;
+	return err;
 }
 
 function qs(params?: Record<string, string | number | boolean | undefined | null>): string {
@@ -183,10 +194,19 @@ export async function uploadReceipt(id: number, file: File): Promise<ExpenseItem
 // Receipt bytes need the auth header, so fetch → blob URL (same pattern as
 // the invoice/BC preview iframes).
 export async function receiptBlobUrl(id: number): Promise<string> {
+	return (await fetchReceipt(id)).url;
+}
+
+// Same, plus the type the server sent (image/jpeg, application/pdf, image/heic…),
+// so a preview can tell what the browser is able to show.
+export async function fetchReceipt(id: number): Promise<{ url: string; type: string }> {
 	const res = await fetch(`${BASE}/${id}/receipt`, { headers: authHeaders() });
 	if (!res.ok) throw await parseError(res);
 	const blob = await res.blob();
-	return URL.createObjectURL(blob);
+	return {
+		url: URL.createObjectURL(blob),
+		type: (blob.type || '').split(';')[0].trim().toLowerCase()
+	};
 }
 
 // Approver surface
@@ -198,6 +218,9 @@ export const approveExpense = (id: number) => post<ExpenseItem>(`/${id}/approve`
 export const rejectExpense = (id: number, reason: string) =>
 	post<ExpenseItem>(`/${id}/reject`, { reason });
 
+// Closes an approved expense that owes the employee nothing (company card or
+// record only, `reimbursable=false`, not on a sheet): status → reimbursed, no
+// journal entry. Reimbursable expenses are paid back through a sheet instead.
 export const markReimbursed = (id: number) => post<ExpenseItem>(`/${id}/mark-reimbursed`);
 
 // Accounting-module review surface: all employee-submitted expenses in a

@@ -342,6 +342,8 @@ export const getTransactions = async (params?: {
 	search?: string;
 	limit?: number;
 	offset?: number;
+	// true → { ids, total }: every matching entry's id, not paged
+	ids_only?: boolean;
 }) => apiGet('/transactions', params as any);
 
 export const createTransaction = async (data: Record<string, any>, company_id?: number, auto_pay?: boolean, bank_statement_line_id?: number) =>
@@ -1254,7 +1256,8 @@ async function downloadFileAuth(url: string, fallbackName: string): Promise<void
 	const blob = await res.blob();
 	let filename = fallbackName;
 	const cd = res.headers.get('Content-Disposition');
-	const m = cd && cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+	// The UTF-8 name (filename*=, RFC 5987) wins over the ASCII fallback.
+	const m = cd && (cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i));
 	if (m && m[1]) {
 		try {
 			filename = decodeURIComponent(m[1]);

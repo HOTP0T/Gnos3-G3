@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from 'svelte';
+	import { onMount, onDestroy, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -54,15 +54,11 @@
 	let dateTo = '';
 	let search = '';
 
-	const defaultPeriod = () => {
-		const now = new Date();
-		const start = new Date(now.getFullYear(), now.getMonth(), 1);
-		const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-		return {
-			start: start.toISOString().slice(0, 10),
-			end: end.toISOString().slice(0, 10)
-		};
-	};
+	// This month, in local dates (toISOString() is UTC: a day off east of UTC).
+	const defaultPeriod = () => ({
+		start: dayjs().startOf('month').format('YYYY-MM-DD'),
+		end: dayjs().endOf('month').format('YYYY-MM-DD')
+	});
 
 	let genForm = (() => {
 		const p = defaultPeriod();
@@ -79,7 +75,11 @@
 	})();
 	let candidatePreview: { total: number } | null = null;
 
+	// Filters can change faster than the server answers: only the latest
+	// request is applied.
+	let loadSeq = 0;
 	const load = async () => {
+		const seq = ++loadSeq;
 		loading = true;
 		loadError = '';
 		try {
@@ -94,16 +94,26 @@
 				getEmployees(companyId, { active: true }),
 				getPendingReimbursableInvoices(companyId)
 			]);
+			if (seq !== loadSeq) return;
 			sheets = sheetData?.sheets ?? [];
 			employees = empData?.employees ?? [];
 			pendingGroups = pendingData?.groups ?? [];
 			pendingTotal = pendingData?.total_invoices ?? 0;
 		} catch (err: any) {
+			if (seq !== loadSeq) return;
 			loadError = err?.detail ?? `${err}`;
 			toast.error(loadError);
 		}
 		loading = false;
 	};
+
+	// Search as you type, once the typing pauses.
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	const searchLater = () => {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(load, 300);
+	};
+	onDestroy(() => clearTimeout(searchTimer));
 
 	const openSheet = (id: number) => goto(`/accounting/company/${companyId}/expenses/${id}`);
 	const valueOf = (e: Event) => (e.currentTarget as HTMLInputElement).value;
@@ -303,7 +313,7 @@
 				value={search}
 				oninput={(e) => {
 					search = valueOf(e);
-					load();
+					searchLater();
 				}}
 			/>
 		</div>

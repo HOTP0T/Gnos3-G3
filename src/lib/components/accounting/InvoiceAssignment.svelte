@@ -291,6 +291,10 @@
 		[];
 	let lineSearch: Record<string, string> = {};
 	let editingLine: string | null = null; // role whose account picker is open
+	// The main account was pre-selected from the AI's suggestion and nobody has
+	// picked one yet. Shown as "suggested"; it is booked only when the person
+	// creates the draft (design system: an AI suggestion is accepted by a person).
+	let pickerSuggested = false;
 
 	$: parentIds = new Set(accountsList.map((a: any) => a.parent_id).filter(Boolean));
 	$: leafAccounts = accountsList.filter((a: any) => !parentIds.has(a.id));
@@ -298,7 +302,14 @@
 
 	const openAccountPicker = async (inv: any) => {
 		pickerInvoice = inv;
-		pickerMainCode = inv.final_account_code || '';
+		const suggested =
+			!inv.final_account_code &&
+			inv.suggested_account_code &&
+			accountMap[inv.suggested_account_code]
+				? inv.suggested_account_code
+				: '';
+		pickerMainCode = inv.final_account_code || suggested;
+		pickerSuggested = !!suggested;
 		pickerMainSearch = '';
 		bookingPlan = null;
 		pickCounterpartyId = '';
@@ -319,6 +330,7 @@
 		pickerInvoiceId = null;
 		pickerInvoice = null;
 		pickerMainCode = '';
+		pickerSuggested = false;
 		bookingPlan = null;
 	};
 
@@ -363,6 +375,7 @@
 
 	const chooseMain = async (code: string) => {
 		pickerMainCode = code;
+		pickerSuggested = false;
 		editingLine = null;
 		await refreshPlan();
 	};
@@ -723,8 +736,12 @@
 
 	// Each invoice is shown in the selected display currency converted FROM ITS
 	// OWN currency (a EUR bill is EUR, whatever the company's books are in).
-	const cvt = (amount: any, date?: string, rowCurrency?: string | null) =>
-		convertRowAmount(
+	// In the company currency the row shows the figure the books use, sent by the
+	// server (`base_amount`: the rate of the invoice's own entry, else the rate an
+	// entry for it would carry; none when no current rate is on file) — not the
+	// nearest rate in the browser's windowed rate list.
+	const cvt = (amount: any, date?: string, rowCurrency?: string | null, inv?: any) => {
+		const c = convertRowAmount(
 			amount,
 			rowCurrency,
 			$displayCurrency,
@@ -732,6 +749,12 @@
 			$exchangeRates ?? [],
 			date
 		);
+		if (!c.converting || !inv?.base_rate_source || c.to !== (inv.base_currency ?? '').toUpperCase())
+			return c;
+		return inv.base_amount != null
+			? { ...c, display: fmt2(Number(inv.base_amount)), hasRate: true }
+			: { ...c, display: '', hasRate: false };
+	};
 
 	// The summary card: every invoice converted into the display currency (or the
 	// company currency), so mixed-currency lists add up to something meaningful.
@@ -740,7 +763,7 @@
 		let sum = 0;
 		let missing = 0;
 		for (const i of companyInvoices) {
-			const c = cvt(i.total_amount, i.invoice_date, i.currency);
+			const c = cvt(i.total_amount, i.invoice_date, i.currency, i);
 			if (!c.hasRate) {
 				missing += 1;
 				continue;
@@ -874,7 +897,7 @@
 {#snippet amountCell(inv: any)}
 	<Table.Cell class="text-right tabular-nums">
 		{#key $displayCurrency}
-			{@const c = cvt(inv.total_amount, inv.invoice_date, inv.currency)}
+			{@const c = cvt(inv.total_amount, inv.invoice_date, inv.currency, inv)}
 			{#if c.converting}
 				{#if c.hasRate}
 					<div class="font-medium">
@@ -1849,7 +1872,11 @@
 			</div>
 			{#if pickerMainCode && editingLine !== 'main'}
 				<div class="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
-					<Check class="size-4 shrink-0 text-success" aria-hidden="true" />
+					{#if pickerSuggested}
+						<Sparkles class="size-4 shrink-0 text-info" aria-hidden="true" />
+					{:else}
+						<Check class="size-4 shrink-0 text-success" aria-hidden="true" />
+					{/if}
 					<span class="min-w-0 flex-1 truncate">
 						<span class="font-mono text-[13px]">{pickerMainCode}</span>
 						{accountMap[pickerMainCode] || ''}
@@ -1863,6 +1890,13 @@
 						}}>{$i18n.t('Change')}</Button
 					>
 				</div>
+				{#if pickerSuggested}
+					<p class="text-sm text-muted-foreground">
+						{$i18n.t(
+							'Suggested by the accounting AI. Check it: nothing is booked until you create the draft entry.'
+						)}
+					</p>
+				{/if}
 			{:else}
 				<div class="relative">
 					<Search
@@ -2023,6 +2057,13 @@
 													><span class="font-mono text-[13px]">{line.account_code}</span>
 													{line.account_name}</span
 												>
+											{/if}
+											{#if pickerSuggested && line.source !== 'missing'}
+												<div>
+													<Badge variant="info">
+														<Sparkles aria-hidden="true" />{$i18n.t('suggested')}
+													</Badge>
+												</div>
 											{/if}
 											{#if line.source === 'missing'}
 												<!-- chosen above ("Change"); shown here so the gap is visible on its line -->

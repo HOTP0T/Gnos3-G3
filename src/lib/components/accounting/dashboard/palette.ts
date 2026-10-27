@@ -8,7 +8,7 @@
 //
 // ECharts draws on a canvas and cannot read CSS variables. The surfaces below are the design
 // tokens' values (light · dark); chartTheme() swaps in the live computed token when the page has
-// one, so the OLED theme (which repaints the dark grays) keeps matching cards.
+// one, so a chart keeps matching the cards around it.
 
 export const CATEGORICAL = {
 	light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
@@ -88,7 +88,7 @@ export interface ChartTheme {
 	serious: string;
 }
 
-/** Whether the page is dark right now: the <html> class, which the system and OLED themes set too.
+/** Whether the page is dark right now: the <html> class, which the System theme sets too.
  *  Pass the theme store's value so a reactive statement re-runs when the theme changes. */
 export function pageIsDark(themeName: string = ''): boolean {
 	if (typeof document !== 'undefined') return document.documentElement.classList.contains('dark');

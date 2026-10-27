@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from 'svelte';
+	import { onMount, onDestroy, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import Plus from '@lucide/svelte/icons/plus';
@@ -15,12 +15,12 @@
 	import CircleSlash from '@lucide/svelte/icons/circle-slash';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
 	import {
 		getEmployees,
 		createEmployee,
 		updateEmployee,
-		deleteEmployee,
 		restoreEmployee,
 		provisionEmployeeLogin,
 		syncEmployeesToK4mi,
@@ -39,7 +39,9 @@
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
 
 	const i18n: any = getContext('i18n');
 	export let companyId: number;
@@ -69,8 +71,27 @@
 	});
 
 	let form = emptyForm();
+	let saving = false;
 
+	// The account the employee is owed on. There is no company-wide fallback:
+	// a sheet can't be approved until the employee has an active one.
+	const isActiveLiability = (a: any) => a.account_type === 'liability' && a.is_active !== false;
+	$: reimbursementOk = (id: number | null) => {
+		if (!id) return false;
+		const a = accounts.find((x) => x.id === id);
+		return !!a && isActiveLiability(a);
+	};
+	// The current choice stays listed even if it was deactivated since.
+	$: reimbursementOptions = accounts.filter(
+		(a) =>
+			isActiveLiability(a) ||
+			(a.id === form.reimbursement_account_id && a.account_type === 'liability')
+	);
+
+	// Typing in the search box can outrun the server: only the latest answer is applied.
+	let loadSeq = 0;
 	const load = async () => {
+		const seq = ++loadSeq;
 		loading = true;
 		loadError = '';
 		try {
@@ -82,11 +103,13 @@
 				getAccounts({ company_id: companyId }),
 				getExpenseCategories(companyId)
 			]);
+			if (seq !== loadSeq) return;
 			employees = empData?.employees ?? [];
 			const accts = acctData?.accounts ?? acctData ?? [];
 			accounts = Array.isArray(accts) ? accts : [];
 			categories = catData?.categories ?? [];
 		} catch (err: any) {
+			if (seq !== loadSeq) return;
 			loadError = `${err?.detail ?? err}`;
 			toast.error(err?.detail ?? `${err}`);
 		}
@@ -94,6 +117,13 @@
 	};
 
 	onMount(load);
+
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	const searchLater = () => {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(load, 300);
+	};
+	onDestroy(() => clearTimeout(searchTimer));
 
 	const resetForm = () => {
 		form = emptyForm();
@@ -122,6 +152,7 @@
 	};
 
 	const handleSubmit = async () => {
+		if (saving) return;
 		if (!form.code.trim() || !form.full_name.trim()) {
 			toast.error($i18n.t('Code and full name are required'));
 			return;
@@ -135,6 +166,7 @@
 			default_expense_category_id: form.default_expense_category_id ?? null,
 			is_active: form.is_active
 		};
+		saving = true;
 		try {
 			if (editingId) {
 				await updateEmployee(editingId, payload);
@@ -153,6 +185,8 @@
 			await load();
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
+		} finally {
+			saving = false;
 		}
 	};
 
@@ -170,14 +204,64 @@
 		}
 	};
 
-	const handleDeactivate = async (id: number) => {
+	// Deactivate asks first. It goes through the same update as the form's
+	// "Active" box (accountants may do it); the DELETE route needs an admin.
+	let deactivateTarget: any = null;
+	let showDeactivateConfirm = false;
+	const askDeactivate = (emp: any) => {
+		deactivateTarget = emp;
+		showDeactivateConfirm = true;
+	};
+	const handleDeactivate = async () => {
+		const emp = deactivateTarget;
+		if (!emp) return;
 		try {
-			await deleteEmployee(id);
+			await updateEmployee(emp.id, { is_active: false });
 			toast.success($i18n.t('Employee deactivated'));
 			await load();
 		} catch (err: any) {
 			toast.error(err?.detail ?? `${err}`);
 		}
+	};
+
+	// Copy the one-time login. Appliances serve plain HTTP, where
+	// navigator.clipboard does not exist: fall back on a hidden textarea inside
+	// the dialog (outside it, the dialog's focus trap would steal the selection).
+	let copyHost: HTMLElement | null = null;
+	const copyText = async (text: string): Promise<boolean> => {
+		if (window.isSecureContext && navigator.clipboard?.writeText) {
+			try {
+				await navigator.clipboard.writeText(text);
+				return true;
+			} catch {
+				/* fall back below */
+			}
+		}
+		const ta = document.createElement('textarea');
+		ta.value = text;
+		ta.setAttribute('readonly', '');
+		ta.style.position = 'fixed';
+		ta.style.top = '0';
+		ta.style.left = '0';
+		ta.style.opacity = '0';
+		(copyHost ?? document.body).appendChild(ta);
+		try {
+			ta.focus();
+			ta.select();
+			return document.execCommand('copy');
+		} catch {
+			return false;
+		} finally {
+			ta.remove();
+		}
+	};
+	const copyCredential = async () => {
+		if (!credential) return;
+		const ok = await copyText(
+			`${$i18n.t('Email')}: ${credential.email}\n${$i18n.t('Temporary password')}: ${credential.password}`
+		);
+		if (ok) toast.success($i18n.t('Copied'));
+		else toast.error($i18n.t('Could not copy. Select the password and copy it by hand.'));
 	};
 
 	const handleRestore = async (id: number) => {
@@ -254,7 +338,7 @@
 				type="search"
 				class="h-8 pl-8"
 				bind:value={searchTerm}
-				oninput={reload}
+				oninput={searchLater}
 				placeholder={$i18n.t('Search...')}
 				aria-label={$i18n.t('Search...')}
 			/>
@@ -329,7 +413,20 @@
 							<Table.Cell class="py-1.5 text-muted-foreground">{emp.email || '—'}</Table.Cell>
 							<Table.Cell class="py-1.5 text-muted-foreground">{emp.department || '—'}</Table.Cell>
 							<Table.Cell class="py-1.5 text-muted-foreground">
-								{accountLabel(emp.reimbursement_account_id) || '—'}
+								{#if emp.is_active && !reimbursementOk(emp.reimbursement_account_id)}
+									<Tip
+										content={$i18n.t(
+											"Needed to approve this employee's reimbursement sheets: choose an active liability account."
+										)}
+									>
+										<span class="inline-flex items-center gap-1 text-foreground">
+											<TriangleAlert class="size-3.5 text-warning" aria-hidden="true" />
+											{accountLabel(emp.reimbursement_account_id) || $i18n.t('Not set')}
+										</span>
+									</Tip>
+								{:else}
+									{accountLabel(emp.reimbursement_account_id) || '—'}
+								{/if}
 							</Table.Cell>
 							<Table.Cell class="py-1.5 text-muted-foreground">
 								{categoryLabel(emp.default_expense_category_id) || '—'}
@@ -337,7 +434,9 @@
 							<Table.Cell class="py-1.5">
 								{#if emp.is_active}
 									<Badge variant="status"
-										><CircleCheck class="text-success" aria-hidden="true" />{$i18n.t('Active', { context: 'gnos3' })}</Badge
+										><CircleCheck class="text-success" aria-hidden="true" />{$i18n.t('Active', {
+											context: 'gnos3'
+										})}</Badge
 									>
 								{:else}
 									<Badge variant="status"
@@ -375,7 +474,7 @@
 												size="icon-xs"
 												class="text-muted-foreground hover:text-destructive"
 												aria-label={$i18n.t('Deactivate')}
-												onclick={() => handleDeactivate(emp.id)}
+												onclick={() => askDeactivate(emp)}
 											>
 												<UserX />
 											</Button>
@@ -432,14 +531,28 @@
 			</div>
 			<div class="grid gap-2">
 				<Label for="emp-reimb">{$i18n.t('Reimbursement Account')}</Label>
-				<NativeSelect.Root id="emp-reimb" class="w-full" bind:value={form.reimbursement_account_id}>
+				<NativeSelect.Root
+					id="emp-reimb"
+					class="w-full"
+					aria-describedby="emp-reimb-hint"
+					bind:value={form.reimbursement_account_id}
+				>
 					<option value={null} class="bg-[Canvas] text-[CanvasText]"
-						>{$i18n.t('Use company default')}</option
+						>— {$i18n.t('Not set')} —</option
 					>
-					{#each accounts.filter((a) => a.account_type === 'liability') as acct}
-						<NativeSelect.Option value={acct.id}>{acct.code} — {acct.name}</NativeSelect.Option>
+					{#each reimbursementOptions as acct}
+						<NativeSelect.Option value={acct.id}
+							>{acct.code} — {acct.name}{acct.is_active === false
+								? ` (${$i18n.t('Inactive')})`
+								: ''}</NativeSelect.Option
+						>
 					{/each}
 				</NativeSelect.Root>
+				<p id="emp-reimb-hint" class="text-[13px] text-muted-foreground">
+					{$i18n.t(
+						"The liability account the employee is owed on. Required to approve the employee's reimbursement sheets."
+					)}
+				</p>
 			</div>
 			<div class="grid gap-2">
 				<Label for="emp-cat">{$i18n.t('Default Category')}</Label>
@@ -461,7 +574,8 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={resetForm}>{$i18n.t('Cancel')}</Button>
-			<Button onclick={handleSubmit}>
+			<Button disabled={saving} onclick={handleSubmit}>
+				{#if saving}<Spinner />{/if}
 				{editingId ? $i18n.t('Update') : $i18n.t('Create')}
 			</Button>
 		</Dialog.Footer>
@@ -490,7 +604,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if credential}
-			<div class="grid gap-2">
+			<div class="grid gap-2" bind:this={copyHost}>
 				<div class="grid gap-1 rounded-md border bg-muted/50 px-3 py-2">
 					<span class="text-sm text-muted-foreground">{$i18n.t('Email')}</span>
 					<span class="font-mono text-[13px] select-all">{credential.email}</span>
@@ -502,18 +616,25 @@
 			</div>
 		{/if}
 		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					navigator.clipboard?.writeText(
-						`Email: ${credential?.email}\nPassword: ${credential?.password}`
-					);
-					toast.success($i18n.t('Copied'));
-				}}
-			>
+			<Button variant="outline" onclick={copyCredential}>
 				<Copy />{$i18n.t('Copy')}
 			</Button>
 			<Button onclick={() => (credential = null)}>{$i18n.t('Done')}</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<ConfirmDialog
+	bind:open={showDeactivateConfirm}
+	title={$i18n.t('Deactivate this employee?')}
+	description={deactivateTarget
+		? $i18n.t(
+				'{{name}} leaves the employee lists and the K4mi Employee field. Their sheets and expenses are kept, and you can restore them later.',
+				{ name: deactivateTarget.full_name }
+			)
+		: ''}
+	confirmLabel={$i18n.t('Deactivate')}
+	destructive
+	onconfirm={handleDeactivate}
+	oncancel={() => (deactivateTarget = null)}
+/>

@@ -14,6 +14,9 @@
 	import Inbox from '@lucide/svelte/icons/inbox';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import FilePlus from '@lucide/svelte/icons/file-plus';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import Info from '@lucide/svelte/icons/info';
+	import FileDown from '@lucide/svelte/icons/file-down';
 
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -31,11 +34,13 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import StatusBadge from '$lib/components/gnos3-ui/StatusBadge.svelte';
 	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
+	import ConfirmDialog from '$lib/components/gnos3-ui/ConfirmDialog.svelte';
 	import {
 		listCompanyExpenses,
 		approveExpense,
 		rejectExpense,
-		receiptBlobUrl,
+		markReimbursed,
+		fetchReceipt,
 		updateExpense,
 		getCategories,
 		type ExpenseItem,
@@ -45,19 +50,55 @@
 
 	const i18n: any = getContext('i18n');
 	export let companyId: number;
+	// Called after anything that changes what awaits review (the page's badge).
+	export let onChanged: () => void = () => {};
+	// Called when the server answers 403: the user is not an approver here.
+	export let onForbidden: () => void = () => {};
 
-	let items: ExpenseItem[] = [];
+	let rawItems: ExpenseItem[] = [];
 	let loading = true;
 	let loadError = '';
 	let busyId: number | null = null;
-	let statusFilter = 'submitted';
 
-	// Bundling (only in the "To reimburse" view): select approved, un-bundled
-	// items for a single employee and create a reimbursement sheet.
+	// An approved expense either goes on a reimbursement sheet (the employee paid)
+	// or is simply closed (company card / record only: nothing is owed).
+	const bundlable = (i: ExpenseItem) =>
+		i.status === 'approved' && !i.expense_sheet_id && i.reimbursable;
+	const closable = (i: ExpenseItem) =>
+		i.status === 'approved' && !i.expense_sheet_id && !i.reimbursable;
+
+	type View = {
+		key: string;
+		label: string;
+		status: string;
+		keep?: (i: ExpenseItem) => boolean;
+	};
+	const VIEWS: View[] = [
+		{ key: 'submitted', label: 'To review', status: 'submitted' },
+		{
+			key: 'approved',
+			label: 'To reimburse',
+			status: 'approved',
+			keep: (i) => i.reimbursable || !!i.expense_sheet_id
+		},
+		{ key: 'to_close', label: 'To close', status: 'approved', keep: closable },
+		{ key: 'reimbursed', label: 'Reimbursed', status: 'reimbursed' },
+		{ key: 'rejected', label: 'Rejected', status: 'rejected' },
+		{ key: 'all', label: 'All', status: '' }
+	];
+	const viewOf = (key: string) => VIEWS.find((v) => v.key === key) ?? VIEWS[0];
+	let viewKey = 'submitted';
+	$: view = viewOf(viewKey);
+	$: items = view.keep ? rawItems.filter(view.keep) : rawItems;
+	// In "To reimburse": how many approved expenses wait in "To close" instead.
+	$: toCloseCount = viewKey === 'approved' ? rawItems.filter(closable).length : 0;
+
+	// Bundling (only in the "To reimburse" view): select approved, un-bundled,
+	// reimbursable items for a single employee and create a reimbursement sheet.
 	let selected = new Set<number>();
 	let bundling = false;
 
-	$: selectableItems = items.filter((i) => i.status === 'approved' && !i.expense_sheet_id);
+	$: selectableItems = items.filter(bundlable);
 	$: selectedItems = items.filter((i) => selected.has(i.id));
 	$: selectedEmployeeId = selectedItems.length ? selectedItems[0].employee_id : null;
 	$: mixedEmployees = new Set(selectedItems.map((i) => i.employee_id)).size > 1;
@@ -83,7 +124,7 @@
 	async function bundle() {
 		if (!selectedItems.length) return;
 		if (mixedEmployees) {
-			toast.error('Select expenses for a single employee to bundle');
+			toast.error($i18n.t('Select expenses for a single employee to bundle'));
 			return;
 		}
 		bundling = true;
@@ -92,18 +133,41 @@
 				employee_id: selectedEmployeeId as number,
 				expense_item_ids: selectedItems.map((i) => i.id)
 			});
-			toast.success(`Reimbursement sheet ${sheet.reference} created`);
+			toast.success(
+				$i18n.t('Reimbursement sheet {{reference}} created', { reference: sheet.reference })
+			);
+			onChanged();
 			goto(`/accounting/company/${companyId}/expenses/${sheet.id}`);
 		} catch (e: any) {
-			toast.error(e?.detail ?? e?.message ?? 'Could not bundle');
+			toast.error(e?.detail ?? e?.message ?? $i18n.t('Could not bundle'));
 		} finally {
 			bundling = false;
 		}
 	}
 
-	// Receipt preview modal
-	let previewUrl = '';
-	let previewIsPdf = false;
+	// Receipt preview modal. What it can show follows the type the server sent
+	// (a phone's HEIC photo can't be shown by most browsers: offer a download).
+	let preview: { url: string; type: string; filename: string } | null = null;
+	const SHOWABLE_IMAGES = [
+		'image/jpeg',
+		'image/png',
+		'image/gif',
+		'image/webp',
+		'image/avif',
+		'image/bmp'
+	];
+	const kindOf = (type: string, filename: string): 'pdf' | 'image' | 'other' => {
+		if (type === 'application/pdf') return 'pdf';
+		if (SHOWABLE_IMAGES.includes(type)) return 'image';
+		// No useful type from the server: fall back on the file name.
+		if (!type || type === 'application/octet-stream') {
+			const ext = filename.toLowerCase().split('.').pop() ?? '';
+			if (ext === 'pdf') return 'pdf';
+			if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp'].includes(ext)) return 'image';
+		}
+		return 'other';
+	};
+	$: previewKind = preview ? kindOf(preview.type, preview.filename) : null;
 
 	// ── Finance correction ──────────────────────────────────────────────
 	// Reviewers fix employee mistakes (wrong category, amount, tax, currency)
@@ -184,75 +248,105 @@
 				return;
 			}
 			await updateExpense(editing.id, payload as any);
-			toast.success('Expense updated');
+			toast.success($i18n.t('Expense updated'));
 			closeEdit();
 			await load();
+			onChanged();
 		} catch (e: any) {
-			toast.error(e?.detail ?? e?.message ?? 'Could not save changes');
+			toast.error(e?.detail ?? e?.message ?? $i18n.t('Could not save changes'));
 		} finally {
 			saving = false;
 		}
 	}
 
-	const FILTERS = [
-		{ key: 'submitted', label: 'To review' },
-		{ key: 'approved', label: 'To reimburse' },
-		{ key: 'reimbursed', label: 'Reimbursed' },
-		{ key: 'rejected', label: 'Rejected' },
-		{ key: '', label: 'All' }
-	];
-
-	// The status filter is a single-choice toggle group; clicking the pressed item would
-	// clear it, so an empty value snaps back to the current filter.
+	// The view is a single-choice toggle group; clicking the pressed item would
+	// clear it, so an empty value snaps back to the current view.
 	let filterValue = 'submitted';
-	$: if (!filterValue) filterValue = statusFilter || 'all';
+	$: if (!filterValue) filterValue = viewKey;
 
 	function fmtMoney(amount: string, currency: string): string {
 		const n = Number(amount);
 		return `${currency} ${isNaN(n) ? amount : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
+	// Switching views quickly can leave an older request to answer last: only
+	// the latest one is applied.
+	let loadSeq = 0;
 	async function load() {
+		const seq = ++loadSeq;
 		loading = true;
 		loadError = '';
 		try {
+			// viewOf(viewKey), not `view`: setView() calls this before `$:` reruns.
 			const res = await listCompanyExpenses(companyId, {
-				status: statusFilter || undefined
+				status: viewOf(viewKey).status || undefined
 			});
-			items = res.items;
+			if (seq !== loadSeq) return;
+			rawItems = res.items;
 			// Drop selections that are no longer selectable (bundled/paid elsewhere).
-			selected = new Set([...selected].filter((id) => items.some((i) => i.id === id)));
+			selected = new Set(
+				[...selected].filter((id) => rawItems.some((i) => i.id === id && bundlable(i)))
+			);
 		} catch (e: any) {
-			loadError = e?.message ?? 'Failed to load submissions';
+			if (seq !== loadSeq) return;
+			if (e?.status === 403) onForbidden();
+			loadError = e?.message ?? $i18n.t('Failed to load submissions');
 			toast.error(loadError);
 		} finally {
-			loading = false;
+			if (seq === loadSeq) loading = false;
 		}
 	}
 
 	async function viewReceipt(item: ExpenseItem) {
 		try {
-			if (previewUrl) URL.revokeObjectURL(previewUrl);
-			previewUrl = await receiptBlobUrl(item.id);
-			previewIsPdf = !!item.receipt_filename?.toLowerCase().endsWith('.pdf');
+			const { url, type } = await fetchReceipt(item.id);
+			closePreview();
+			preview = { url, type, filename: item.receipt_filename || 'receipt' };
 		} catch (e: any) {
-			toast.error(e?.message ?? 'Could not load receipt');
+			toast.error(e?.message ?? $i18n.t('Could not load receipt'));
 		}
 	}
 
 	function closePreview() {
-		if (previewUrl) URL.revokeObjectURL(previewUrl);
-		previewUrl = '';
+		if (preview) URL.revokeObjectURL(preview.url);
+		preview = null;
 	}
 
 	async function doApprove(item: ExpenseItem) {
 		busyId = item.id;
 		try {
 			await approveExpense(item.id);
-			toast.success('Approved');
+			toast.success($i18n.t('Expense approved'));
 			await load();
+			onChanged();
 		} catch (e: any) {
-			toast.error(e?.message ?? 'Could not approve');
+			toast.error(e?.message ?? $i18n.t('Could not approve'));
+		} finally {
+			busyId = null;
+		}
+	}
+
+	// Close: an approved expense that owes the employee nothing (company card or
+	// record only). It moves to Reimbursed without a journal entry.
+	let closeTarget: ExpenseItem | null = null;
+	let showCloseConfirm = false;
+
+	function askClose(item: ExpenseItem) {
+		closeTarget = item;
+		showCloseConfirm = true;
+	}
+
+	async function confirmClose() {
+		const item = closeTarget;
+		if (!item) return;
+		busyId = item.id;
+		try {
+			await markReimbursed(item.id);
+			toast.success($i18n.t('Expense closed'));
+			await load();
+			onChanged();
+		} catch (e: any) {
+			toast.error(e?.message ?? $i18n.t('Could not close the expense'));
 		} finally {
 			busyId = null;
 		}
@@ -274,25 +368,29 @@
 		busyId = item.id;
 		try {
 			await rejectExpense(item.id, reason);
-			toast.success('Rejected');
+			toast.success($i18n.t('Expense rejected'));
 			rejectTarget = null;
 			await load();
+			onChanged();
 		} catch (e: any) {
-			toast.error(e?.message ?? 'Could not reject');
+			toast.error(e?.message ?? $i18n.t('Could not reject'));
 		} finally {
 			busyId = null;
 		}
 	}
 
-	function setFilter(key: string) {
-		statusFilter = key;
+	function setView(key: string) {
+		const sameRequest = viewOf(key).status === viewOf(viewKey).status;
+		viewKey = key;
+		filterValue = key;
 		selected = new Set();
-		load();
+		// "To reimburse" and "To close" read the same list: no need to fetch again.
+		if (!sameRequest || loadError) load();
 	}
 
 	onMount(load);
 	onDestroy(() => {
-		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		if (preview) URL.revokeObjectURL(preview.url);
 	});
 </script>
 
@@ -306,20 +404,42 @@
 			class="max-w-full overflow-x-auto"
 			bind:value={filterValue}
 			onValueChange={(v) => {
-				if (v) setFilter(v === 'all' ? '' : v);
+				if (v) setView(v);
 			}}
 			aria-label={$i18n.t('Status')}
 		>
-			{#each FILTERS as f}
-				<ToggleGroup.Item value={f.key || 'all'} class="px-3">{$i18n.t(f.label)}</ToggleGroup.Item>
+			{#each VIEWS as v}
+				<ToggleGroup.Item value={v.key} class="px-3">{$i18n.t(v.label)}</ToggleGroup.Item>
 			{/each}
 		</ToggleGroup.Root>
 	</div>
 
-	{#if statusFilter === 'approved'}
+	{#if viewKey === 'approved'}
 		<p class="text-sm text-muted-foreground">
 			{$i18n.t(
 				"Select approved expenses for one employee and bundle them into a reimbursement sheet — that sheet posts the journal entry when it's approved & paid."
+			)}
+		</p>
+		{#if toCloseCount > 0 && !loading}
+			<Alert.Root>
+				<Info />
+				<Alert.Description>
+					<p>
+						{$i18n.t(
+							'{{count}} approved expense(s) owe the employee nothing (company card or record only). They are closed, not reimbursed.',
+							{ count: toCloseCount }
+						)}
+					</p>
+					<Button variant="outline" size="xs" class="mt-1" onclick={() => setView('to_close')}>
+						{$i18n.t('To close')}<ArrowRight />
+					</Button>
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
+	{:else if viewKey === 'to_close'}
+		<p class="text-sm text-muted-foreground">
+			{$i18n.t(
+				'Approved expenses paid with a company card or kept for the record: nothing is owed to the employee. Closing one moves it to Reimbursed, without a journal entry.'
 			)}
 		</p>
 	{/if}
@@ -344,7 +464,7 @@
 			<Empty.Header>
 				<Empty.Media variant="icon"><Inbox /></Empty.Media>
 				<Empty.Title>
-					{statusFilter === 'submitted'
+					{viewKey === 'submitted'
 						? $i18n.t('Nothing awaiting review.')
 						: $i18n.t('No expenses here.')}
 				</Empty.Title>
@@ -355,7 +475,7 @@
 			<Table.Root>
 				<Table.Header class="bg-muted/50">
 					<Table.Row class="hover:bg-transparent">
-						{#if statusFilter === 'approved'}
+						{#if viewKey === 'approved'}
 							<Table.Head class="w-10"><span class="sr-only">{$i18n.t('Select')}</span></Table.Head>
 						{/if}
 						<Table.Head>{$i18n.t('Employee')}</Table.Head>
@@ -371,9 +491,9 @@
 				</Table.Header>
 				<Table.Body>
 					{#each items as item (item.id)}
-						{@const selectable = item.status === 'approved' && !item.expense_sheet_id}
+						{@const selectable = bundlable(item)}
 						<Table.Row data-state={selected.has(item.id) ? 'selected' : undefined}>
-							{#if statusFilter === 'approved'}
+							{#if viewKey === 'approved'}
 								<Table.Cell>
 									{#if selectable}
 										<Checkbox
@@ -392,8 +512,19 @@
 								{#if item.description}
 									<div class="truncate text-[13px] text-muted-foreground">{item.description}</div>
 								{/if}
+								{#if !item.has_receipt && item.mileage_distance}
+									<div class="text-[13px] text-muted-foreground">
+										{$i18n.t('Mileage')}: {item.mileage_distance} km{item.mileage_rate
+											? ` × ${item.mileage_rate}`
+											: ''}
+									</div>
+								{:else if !item.has_receipt && item.no_receipt_reason}
+									<div class="text-[13px] text-muted-foreground">
+										{$i18n.t('No receipt because')}: {item.no_receipt_reason}
+									</div>
+								{/if}
 								{#if item.report_title}
-									{#if statusFilter === 'approved' && selectable}
+									{#if viewKey === 'approved' && selectable}
 										<button
 											type="button"
 											class="{badgeVariants({
@@ -418,6 +549,8 @@
 									<div class="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
 										<CreditCard class="size-3.5" />{$i18n.t('company card')}
 									</div>
+								{:else if !item.reimbursable}
+									<div class="text-[13px] text-muted-foreground">{$i18n.t('record only')}</div>
 								{/if}
 							</Table.Cell>
 							<Table.Cell>
@@ -471,6 +604,18 @@
 											onclick={() => doApprove(item)}
 										>
 											{#if busyId === item.id}<Spinner />{:else}<Check />{/if}{$i18n.t('Approve')}
+										</Button>
+									{:else if closable(item)}
+										<Button
+											variant="outline"
+											size="xs"
+											disabled={busyId === item.id}
+											onclick={() => askClose(item)}
+										>
+											{#if busyId === item.id}<Spinner />{:else}<CircleCheck />{/if}{$i18n.t(
+												'Close',
+												{ context: 'expense' }
+											)}
 										</Button>
 									{:else if item.status === 'approved' && item.expense_sheet_id}
 										<Button
@@ -536,9 +681,10 @@
 		{#if editing}
 			<Dialog.Header>
 				<Dialog.Title>{$i18n.t('Correct expense')}</Dialog.Title>
-				<Dialog.Description>
-					{editing.employee_name ?? $i18n.t('Employee')} · {$i18n.t(editing.status)}
-					{#if editing.expense_sheet_id}· {$i18n.t('on a reimbursement sheet')}{/if}
+				<Dialog.Description class="flex flex-wrap items-center gap-x-2 gap-y-1">
+					<span>{editing.employee_name ?? $i18n.t('Employee')}</span>
+					<StatusBadge kind="expense" status={editing.status} />
+					{#if editing.expense_sheet_id}<span>{$i18n.t('on a reimbursement sheet')}</span>{/if}
 				</Dialog.Description>
 			</Dialog.Header>
 
@@ -673,7 +819,7 @@
 
 <!-- Receipt preview -->
 <Dialog.Root
-	open={!!previewUrl}
+	open={!!preview}
 	onOpenChange={(v) => {
 		if (!v) closePreview();
 	}}
@@ -683,17 +829,46 @@
 			<Dialog.Title>{$i18n.t('Receipt')}</Dialog.Title>
 			<Dialog.Description class="sr-only">{$i18n.t('Receipt preview')}</Dialog.Description>
 		</Dialog.Header>
-		{#if previewUrl}
-			{#if previewIsPdf}
-				<iframe src={previewUrl} title={$i18n.t('Receipt')} class="h-[80vh] w-full rounded-md border bg-muted"
+		{#if preview}
+			{#if previewKind === 'pdf'}
+				<iframe
+					src={preview.url}
+					title={$i18n.t('Receipt')}
+					class="h-[80vh] w-full rounded-md border bg-muted"
 				></iframe>
-			{:else}
+			{:else if previewKind === 'image'}
 				<img
-					src={previewUrl}
+					src={preview.url}
 					alt={$i18n.t('Receipt')}
 					class="mx-auto max-h-[80vh] max-w-full rounded-md object-contain"
 				/>
+			{:else}
+				<Empty.Root class="border border-dashed">
+					<Empty.Header>
+						<Empty.Media variant="icon"><FileDown /></Empty.Media>
+						<Empty.Title>{$i18n.t("This file can't be shown here.")}</Empty.Title>
+						<Empty.Description>{preview.filename}</Empty.Description>
+					</Empty.Header>
+					<Empty.Content>
+						<Button variant="outline" size="sm" href={preview.url} download={preview.filename}>
+							<FileDown />{$i18n.t('Download')}
+						</Button>
+					</Empty.Content>
+				</Empty.Root>
 			{/if}
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>
+
+<ConfirmDialog
+	bind:open={showCloseConfirm}
+	title={$i18n.t('Close this expense?')}
+	description={closeTarget
+		? `${closeTarget.merchant} · ${fmtMoney(closeTarget.amount, closeTarget.currency)} — ${$i18n.t(
+				'Nothing is owed to the employee. It moves to Reimbursed, without a journal entry.'
+			)}`
+		: ''}
+	confirmLabel={$i18n.t('Close', { context: 'expense' })}
+	onconfirm={confirmClose}
+	oncancel={() => (closeTarget = null)}
+/>
