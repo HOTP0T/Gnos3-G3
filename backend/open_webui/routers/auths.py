@@ -1662,10 +1662,12 @@ async def finances_exchange_token(
     """Mint a short-lived (5 min) Gnos3 JWT for the Finances module SSO bridge.
 
     Reuses the same generic Gnos3 exchange token as the K4mi bridge (claims:
-    sub, email, name, iss='gnos3', iat, exp — signed with WEBUI_SECRET_KEY).
-    The frontend loads `{FINANCES_BASE_URL}/sso?gnos3_token=<jwt>` inside the
-    module iframe; ledger-sync verifies it at POST /api/auth/exchange (with the
-    same secret) and starts its own session. ledger-sync ignores role/groups/mfa.
+    sub, email, name, iss='gnos3', iat, exp — signed with WEBUI_SECRET_KEY),
+    bound to the gnos3-module:finances audience. The frontend loads
+    `{FINANCES_BASE_URL}/sso?gnos3_token=<jwt>` inside the module iframe;
+    ledger-sync verifies it at POST /api/auth/exchange (same secret, audience
+    required, so a K4mi token cannot open Finances) and starts its own session.
+    ledger-sync ignores role/groups/mfa.
 
     Gated on `modules.finances.read` (admins bypass) so only permitted users can
     obtain a session — server-side enforcement mirroring the other modules.
@@ -1683,6 +1685,7 @@ async def finances_exchange_token(
         user,
         groups=group_names,
         mfa_verified=False,
+        audience='gnos3-module:finances',
     )
     return {'token': token, 'expires_at': expires_at}
 
