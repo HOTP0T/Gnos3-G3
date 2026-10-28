@@ -678,6 +678,14 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning(f'Settings upgrade failed (non-fatal): {exc}')
 
+    # The appliance's models (deploy/models.env): a new chat model takes over
+    # the default model, the task preset and access from the old one.
+    try:
+        from open_webui.utils.model_roles import follow_model_roles
+        await follow_model_roles(app)
+    except Exception as exc:
+        log.warning(f'Following the model settings failed (non-fatal): {exc}')
+
     if SAFE_MODE:
         await Functions.deactivate_all_functions()
 

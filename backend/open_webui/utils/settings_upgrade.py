@@ -10,11 +10,13 @@ as they are.
 
 import asyncio
 import logging
+import os
 from urllib.parse import urlsplit
 
 from starlette.requests import Request
 
 from open_webui.config import PersistentConfig
+from open_webui.utils.model_roles import TASK_MODEL_ID
 
 log = logging.getLogger(__name__)
 
@@ -131,8 +133,9 @@ async def reindex_knowledge_bases(app) -> None:
         log.exception('Reindex stopped')
 
 
-TASK_MODEL_ID = 'gnos3-tasks'
-TASK_BASE_MODEL = 'qwen3.8:latest'
+# The appliance's chat model (deploy/models.env); utils/model_roles.py moves
+# the preset when it changes.
+TASK_BASE_MODEL = os.environ.get('GNOS3_CHAT_MODEL') or 'qwen3.8:latest'
 
 
 async def _step_2(app) -> None:
