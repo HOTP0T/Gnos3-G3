@@ -112,6 +112,10 @@
 	$: if (typeof document !== 'undefined' && $theme) {
 		document.cookie = `gnos3_theme=${encodeURIComponent($theme)}; path=/; max-age=31536000; SameSite=Lax`;
 	}
+	// Same for the UI language: K4mi's sign-in saves it as the user's K4mi language.
+	$: if (typeof document !== 'undefined' && $i18n?.language) {
+		document.cookie = `gnos3_lang=${encodeURIComponent($i18n.language)}; path=/; max-age=31536000; SameSite=Lax`;
+	}
 
 	const setupSocket = async (enableWebsocket) => {
 		const _socket = io(`${WEBUI_BASE_URL}` || undefined, {

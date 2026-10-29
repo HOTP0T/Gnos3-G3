@@ -14,6 +14,7 @@
 	// Finances shows no theme switch inside Gnos3: it gets the theme (and the UI language) at
 	// sign-in (?theme=&lang=) and every later theme change (Settings → Theme, or the OS when the
 	// theme is "System") through this message — the same handshake as Office (MODULE-GUIDE.md §2.4).
+	// A later language change signs in again with the new language (Finances reads it at sign-in).
 	const currentTheme = () =>
 		document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 	let sentTheme = '';
@@ -27,26 +28,33 @@
 	};
 	let themeObserver: MutationObserver | null = null;
 
-	onMount(async () => {
-		themeObserver = new MutationObserver(sendTheme);
-		themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+	let signInLang = '';
+	const signIn = async (lang: string) => {
+		signInLang = lang;
 		try {
 			const token = localStorage.getItem('token');
 			if (!token) {
 				throw new Error('Not authenticated');
 			}
-			// Fetch a fresh 5-min exchange token at mount time (too short-lived to
+			// Fetch a fresh 5-min exchange token at sign-in time (too short-lived to
 			// pre-bake) and hand it to the module's /sso bootstrap route.
 			const { token: exchangeToken } = await getFinancesExchangeToken(token);
+			if (lang !== signInLang) return; // the language changed again meanwhile
 			const theme = currentTheme();
 			sentTheme = theme;
-			const lang = localStorage.getItem('locale') || 'en-US';
 			iframeSrc = `${FINANCES_BASE_URL}/sso?gnos3_token=${encodeURIComponent(exchangeToken)}&theme=${theme}&lang=${encodeURIComponent(lang)}`;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
 			loading = false;
 		}
+	};
+	$: if (signInLang && $i18n.language && $i18n.language !== signInLang) signIn($i18n.language);
+
+	onMount(() => {
+		themeObserver = new MutationObserver(sendTheme);
+		themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+		signIn($i18n.language || localStorage.getItem('locale') || 'en-US');
 	});
 
 	onDestroy(() => themeObserver?.disconnect());

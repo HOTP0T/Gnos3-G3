@@ -1257,6 +1257,8 @@ except Exception as e:
     log.exception(f'Error loading DEFAULT_PROMPT_SUGGESTIONS: {e}')
     default_prompt_suggestions = []
 if default_prompt_suggestions == []:
+    # Gnos3: the chat shows these in the reader's language through their translations in
+    # src/lib/utils/promptSuggestions.ts (DEFAULT_SUGGESTION_COPY); change both together.
     default_prompt_suggestions = [
         {
             'title': ['Help me study', 'vocabulary for a college entrance exam'],

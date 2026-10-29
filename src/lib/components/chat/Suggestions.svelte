@@ -4,6 +4,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { settings, WEBUI_NAME } from '$lib/stores';
 	import { WEBUI_VERSION } from '$lib/constants';
+	import { localizeSuggestion } from '$lib/utils/promptSuggestions';
 
 	const i18n = getContext('i18n');
 
@@ -58,8 +59,11 @@
 		}
 	};
 
+	// Shown, searched and sent in the UI language (Gnos3: $lib/utils/promptSuggestions.ts).
 	$: if (suggestionPrompts) {
-		sortedPrompts = [...(suggestionPrompts ?? [])].sort(() => Math.random() - 0.5);
+		sortedPrompts = [...(suggestionPrompts ?? [])]
+			.map((prompt) => localizeSuggestion($i18n, prompt))
+			.sort(() => Math.random() - 0.5);
 		getFilteredPrompts(inputValue);
 	}
 </script>

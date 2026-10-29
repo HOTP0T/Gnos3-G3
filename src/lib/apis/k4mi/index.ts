@@ -11,6 +11,7 @@
 // `/documents/<id>/details`.
 
 import { K4MI_BASE_URL, WEBUI_API_BASE_URL } from '$lib/constants';
+import { uiLocale } from '$lib/utils/uiLocale';
 
 /** The link K4miDocLink renders: Gnos3 redirects into K4mi server-side, already signed in.
  * For menu items and buttons that open a document (target="_blank"). */
@@ -65,7 +66,8 @@ export const getK4miExchangeToken = async (
  */
 export const buildK4miSSOUrl = (exchangeToken: string, nextPath: string): string => {
 	const safeNext = nextPath.startsWith('/') ? nextPath : `/${nextPath}`;
-	const params = new URLSearchParams({ token: exchangeToken, next: safeNext });
+	// K4mi saves the Gnos3 UI language as the user's K4mi language.
+	const params = new URLSearchParams({ token: exchangeToken, next: safeNext, lang: uiLocale() ?? 'en-US' });
 	return `${K4MI_BASE_URL}/sso/login?${params.toString()}`;
 };
 

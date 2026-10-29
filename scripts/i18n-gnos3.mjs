@@ -51,6 +51,7 @@ const GNOS3_DIRS = [
 ];
 const GNOS3_FILES = [
 	'src/lib/utils/taxTerms.ts',
+	'src/lib/utils/promptSuggestions.ts',
 	'src/lib/components/common/K4miDocLink.svelte',
 	'src/lib/components/workspace/DataSources.svelte',
 	'src/routes/(app)/workspace/datasources/+page.svelte',

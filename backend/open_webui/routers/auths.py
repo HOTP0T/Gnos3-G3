@@ -1646,6 +1646,11 @@ async def k4mi_open(
     theme = request.cookies.get('gnos3_theme')
     if theme in ('system', 'dark', 'light'):
         params['theme'] = theme
+    # Same for the UI language (a locale code such as fr-FR or zh-TW); K4mi saves
+    # it as the user's language, or English when it has no translation for it.
+    lang = request.cookies.get('gnos3_lang') or ''
+    if re.fullmatch(r'[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}', lang):
+        params['lang'] = lang
     qs = urlencode(params)
     return RedirectResponse(
         url=f'{base}/sso/login?{qs}',
