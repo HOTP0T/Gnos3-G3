@@ -754,6 +754,11 @@ async def signup_handler(
         await Users.update_user_role_by_id(user.id, 'superadmin', db=db)
         user = await Users.get_user_by_id(user.id, db=db)
         request.app.state.config.ENABLE_SIGNUP = False
+        # Groups, the Anonymise switch, the task model and the data sources
+        # waited for an owner; set them up now rather than at the next restart.
+        from open_webui.utils.first_account import after_first_account
+
+        after_first_account(request.app)
 
     if request.app.state.config.WEBHOOK_URL:
         await post_webhook(

@@ -16,6 +16,7 @@ company". Phase 3 will introduce per-company overrides via a CompanyMembership
 table; until then, the "*" key alone is honored by the modules.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -91,7 +92,17 @@ _GROUP_DESCRIPTIONS = {
 }
 
 
+# The first sign-up and the data-source seed both call it; checking a name and
+# creating the group must not interleave.
+_lock = asyncio.Lock()
+
+
 async def ensure_default_rbac_groups() -> None:
+    async with _lock:
+        await _ensure_default_rbac_groups()
+
+
+async def _ensure_default_rbac_groups() -> None:
     """Create the four canonical RBAC groups if they don't already exist.
 
     Uses the first user (Open WebUI's auto-admin) as the `user_id` owner of
@@ -107,10 +118,7 @@ async def ensure_default_rbac_groups() -> None:
         return
 
     if owner is None:
-        log.info(
-            'RBAC seed: no users yet — default groups will be created on the '
-            'next restart after the first user signs up.'
-        )
+        log.info('RBAC seed: no users yet — default groups are created at the first sign-up.')
         return
 
     admin_user_id = owner.id

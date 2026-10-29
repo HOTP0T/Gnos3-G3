@@ -158,7 +158,7 @@ async def _step_2(app) -> None:
     if await Models.get_model_by_id(TASK_MODEL_ID) is None:
         owner = await Users.get_super_admin_user() or await Users.get_first_user()
         if owner is None:
-            raise RuntimeError('no user yet; retried at the next start')
+            raise RuntimeError('no user yet; retried at the first sign-up')
         await Models.insert_new_model(
             ModelForm(
                 id=TASK_MODEL_ID,

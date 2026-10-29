@@ -11,7 +11,8 @@ written to the function table as `gnos3_anonymise`:
 
 Harmless without the Anonymiser module: the switch stays hidden, and if it is
 used anyway the message is refused rather than sent unhidden.
-Like rbac_seed, it waits for the first user (a function needs an owner).
+Like rbac_seed, it waits for the first user (a function needs an owner): the
+first sign-up runs it again (utils/first_account.py).
 """
 
 import logging
@@ -35,7 +36,7 @@ async def ensure_anonymise_filter(app) -> None:
 
     owner = await Users.get_first_user()
     if owner is None:
-        log.info('Anonymiser seed: no users yet — the Anonymise switch is installed on a later restart.')
+        log.info('Anonymiser seed: no users yet — the Anonymise switch is installed at the first sign-up.')
         return
 
     module, function_type, frontmatter = await load_function_module_by_id(FUNCTION_ID, content=content)

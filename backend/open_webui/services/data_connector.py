@@ -45,7 +45,7 @@ def _content_hash(text: str) -> str:
 
 
 async def _ensure_knowledge_base(
-    connector: DataConnectorModel, user_id: str
+    connector: DataConnectorModel, user_id: str, access_grants: Optional[list] = None
 ) -> str:
     """Create a Knowledge Base for the connector if it doesn't have one yet."""
     if connector.knowledge_id:
@@ -58,6 +58,7 @@ async def _ensure_knowledge_base(
         form_data=KnowledgeForm(
             name=f"[Connector] {connector.name}",
             description=f"Auto-synced from {connector.connector_type}: {connector.description or connector.name}",
+            access_grants=access_grants,
         ),
     )
     if not kb:

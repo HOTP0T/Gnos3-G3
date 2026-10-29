@@ -12,6 +12,7 @@ own document loaders to process.
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -36,7 +37,9 @@ class K4miConnector(BaseConnector):
     def __init__(self, config: dict):
         super().__init__(config)
         self.base_url = config.get("base_url", "").rstrip("/")
-        self.api_token = config.get("api_token", "")
+        # Empty = the token the modules use (K4MI_API_TOKEN on an appliance), so
+        # it never sits in the source's settings, which every user can read.
+        self.api_token = config.get("api_token") or os.environ.get("K4MI_API_TOKEN", "")
         self.public_url = config.get("public_url", self.base_url).rstrip("/")
         self.use_ocr_text = config.get("use_ocr_text", True)
         self.tag_filter = config.get("tag_filter") or []
@@ -389,7 +392,7 @@ class K4miConnector(BaseConnector):
     def config_schema(cls) -> dict:
         return {
             "type": "object",
-            "required": ["base_url", "api_token"],
+            "required": ["base_url"],
             "properties": {
                 "base_url": {
                     "type": "string",
@@ -399,7 +402,7 @@ class K4miConnector(BaseConnector):
                 "api_token": {
                     "type": "string",
                     "title": "API Token",
-                    "description": "K4mi authentication token",
+                    "description": "K4mi authentication token (empty = the modules' K4MI_API_TOKEN)",
                     "format": "password",
                 },
                 "public_url": {

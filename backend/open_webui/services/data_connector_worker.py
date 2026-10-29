@@ -13,6 +13,7 @@ from fastapi import Request
 
 from open_webui.models.data_connector import DataConnectors
 from open_webui.services.data_connector import sync_connector
+from open_webui.utils.data_source_seed import ensure_default_data_sources
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,12 @@ async def data_connector_sync_worker(app) -> None:
     await asyncio.sleep(10)
 
     while True:
+        # The sources this box's modules need, once each (utils/data_source_seed.py).
+        try:
+            await ensure_default_data_sources()
+        except Exception as e:
+            log.exception("Creating the default data sources failed: %s", e)
+
         try:
             connectors = DataConnectors.get_enabled_connectors()
             now = int(time.time())
