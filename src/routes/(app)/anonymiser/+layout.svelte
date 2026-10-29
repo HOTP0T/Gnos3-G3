@@ -46,22 +46,28 @@
 		anon.loading = false;
 	});
 
-	const tabs = $derived(
-		anon.canEdit
+	// Anonymise and Decrypt for everyone with access; Settings for admins.
+	const tabs = $derived([
+		{
+			href: '/anonymiser',
+			label: $i18n.t('Anonymise'),
+			active: $page.url.pathname === '/anonymiser'
+		},
+		{
+			href: '/anonymiser/decrypt',
+			label: $i18n.t('Decrypt'),
+			active: $page.url.pathname.startsWith('/anonymiser/decrypt')
+		},
+		...(anon.canEdit
 			? [
-					{
-						href: '/anonymiser',
-						label: $i18n.t('Anonymise'),
-						active: $page.url.pathname === '/anonymiser'
-					},
 					{
 						href: '/anonymiser/settings',
 						label: $i18n.t('Settings'),
 						active: $page.url.pathname.startsWith('/anonymiser/settings')
 					}
 				]
-			: []
-	);
+			: [])
+	]);
 </script>
 
 <svelte:head>

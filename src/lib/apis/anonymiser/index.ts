@@ -17,7 +17,7 @@ export type AnonymiserKind =
 
 export type AnonymiserLanguage = 'auto' | 'en' | 'fr' | 'es' | 'pt' | 'zh';
 
-export type AnonymiserMode = 'labels' | 'mask' | 'remove' | 'hash';
+export type AnonymiserMode = 'labels' | 'mask' | 'remove' | 'hash' | 'fake' | 'encrypt';
 
 export interface AnonymiserSettings {
 	kinds: Partial<Record<AnonymiserKind, boolean>>;
@@ -33,13 +33,27 @@ export interface AnonymiserSettingsResponse {
 	can_edit: boolean;
 }
 
+/** How a finding was made (analyze with `explain: true`). */
+export interface AnonymiserExplanation {
+	source: 'name_model' | 'pattern' | 'always_hide' | 'repeated_value' | 'manual';
+	recognizer: string;
+	pattern: string | null;
+	/** Score before a keyword raised it. */
+	base_score: number | null;
+	/** The word next to the detail that raised its score. */
+	keyword: string | null;
+	checksum: 'passed' | null;
+}
+
 export interface AnonymiserFinding {
 	start: number;
 	end: number;
 	kind: AnonymiserKind;
+	/** Specific type code, e.g. FR_NIR, ES_NIF, PERSON. */
 	entity?: string;
 	score?: number;
 	text?: string;
+	explanation?: AnonymiserExplanation;
 }
 
 export interface AnalyzeResponse {
@@ -53,6 +67,13 @@ export interface AnonymizeResponse {
 	labels: Record<string, string>;
 }
 
+export interface DecryptResponse {
+	text: string;
+	restored: number;
+	/** Encrypted details this key could not open. */
+	failed: number;
+}
+
 /** Per-run overrides; anything left out uses the admin's settings. */
 export interface AnonymiserRunOptions {
 	language?: AnonymiserLanguage;
@@ -60,6 +81,20 @@ export interface AnonymiserRunOptions {
 	threshold?: number;
 	allow_list?: string[];
 	deny_list?: string[];
+	/** Analyze only: return how each finding was made. */
+	explain?: boolean;
+}
+
+/** Options of the hiding modes (anonymize). */
+export interface AnonymiserModeOptions {
+	/** mask: the character written instead of each hidden one. */
+	mask_char?: string;
+	/** mask: how many characters to mask; 0 = every one. */
+	mask_count?: number;
+	/** mask: count from the end of the value. */
+	mask_from_end?: boolean;
+	/** encrypt: the key (at least 8 characters). */
+	key?: string;
 }
 
 function authHeaders(): Record<string, string> {
@@ -117,15 +152,31 @@ export const analyzeText = async (
 export const anonymizeText = async (
 	text: string,
 	mode: AnonymiserMode,
-	options: AnonymiserRunOptions & {
-		findings?: Pick<AnonymiserFinding, 'start' | 'end' | 'kind'>[];
-	} = {},
+	options: AnonymiserRunOptions &
+		AnonymiserModeOptions & {
+			findings?: Pick<AnonymiserFinding, 'start' | 'end' | 'kind'>[];
+		} = {},
 	signal?: AbortSignal
 ): Promise<AnonymizeResponse> => {
 	const res = await fetch(`${ANONYMISER_API_BASE_URL}/api/anonymiser/anonymize`, {
 		method: 'POST',
 		headers: authHeaders(),
 		body: JSON.stringify({ text, mode, ...options }),
+		signal
+	});
+	return asJson(res);
+};
+
+/** Opens the [ENC:…] details of a text encrypted with `key`. */
+export const decryptText = async (
+	text: string,
+	key: string,
+	signal?: AbortSignal
+): Promise<DecryptResponse> => {
+	const res = await fetch(`${ANONYMISER_API_BASE_URL}/api/anonymiser/decrypt`, {
+		method: 'POST',
+		headers: authHeaders(),
+		body: JSON.stringify({ text, key }),
 		signal
 	});
 	return asJson(res);

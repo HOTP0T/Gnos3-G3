@@ -19,6 +19,8 @@
 	import Eraser from '@lucide/svelte/icons/eraser';
 	import X from '@lucide/svelte/icons/x';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import KeyRound from '@lucide/svelte/icons/key-round';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
 	import {
 		analyzeText,
@@ -26,7 +28,8 @@
 		type AnonymiserFinding,
 		type AnonymiserKind,
 		type AnonymiserLanguage,
-		type AnonymiserMode
+		type AnonymiserMode,
+		type AnonymiserModeOptions
 	} from '$lib/apis/anonymiser';
 	import { copyToClipboard } from '$lib/utils';
 
@@ -41,12 +44,17 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import * as InputGroup from '$lib/components/ui/input-group/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import Tip from '$lib/components/gnos3-ui/Tip.svelte';
 
 	import {
 		ANONYMISER_CONTEXT,
+		ENTITY_LABELS,
+		ENTITY_SAME_AS_KIND,
 		KIND_LABELS,
 		KIND_ORDER,
 		KIND_STYLE,
@@ -82,7 +90,20 @@
 	let selection = $state<{ start: number; end: number } | null>(null);
 	let reviewEl: HTMLElement | null = $state(null);
 
-	let kindsReady = false;
+	// Per run, starting from the admin's defaults: how sure a detection must be, two word lists.
+	let threshold = $state(0.35);
+	let allowText = $state('');
+	let denyText = $state('');
+	let optionsReady = $state(false);
+	let explain = $state(false);
+
+	// Options of the hiding modes.
+	let maskChar = $state('*');
+	let maskCount = $state(0);
+	let maskFromEnd = $state(false);
+	let encKey = $state('');
+	let showKey = $state(false);
+
 	let lastText = '';
 	let analyzeSeq = 0;
 	let anonymizeSeq = 0;
@@ -99,28 +120,43 @@
 				? err.message
 				: `${err}`;
 
-	// The switches start from the admin's defaults; changing them here only affects this text.
-	$effect(() => {
-		if (anon.settings && !kindsReady) {
-			kindsReady = true;
-			const next: Partial<Record<AnonymiserKind, boolean>> = {};
-			for (const k of KIND_ORDER) next[k] = Boolean(anon.settings.kinds?.[k]);
-			kinds = next;
-		}
-	});
+	const lines = (s: string) =>
+		s
+			.split('\n')
+			.map((l) => l.trim())
+			.filter(Boolean);
 
+	// The switches, threshold and word lists start from the admin's defaults; changing them here
+	// only affects this text.
 	const resetToDefaults = () => {
-		if (!anon.settings) return;
+		const s = anon.settings;
+		if (!s) return;
 		const next: Partial<Record<AnonymiserKind, boolean>> = {};
-		for (const k of KIND_ORDER) next[k] = Boolean(anon.settings.kinds?.[k]);
+		for (const k of KIND_ORDER) next[k] = Boolean(s.kinds?.[k]);
 		kinds = next;
+		threshold = s.threshold ?? 0.35;
+		allowText = (s.allow_list ?? []).join('\n');
+		denyText = (s.deny_list ?? []).join('\n');
+		optionsReady = true;
 	};
 
-	// Find (debounced) whenever the text, the language or the switches change.
+	$effect(() => {
+		if (anon.settings && !untrack(() => optionsReady)) untrack(resetToDefaults);
+	});
+
+	// Find (debounced) whenever the text, the language or a per-run option changes.
 	$effect(() => {
 		const t = text;
 		const lang = language;
 		const k = JSON.stringify(kinds);
+		const extra = optionsReady
+			? {
+					threshold,
+					allow_list: lines(allowText),
+					deny_list: lines(denyText),
+					explain
+				}
+			: { explain };
 		if (anon.loading) return;
 		untrack(() => {
 			if (t !== lastText) {
@@ -144,14 +180,15 @@
 			});
 			return;
 		}
-		const timer = setTimeout(() => runAnalyze(t, lang, JSON.parse(k)), 400);
+		const timer = setTimeout(() => runAnalyze(t, lang, JSON.parse(k), extra), 400);
 		return () => clearTimeout(timer);
 	});
 
 	async function runAnalyze(
 		t: string,
 		lang: AnonymiserLanguage,
-		k: Partial<Record<AnonymiserKind, boolean>>
+		k: Partial<Record<AnonymiserKind, boolean>>,
+		extra: { threshold?: number; allow_list?: string[]; deny_list?: string[]; explain: boolean }
 	) {
 		const seq = ++analyzeSeq;
 		analyzeCtl?.abort();
@@ -159,7 +196,7 @@
 		analyzing = true;
 		try {
 			// No switches yet (settings not loaded): let the service use its defaults.
-			const options = { language: lang, kinds: Object.keys(k).length ? k : undefined };
+			const options = { language: lang, kinds: Object.keys(k).length ? k : undefined, ...extra };
 			const res = await analyzeText(t, options, analyzeCtl.signal);
 			if (seq !== analyzeSeq) return;
 			detected = res.findings ?? [];
@@ -183,12 +220,36 @@
 		return [...auto, ...added].sort((a, b) => a.start - b.start);
 	});
 
-	// The result follows every change of the list or the mode.
+	// What the chosen mode needs besides the text.
+	const modeOptions = $derived.by((): AnonymiserModeOptions => {
+		if (mode === 'mask')
+			return {
+				mask_char: maskChar || '*',
+				mask_count: Math.max(0, Math.floor(Number(maskCount) || 0)),
+				mask_from_end: maskFromEnd
+			};
+		if (mode === 'encrypt') return { key: encKey };
+		return {};
+	});
+	const keyTooShort = $derived(mode === 'encrypt' && encKey.length < 8);
+
+	// The result follows every change of the list, the mode or its options.
 	$effect(() => {
 		const t = analyzedText;
 		const m = mode;
+		const opts = modeOptions;
 		const list = effective.map(({ start, end, kind }) => ({ start, end, kind }));
 		if (!t || t !== untrack(() => text)) return;
+		if (keyTooShort && list.length > 0) {
+			// No key yet: nothing to show rather than a result in the clear.
+			anonymizeCtl?.abort();
+			anonymizeSeq++;
+			untrack(() => {
+				result = '';
+				anonymizing = false;
+			});
+			return;
+		}
 		if (list.length === 0) {
 			anonymizeCtl?.abort();
 			anonymizeSeq++;
@@ -198,21 +259,22 @@
 			});
 			return;
 		}
-		const timer = setTimeout(() => runAnonymize(t, m, list), 120);
+		const timer = setTimeout(() => runAnonymize(t, m, list, opts), 200);
 		return () => clearTimeout(timer);
 	});
 
 	async function runAnonymize(
 		t: string,
 		m: AnonymiserMode,
-		list: { start: number; end: number; kind: AnonymiserKind }[]
+		list: { start: number; end: number; kind: AnonymiserKind }[],
+		opts: AnonymiserModeOptions
 	) {
 		const seq = ++anonymizeSeq;
 		anonymizeCtl?.abort();
 		anonymizeCtl = new AbortController();
 		anonymizing = true;
 		try {
-			const res = await anonymizeText(t, m, { findings: list }, anonymizeCtl.signal);
+			const res = await anonymizeText(t, m, { findings: list, ...opts }, anonymizeCtl.signal);
 			if (seq !== anonymizeSeq) return;
 			result = res.text;
 			error = '';
@@ -343,8 +405,68 @@
 		URL.revokeObjectURL(url);
 	};
 
-	// Labels in the result read as tokens; the copied text is unchanged.
-	const resultParts = $derived(mode === 'labels' ? result.split(/(\[[A-Z]+_\d+\])/g) : [result]);
+	// Labels and encrypted values in the result read as tokens; the copied text is unchanged.
+	const TOKEN_RE: Partial<Record<AnonymiserMode, RegExp>> = {
+		labels: /(\[[A-Z]+_\d+\])/g,
+		encrypt: /(\[ENC:[A-Za-z0-9_=-]+\])/g
+	};
+	const resultParts = $derived.by(() => {
+		const re = TOKEN_RE[mode];
+		return re ? result.split(re) : [result];
+	});
+
+	// A 24-character key from the browser's random generator (no look-alike characters).
+	const generateKey = () => {
+		const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+		const bytes = crypto.getRandomValues(new Uint8Array(24));
+		encKey = Array.from(bytes, (b) => chars[b % chars.length]).join('');
+		showKey = true;
+	};
+
+	const copyKey = async () => {
+		if (encKey && (await copyToClipboard(encKey))) toast.success($i18n.t('Key copied'));
+	};
+
+	// The specific type, when it says more than the kind ("French social security number").
+	const typeOf = (s: Span) =>
+		s.entity && !ENTITY_SAME_AS_KIND.has(s.entity)
+			? ENTITY_LABELS[s.entity]
+				? $i18n.t(ENTITY_LABELS[s.entity])
+				: s.entity
+			: '';
+
+	const modelName = (recognizer: string) =>
+		/gliner/i.test(recognizer)
+			? 'GLiNER'
+			: /transformer|trf/i.test(recognizer)
+				? 'spaCy transformer'
+				: /spacy/i.test(recognizer)
+					? 'spaCy'
+					: recognizer;
+
+	// One plain line saying how a detail was found.
+	const howFound = (s: Span): string => {
+		if (s.custom) return $i18n.t('Added by you');
+		const e = s.explanation;
+		if (!e) return '';
+		const parts: string[] = [];
+		if (e.source === 'name_model')
+			parts.push($i18n.t('Name model ({{model}})', { model: modelName(e.recognizer) }));
+		else if (e.source === 'always_hide') parts.push($i18n.t('Always-hide list'));
+		else if (e.source === 'repeated_value')
+			parts.push($i18n.t('Same value found elsewhere in the text'));
+		else if (e.source === 'manual') parts.push($i18n.t('Added by you'));
+		else
+			parts.push(
+				e.pattern
+					? $i18n.t("Pattern '{{pattern}}'", { pattern: e.pattern })
+					: $i18n.t('Pattern ({{recognizer}})', { recognizer: e.recognizer })
+			);
+		if (e.checksum === 'passed') parts.push($i18n.t('checksum passed'));
+		if (e.keyword)
+			parts.push($i18n.t("raised by the keyword '{{keyword}}'", { keyword: e.keyword }));
+		return parts.join(' · ');
+	};
 
 	const languageName = (code: string) => (LANGUAGE_NAMES as Record<string, string>)[code] ?? code;
 </script>
@@ -390,7 +512,10 @@
 					</Button>
 				{/snippet}
 			</Popover.Trigger>
-			<Popover.Content align="start" class="w-80 gap-3">
+			<Popover.Content
+				align="start"
+				class="max-h-[min(40rem,80dvh)] w-[min(22rem,calc(100vw-2rem))] gap-3 overflow-y-auto"
+			>
 				<div class="flex items-center justify-between gap-2">
 					<p class="text-sm font-medium">{$i18n.t('What to hide')}</p>
 					<Button variant="link" size="sm" onclick={resetToDefaults}>
@@ -411,8 +536,50 @@
 						</li>
 					{/each}
 				</ul>
+				<Separator />
+				<div class="flex flex-col gap-2">
+					<Label for="anon-run-threshold">{$i18n.t('Confidence threshold')}</Label>
+					<div class="flex items-center gap-3">
+						<input
+							id="anon-run-threshold"
+							type="range"
+							min="0.05"
+							max="0.95"
+							step="0.05"
+							bind:value={threshold}
+							class="h-2 w-full cursor-pointer accent-primary"
+						/>
+						<span class="w-10 shrink-0 text-right text-sm tabular-nums"
+							>{Math.round(threshold * 100)}%</span
+						>
+					</div>
+					<p class="text-xs text-muted-foreground">
+						{$i18n.t('Lower finds more, but also hides more by mistake.')}
+					</p>
+				</div>
+				<Separator />
+				<div class="flex flex-col gap-1.5">
+					<Label for="anon-run-allow">{$i18n.t('Never hide')}</Label>
+					<Textarea
+						id="anon-run-allow"
+						bind:value={allowText}
+						rows={3}
+						class="min-h-0 font-mono text-[0.8125rem]"
+						placeholder={$i18n.t('One word or phrase per line.')}
+					/>
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Label for="anon-run-deny">{$i18n.t('Always hide')}</Label>
+					<Textarea
+						id="anon-run-deny"
+						bind:value={denyText}
+						rows={3}
+						class="min-h-0 font-mono text-[0.8125rem]"
+						placeholder={$i18n.t('One word or phrase per line.')}
+					/>
+				</div>
 				<p class="text-xs text-muted-foreground">
-					{$i18n.t('These switches only apply to this text.')}
+					{$i18n.t('These settings only apply to this text.')}
 				</p>
 			</Popover.Content>
 		</Popover.Root>
@@ -428,6 +595,74 @@
 			</Button>
 		</div>
 	</div>
+
+	{#if mode === 'mask'}
+		<div class="flex flex-wrap items-end gap-x-4 gap-y-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+			<div class="flex flex-col gap-1.5">
+				<Label for="anon-mask-char">{$i18n.t('Mask character')}</Label>
+				<Input id="anon-mask-char" bind:value={maskChar} maxlength={1} class="w-16 text-center" />
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<Label for="anon-mask-count">{$i18n.t('Characters to mask')}</Label>
+				<Input id="anon-mask-count" type="number" min="0" bind:value={maskCount} class="w-28" />
+			</div>
+			<div class="flex h-9 items-center gap-2">
+				<Switch id="anon-mask-end" bind:checked={maskFromEnd} />
+				<Label for="anon-mask-end" class="font-normal">{$i18n.t('Start from the end')}</Label>
+			</div>
+			<p class="w-full text-xs text-muted-foreground">
+				{$i18n.t('0 masks every character.')}
+			</p>
+		</div>
+	{:else if mode === 'encrypt'}
+		<div class="flex flex-col gap-2 rounded-lg border bg-muted/30 px-3 py-2.5">
+			<Label for="anon-key">{$i18n.t('Encryption key')}</Label>
+			<div class="flex flex-wrap items-center gap-2">
+				<InputGroup.Root class="h-9 w-full sm:w-80">
+					<InputGroup.Input
+						id="anon-key"
+						type={showKey ? 'text' : 'password'}
+						bind:value={encKey}
+						autocomplete="off"
+						spellcheck={false}
+						class="font-mono"
+						placeholder={$i18n.t('At least 8 characters')}
+						aria-invalid={encKey.length > 0 && encKey.length < 8}
+					/>
+					<InputGroup.Addon align="inline-end">
+						<InputGroup.Button
+							size="icon-xs"
+							aria-label={showKey ? $i18n.t('Hide key') : $i18n.t('Show key')}
+							onclick={() => (showKey = !showKey)}
+						>
+							{#if showKey}<EyeOff />{:else}<Eye />{/if}
+						</InputGroup.Button>
+					</InputGroup.Addon>
+				</InputGroup.Root>
+				<Button variant="outline" onclick={generateKey}>
+					<KeyRound />{$i18n.t('New key')}
+				</Button>
+				<Tip content={$i18n.t('Copy key')}>
+					<Button
+						variant="ghost"
+						size="icon"
+						aria-label={$i18n.t('Copy key')}
+						disabled={!encKey}
+						onclick={copyKey}><Copy /></Button
+					>
+				</Tip>
+			</div>
+			<p class="flex items-start gap-1.5 text-xs text-warning">
+				<TriangleAlert class="mt-px size-3.5 shrink-0" />
+				{$i18n.t('Keep this key: without it the text cannot be restored.')}
+			</p>
+		</div>
+	{:else if mode === 'fake'}
+		<p class="flex items-start gap-2 text-sm text-muted-foreground">
+			<Info class="mt-0.5 size-4 shrink-0 text-info" />
+			{$i18n.t('The values are invented: realistic, but they belong to no one.')}
+		</p>
+	{/if}
 
 	{#if error}
 		<Alert.Root variant="destructive">
@@ -580,6 +815,16 @@
 							</Empty.Description>
 						</Empty.Header>
 					</Empty.Root>
+				{:else if keyTooShort && hiddenCount > 0}
+					<Empty.Root class="min-h-72 border border-dashed">
+						<Empty.Header>
+							<Empty.Media variant="icon"><KeyRound /></Empty.Media>
+							<Empty.Title>{$i18n.t('Enter a key to encrypt')}</Empty.Title>
+							<Empty.Description>
+								{$i18n.t('The key needs at least 8 characters, or press New key.')}
+							</Empty.Description>
+						</Empty.Header>
+					</Empty.Root>
 				{:else}
 					<div
 						class="min-h-72 rounded-md border border-input bg-muted/30 px-3 py-2 text-sm leading-7 break-words whitespace-pre-wrap {upToDate &&
@@ -588,7 +833,7 @@
 							: 'opacity-60'}"
 					>
 						{#each resultParts as part, i (i)}{#if i % 2 === 1}<span
-									class="rounded-sm bg-muted px-1 font-mono text-[0.8125rem]">{part}</span
+									class="rounded-sm bg-muted px-1 font-mono text-[0.8125rem] break-all">{part}</span
 								>{:else}{part}{/if}{/each}
 					</div>
 				{/if}
@@ -608,18 +853,36 @@
 				<Card.Description>
 					{$i18n.t('Each detail hidden in the text, and how sure the detection is.')}
 				</Card.Description>
+				<Card.Action class="flex items-center gap-2">
+					<Switch id="anon-explain" bind:checked={explain} />
+					<Label for="anon-explain" class="font-normal">
+						{$i18n.t('Show how each detail was found')}
+					</Label>
+				</Card.Action>
 			</Card.Header>
 			<Card.Content>
 				<ul class="divide-y">
 					{#each listed as s (keyOf(s))}
+						{@const type = typeOf(s)}
+						{@const how = explain ? howFound(s) : ''}
 						<li class="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
-							<span class="size-2.5 shrink-0 rounded-full {KIND_STYLE[s.kind].dot}"></span>
-							<span class="w-40 shrink-0 truncate text-muted-foreground"
-								>{$i18n.t(KIND_LABELS[s.kind])}</span
-							>
-							<span class="min-w-0 flex-1 truncate {s.off ? 'line-through opacity-60' : ''}"
-								>{analyzedText.slice(s.start, s.end)}</span
-							>
+							<span
+								class="size-2.5 shrink-0 self-start rounded-full mt-1.5 {KIND_STYLE[s.kind].dot}"
+							></span>
+							<span class="flex w-32 shrink-0 flex-col self-start sm:w-48">
+								<span class="truncate text-muted-foreground">{$i18n.t(KIND_LABELS[s.kind])}</span>
+								{#if type}
+									<span class="truncate text-xs text-muted-foreground/80" title={type}>{type}</span>
+								{/if}
+							</span>
+							<span class="flex min-w-0 flex-1 flex-col self-start">
+								<span class="truncate {s.off ? 'line-through opacity-60' : ''}"
+									>{analyzedText.slice(s.start, s.end)}</span
+								>
+								{#if how}
+									<span class="text-xs text-muted-foreground">{how}</span>
+								{/if}
+							</span>
 							<span class="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
 								{s.custom || s.score == null ? '' : `${Math.round(s.score * 100)}%`}
 							</span>
