@@ -10,6 +10,7 @@
 
 	import AdvancedParams from './Advanced/AdvancedParams.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
+	import * as Select from '$lib/components/ui/select/index.js';
 	export let saveSettings: Function;
 	export let getModels: Function;
 
@@ -23,6 +24,21 @@
 	let system = '';
 
 	let showAdvanced = false;
+
+	// Theme and language use the design system's list rather than a native <select>: the browser
+	// draws a native list outside the page, and on a Wayland desktop Chrome let the 60 languages
+	// run past the bottom of the screen. This one stays inside the window and scrolls.
+	let themeLabels: Record<string, string>;
+	$: themeLabels = {
+		system: `⚙️ ${$i18n.t('System')}`,
+		dark: `🌑 ${$i18n.t('Dark')}`,
+		light: `☀️ ${$i18n.t('Light')}`
+	};
+	const selectTriggerClass =
+		'h-auto gap-1 border-0 bg-transparent py-2 pr-1 pl-2 text-xs shadow-none dark:bg-transparent dark:hover:bg-transparent';
+	// Above the settings modal (z-9999), and never taller than the room left in the window.
+	const selectContentClass =
+		'z-10000 max-h-[min(20rem,var(--bits-select-content-available-height))]';
 
 	const toggleNotification = async () => {
 		const permission = await Notification.requestPermission();
@@ -112,10 +128,6 @@
 
 		languages = await getLanguages();
 
-		if (!$config?.features?.enable_easter_eggs) {
-			languages = languages.filter((l) => l.code !== 'dg-DG');
-		}
-
 		notificationEnabled = $settings.notificationEnabled ?? false;
 		system = $settings.system ?? '';
 
@@ -178,38 +190,40 @@
 			<div class="flex w-full justify-between">
 				<div class=" self-center text-xs font-medium">{$i18n.t('Theme')}</div>
 				<div class="flex items-center relative">
-					<select
-						class="w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent text-right {$settings.highContrastMode
-							? ''
-							: 'outline-hidden'}"
+					<Select.Root
+						type="single"
 						bind:value={selectedTheme}
-						placeholder={$i18n.t('Select a theme')}
-						on:change={() => themeChangeHandler(selectedTheme)}
+						onValueChange={(value) => themeChangeHandler(value)}
 					>
-						<option value="system">⚙️ {$i18n.t('System')}</option>
-						<option value="dark">🌑 {$i18n.t('Dark')}</option>
-						<option value="light">☀️ {$i18n.t('Light')}</option>
-					</select>
+						<Select.Trigger class={selectTriggerClass} aria-label={$i18n.t('Theme')}>
+							{themeLabels[selectedTheme] ?? themeLabels.system}
+						</Select.Trigger>
+						<Select.Content class={selectContentClass} align="end">
+							{#each Object.entries(themeLabels) as [value, label]}
+								<Select.Item {value} {label} class="text-xs" />
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 
 			<div class=" flex w-full justify-between">
 				<div class=" self-center text-xs font-medium">{$i18n.t('Language')}</div>
 				<div class="flex items-center relative">
-					<select
-						class="w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent text-right {$settings.highContrastMode
-							? ''
-							: 'outline-hidden'}"
+					<Select.Root
+						type="single"
 						bind:value={lang}
-						placeholder={$i18n.t('Select a language')}
-						on:change={(e) => {
-							changeLanguage(lang);
-						}}
+						onValueChange={(value) => changeLanguage(value)}
 					>
-						{#each languages as language}
-							<option value={language['code']}>{language['title']}</option>
-						{/each}
-					</select>
+						<Select.Trigger class={selectTriggerClass} aria-label={$i18n.t('Language')}>
+							{languages.find((language) => language.code === lang)?.title ?? lang}
+						</Select.Trigger>
+						<Select.Content class={selectContentClass} align="end">
+							{#each languages as language}
+								<Select.Item value={language.code} label={language.title} class="text-xs" />
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 

@@ -42,7 +42,9 @@
 			if (lang !== signInLang) return; // the language changed again meanwhile
 			const theme = currentTheme();
 			sentTheme = theme;
-			iframeSrc = `${FINANCES_BASE_URL}/sso?gnos3_token=${encodeURIComponent(exchangeToken)}&theme=${theme}&lang=${encodeURIComponent(lang)}`;
+			// gnos3_origin: Finances links invoices to K4mi through this page's /api/v1/auths/k4mi/open
+			// (it only uses it if the origin is in its LEDGER_SYNC_FRAME_ANCESTORS list).
+			iframeSrc = `${FINANCES_BASE_URL}/sso?gnos3_token=${encodeURIComponent(exchangeToken)}&theme=${theme}&lang=${encodeURIComponent(lang)}&gnos3_origin=${encodeURIComponent(window.location.origin)}`;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {

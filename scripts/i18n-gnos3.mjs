@@ -6,10 +6,17 @@
 // translation.json, so upstream merges never touch them. The i18n loader
 // merges both files (gnos3.json wins when it has a value).
 //
-// A key belongs in gnos3.json when it is used in the code and either
-//   - Open WebUI does not have it (not in en-US/translation.json), or
+// Every language in Gnos3's language menu (locales/languages.json) gets a
+// gnos3.json, except English and the two that fall back to another one
+// (fr-CA → fr-FR through fallbackLng, ar-BH → ar through i18next's own
+// language-only fallback). A key belongs in it when either
+//   - Open WebUI does not have it (not in en-US/translation.json) and the code
+//     uses it, or
 //   - it is used by a Gnos3 screen and the locale's translation.json has no
-//     translation for it.
+//     translation for it, or
+//   - it is one of Open WebUI's own keys and the locale's translation.json has no
+//     translation for it (chat, workspace and admin screens: upstream leaves many
+//     languages partly in English; filling them here keeps upstream merges clean).
 // Besides literal t('…') calls the scan picks up label-like strings in Gnos3
 // screens (`label: '…'`, `*_LABELS = { … }`) and the backend strings the UI
 // passes through t() (role labels, closing checks, statement lines…).
@@ -29,7 +36,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOCALES_DIR = path.join(ROOT, 'src/lib/i18n/locales');
-export const LOCALES = ['fr-FR', 'es-ES', 'pt-PT', 'pt-BR', 'zh-CN', 'zh-TW'];
+const FALLS_BACK = new Set(['fr-CA', 'ar-BH']);
+export const LOCALES = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, 'languages.json'), 'utf8'))
+	.map((l) => l.code)
+	.filter((c) => !c.startsWith('en-') && !FALLS_BACK.has(c));
 
 // Gnos3 screens: every key they use must read in the user's language.
 const GNOS3_DIRS = [
@@ -234,12 +244,12 @@ export const collectKeys = () => {
 
 const main = () => {
 	const args = process.argv.slice(2);
-	const { ours, used } = collectKeys();
+	const { upstream, ours, used } = collectKeys();
 	const report = [];
 	let missingTotal = 0;
 
 	if (args[0] === '--unused' || args[0] === '--prune') {
-		const known = new Set([...ours, ...used]);
+		const known = new Set([...ours, ...used, ...Object.keys(upstream)]);
 		for (const l of LOCALES) {
 			const file = path.join(LOCALES_DIR, l, 'gnos3.json');
 			const own = readJson(file);
@@ -259,6 +269,7 @@ const main = () => {
 		const theirs = readJson(path.join(LOCALES_DIR, l, 'translation.json'));
 		const want = new Set(ours);
 		for (const k of used) if (!theirs[k]) want.add(k);
+		for (const k of Object.keys(upstream)) if (!theirs[k] && /\p{L}/u.test(k)) want.add(k);
 		let added = 0;
 		for (const k of want)
 			if (!(k in own)) {
@@ -274,8 +285,10 @@ const main = () => {
 			console.log(JSON.stringify(missing, null, '\t'));
 			return;
 		}
-		if (args[0] !== '--check' && args[0] !== '--missing')
+		if (args[0] !== '--check' && args[0] !== '--missing') {
+			fs.mkdirSync(path.dirname(file), { recursive: true });
 			fs.writeFileSync(file, JSON.stringify(sortObj(own), null, '\t') + '\n');
+		}
 	}
 	console.error(report.join('\n'));
 	if (args[0] === '--check' && missingTotal > 0) process.exit(1);

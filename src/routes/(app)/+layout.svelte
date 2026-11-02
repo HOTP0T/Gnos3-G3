@@ -45,6 +45,7 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { Shortcut, shortcuts } from '$lib/shortcuts';
+	import { escapeTakenByLayer } from '$lib/utils/escapeLayers';
 
 	const i18n = getContext('i18n');
 
@@ -274,7 +275,10 @@
 					console.log('Shortcut triggered: SHOW_SHORTCUTS');
 					event.preventDefault();
 					showShortcuts.set(!$showShortcuts);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.CLOSE_MODAL])) {
+				} else if (
+					isShortcutMatch(event, shortcuts[Shortcut.CLOSE_MODAL]) &&
+					!escapeTakenByLayer(event)
+				) {
 					console.log('Shortcut triggered: CLOSE_MODAL');
 					event.preventDefault();
 					showSettings.set(false);

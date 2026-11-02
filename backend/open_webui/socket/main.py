@@ -59,8 +59,28 @@ log = logging.getLogger(__name__)
 # cause, and let every message find the room it was meant for.
 REDIS = None
 
+def _socketio_origin_allowed(origin, environ):
+    """A listed origin, or the page's own one (scheme + Host, or the forwarded pair).
+
+    engine.io accepts the page's own origin by itself only when no list is given; with a
+    list, a browser that opened the box by an address missing from CORS_ALLOW_ORIGIN (a
+    new LAN IP) had its websocket refused and chat answers never streamed. The list is
+    for other origins.
+    """
+    if origin in CORS_ALLOW_ORIGIN:
+        return True
+    scheme = environ.get('wsgi.url_scheme', 'http')
+    host = environ.get('HTTP_HOST', '')
+    own = {f'{scheme}://{host}'}
+    if 'HTTP_X_FORWARDED_PROTO' in environ or 'HTTP_X_FORWARDED_HOST' in environ:
+        fwd_scheme = environ.get('HTTP_X_FORWARDED_PROTO', scheme).split(',')[0].strip()
+        fwd_host = environ.get('HTTP_X_FORWARDED_HOST', host).split(',')[0].strip()
+        own.add(f'{fwd_scheme}://{fwd_host}')
+    return bool(host) and origin in own
+
+
 # Configure CORS for Socket.IO
-SOCKETIO_CORS_ORIGINS = '*' if CORS_ALLOW_ORIGIN == ['*'] else CORS_ALLOW_ORIGIN
+SOCKETIO_CORS_ORIGINS = '*' if CORS_ALLOW_ORIGIN == ['*'] else _socketio_origin_allowed
 
 if WEBSOCKET_MANAGER == 'redis':
     if WEBSOCKET_SENTINEL_HOSTS:

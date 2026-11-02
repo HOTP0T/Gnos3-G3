@@ -3,6 +3,7 @@
 	import { fade } from 'svelte/transition';
 
 	import { flyAndScale } from '$lib/utils/transitions';
+	import { escapeTakenByLayer } from '$lib/utils/escapeLayers';
 	import * as FocusTrap from 'focus-trap';
 	export let show = true;
 	export let size = 'md';
@@ -40,7 +41,7 @@
 	};
 
 	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape' && isTopModal()) {
+		if (event.key === 'Escape' && !escapeTakenByLayer(event) && isTopModal()) {
 			console.log('Escape');
 			show = false;
 		}

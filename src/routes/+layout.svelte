@@ -1002,9 +1002,13 @@
 		// Initialize i18n even if we didn't get a backend config,
 		// so `/error` can show something that's not `undefined`.
 
+		const languages = await getLanguages();
+		// A language we no longer ship (Doge, removed 2026-10-29) falls back to the default.
+		if (localStorage.locale && !languages.some((l) => l.code === localStorage.locale)) {
+			localStorage.removeItem('locale');
+		}
 		initI18n(localStorage?.locale);
 		if (!localStorage.locale) {
-			const languages = await getLanguages();
 			const browserLanguages = navigator.languages
 				? navigator.languages
 				: [navigator.language || navigator.userLanguage];

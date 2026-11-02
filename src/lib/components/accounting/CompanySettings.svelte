@@ -17,6 +17,7 @@
 	import Split from '@lucide/svelte/icons/split';
 	import Users from '@lucide/svelte/icons/users';
 	import Tags from '@lucide/svelte/icons/tags';
+	import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
 
 	import ChartOfAccounts from '$lib/components/accounting/ChartOfAccounts.svelte';
 	import AccountingPeriods from '$lib/components/accounting/AccountingPeriods.svelte';
@@ -24,6 +25,7 @@
 	import BookingDefaults from '$lib/components/accounting/BookingDefaults.svelte';
 	import ControlAccountPostings from '$lib/components/accounting/ControlAccountPostings.svelte';
 	import ExchangeRates from '$lib/components/accounting/ExchangeRates.svelte';
+	import CashFlowClasses from '$lib/components/accounting/CashFlowClasses.svelte';
 	import FixedAssets from '$lib/components/accounting/FixedAssets.svelte';
 	import RecurringTemplates from '$lib/components/accounting/RecurringTemplates.svelte';
 	import EmployeesManager from '$lib/components/accounting/EmployeesManager.svelte';
@@ -45,7 +47,8 @@
 				{ key: 'chart', label: 'Chart of Accounts', icon: ListTree },
 				{ key: 'periods', label: 'Accounting Periods', icon: CalendarRange },
 				{ key: 'exchange', label: 'Exchange Rates', icon: Coins },
-				{ key: 'assets', label: 'Fixed Assets', icon: Building }
+				{ key: 'assets', label: 'Fixed Assets', icon: Building },
+				{ key: 'cashflow', label: 'Cash Flow Classes', icon: ArrowLeftRight }
 			]
 		},
 		{
@@ -139,6 +142,8 @@
 					<ExchangeRates {companyId} />
 				{:else if active === 'assets'}
 					<FixedAssets {companyId} />
+				{:else if active === 'cashflow'}
+					<CashFlowClasses {companyId} />
 				{:else if active === 'booking'}
 					<BookingDefaults {companyId} />
 				{:else if active === 'categorization'}

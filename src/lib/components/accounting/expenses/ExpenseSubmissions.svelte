@@ -66,6 +66,9 @@
 		i.status === 'approved' && !i.expense_sheet_id && i.reimbursable;
 	const closable = (i: ExpenseItem) =>
 		i.status === 'approved' && !i.expense_sheet_id && !i.reimbursable;
+	// Closing one is recorded as "reimbursed"; the screen says what happened.
+	const shownStatus = (i: ExpenseItem) =>
+		i.status === 'reimbursed' && !i.reimbursable ? 'closed' : i.status;
 
 	type View = {
 		key: string;
@@ -554,7 +557,7 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell>
-								<StatusBadge kind="expense" status={item.status} />
+								<StatusBadge kind="expense" status={shownStatus(item)} />
 							</Table.Cell>
 							<Table.Cell>
 								<div class="flex items-center justify-end gap-1">
@@ -683,7 +686,7 @@
 				<Dialog.Title>{$i18n.t('Correct expense')}</Dialog.Title>
 				<Dialog.Description class="flex flex-wrap items-center gap-x-2 gap-y-1">
 					<span>{editing.employee_name ?? $i18n.t('Employee')}</span>
-					<StatusBadge kind="expense" status={editing.status} />
+					<StatusBadge kind="expense" status={shownStatus(editing)} />
 					{#if editing.expense_sheet_id}<span>{$i18n.t('on a reimbursement sheet')}</span>{/if}
 				</Dialog.Description>
 			</Dialog.Header>

@@ -9,8 +9,11 @@
 		transitionExpenseSheet,
 		getExpenseSheetCandidates,
 		downloadExpenseSheetPdf,
-		downloadExpenseSheetExcel
+		downloadExpenseSheetExcel,
+		getExpenseSheetApprovalCheck,
+		type SheetApprovalCheck
 	} from '$lib/apis/accounting';
+	import { taxTerm } from '$lib/utils/taxTerms';
 	import dayjs from 'dayjs';
 	import { user, isAdmin } from '$lib/stores';
 
@@ -36,6 +39,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
@@ -214,6 +218,67 @@
 		transitionTarget = target;
 		note = '';
 		rejectionReason = '';
+		if (target === 'approve') loadApprovalCheck();
+	};
+
+	// Approving books the entry: every line needs an account. The dialog lists
+	// them and asks for the ones nobody chose yet; the server saves the answers
+	// on the category, the employee record and in Tax → Accounts for the next
+	// sheets. What it can't fix here (a missing rate, a closed period) is listed.
+	let check: SheetApprovalCheck | null = null;
+	let checkLoading = false;
+	let checkFailed = false;
+	let chosenCat: Record<number, number | null> = {};
+	let chosenPayable: number | null = null;
+	let chosenVat: number | null = null;
+
+	const loadApprovalCheck = async () => {
+		check = null;
+		checkFailed = false;
+		checkLoading = true;
+		try {
+			const c = await getExpenseSheetApprovalCheck(sheetId);
+			chosenCat = Object.fromEntries(
+				c.categories.filter((x) => !x.account).map((x) => [x.category_id, null])
+			);
+			chosenPayable = c.payable.account ? null : c.payable.suggested_account_id;
+			chosenVat = c.vat && !c.vat.account ? c.vat.suggested_account_id : null;
+			check = c;
+		} catch (err: any) {
+			// The server still checks on approve; its message says what is missing.
+			checkFailed = true;
+		}
+		checkLoading = false;
+	};
+
+	$: asksAccounts =
+		!!check &&
+		(Object.keys(chosenCat).length > 0 || !check.payable.account || (!!check.vat && !check.vat.account));
+	$: approveBlocked =
+		transitionTarget === 'approve' &&
+		!checkFailed &&
+		(!check ||
+			check.problems.length > 0 ||
+			Object.values(chosenCat).some((v) => !v) ||
+			(!check.payable.account && !chosenPayable) ||
+			(!!check.vat && !check.vat.account && !chosenVat));
+
+	const approvalChoices = () => {
+		if (transitionTarget !== 'approve' || !check) return {};
+		const cats = Object.fromEntries(
+			Object.entries(chosenCat)
+				.filter(([, v]) => v)
+				.map(([k, v]) => [Number(k), Number(v)])
+		);
+		return {
+			...(Object.keys(cats).length ? { category_accounts: cats } : {}),
+			...(!check.payable.account && chosenPayable
+				? { payable_account_id: Number(chosenPayable) }
+				: {}),
+			...(check.vat && !check.vat.account && chosenVat
+				? { vat_input_account_id: Number(chosenVat) }
+				: {})
+		};
 	};
 
 	// The server records who did it from the sign-in; only a rejection needs a reason.
@@ -221,14 +286,15 @@
 
 	const confirmTransition = async () => {
 		if (transitioning) return; // guard against double-submit (double-click)
-		if (reasonMissing) return;
+		if (reasonMissing || approveBlocked) return;
 		transitioning = true;
 		try {
 			const done = transitionCopy.message;
 			sheet = await transitionExpenseSheet(sheetId, {
 				target: transitionTarget as any,
 				note: note || undefined,
-				rejection_reason: transitionTarget === 'reject' ? rejectionReason.trim() : undefined
+				rejection_reason: transitionTarget === 'reject' ? rejectionReason.trim() : undefined,
+				...approvalChoices()
 			});
 			toast.success($i18n.t(done));
 			transitionTarget = '';
@@ -854,7 +920,7 @@
 			if (!v) transitionTarget = '';
 		}}
 	>
-		<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-lg">
 			<Dialog.Header>
 				<Dialog.Title>{$i18n.t(transitionCopy.title)}</Dialog.Title>
 				<Dialog.Description>
@@ -875,6 +941,101 @@
 						/>
 					</div>
 				{/if}
+				{#if transitionTarget === 'approve'}
+					{#if checkLoading}
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
+							<Spinner />
+							{$i18n.t('Checking the accounts...')}
+						</div>
+					{:else if check}
+						{#if check.problems.length}
+							<Alert.Root variant="destructive">
+								<CircleAlert />
+								<Alert.Title>{$i18n.t('Fix this before approving')}</Alert.Title>
+								<Alert.Description>
+									<ul class="list-disc pl-4">
+										{#each check.problems as p}<li>{p}</li>{/each}
+									</ul>
+								</Alert.Description>
+							</Alert.Root>
+						{/if}
+						<div class="grid gap-3">
+							<div class="text-sm font-medium">{$i18n.t('Accounts for the entry')}</div>
+							{#each check.categories as c (c.category_id)}
+								<div class="grid gap-1.5">
+									<Label for="es-acc-{c.category_id}">{c.label}</Label>
+									{#if c.account}
+										<p class="text-sm text-muted-foreground">
+											{c.account.code} — {c.account.name}
+										</p>
+									{:else}
+										<NativeSelect.Root
+											id="es-acc-{c.category_id}"
+											class="w-full"
+											bind:value={chosenCat[c.category_id]}
+										>
+											<option value={null} class="bg-[Canvas] text-[CanvasText]"
+												>— {$i18n.t('Choose an expense account')} —</option
+											>
+											{#each check.options.expense as a (a.id)}
+												<NativeSelect.Option value={a.id}>{a.code} — {a.name}</NativeSelect.Option>
+											{/each}
+										</NativeSelect.Root>
+									{/if}
+								</div>
+							{/each}
+							<div class="grid gap-1.5">
+								<Label for="es-acc-payable"
+									>{$i18n.t('Owed to {{name}}', { name: check.payable.employee_name })}</Label
+								>
+								{#if check.payable.account}
+									<p class="text-sm text-muted-foreground">
+										{check.payable.account.code} — {check.payable.account.name}
+									</p>
+								{:else}
+									<NativeSelect.Root id="es-acc-payable" class="w-full" bind:value={chosenPayable}>
+										<option value={null} class="bg-[Canvas] text-[CanvasText]"
+											>— {$i18n.t('Choose a liability account')} —</option
+										>
+										{#each check.options.payable as a (a.id)}
+											<NativeSelect.Option value={a.id}>{a.code} — {a.name}</NativeSelect.Option>
+										{/each}
+									</NativeSelect.Root>
+								{/if}
+							</div>
+							{#if check.vat}
+								<div class="grid gap-1.5">
+									<Label for="es-acc-vat"
+										>{$i18n.t('Deductible {{tax}}', { tax: taxTerm($i18n.t, check.vat) })} · {money(
+											check.vat.amount
+										)}</Label
+									>
+									{#if check.vat.account}
+										<p class="text-sm text-muted-foreground">
+											{check.vat.account.code} — {check.vat.account.name}
+										</p>
+									{:else}
+										<NativeSelect.Root id="es-acc-vat" class="w-full" bind:value={chosenVat}>
+											<option value={null} class="bg-[Canvas] text-[CanvasText]"
+												>— {$i18n.t('Choose an account')} —</option
+											>
+											{#each check.options.vat as a (a.id)}
+												<NativeSelect.Option value={a.id}>{a.code} — {a.name}</NativeSelect.Option>
+											{/each}
+										</NativeSelect.Root>
+									{/if}
+								</div>
+							{/if}
+							{#if asksAccounts}
+								<p class="text-[13px] text-muted-foreground">
+									{$i18n.t(
+										'The accounts you choose are saved for the next sheets: on the category, on the employee record and in Tax → Accounts.'
+									)}
+								</p>
+							{/if}
+						</div>
+					{/if}
+				{/if}
 				<div class="grid gap-1.5">
 					<Label for="es-tr-note">{$i18n.t('Note (optional)')}</Label>
 					<Input id="es-tr-note" bind:value={note} />
@@ -884,7 +1045,10 @@
 				<Button variant="outline" onclick={() => (transitionTarget = '')}
 					>{$i18n.t('Cancel')}</Button
 				>
-				<Button disabled={transitioning || reasonMissing} onclick={confirmTransition}>
+				<Button
+					disabled={transitioning || reasonMissing || approveBlocked}
+					onclick={confirmTransition}
+				>
 					{#if transitioning}<Spinner />{/if}
 					{transitioning ? $i18n.t('Working...') : $i18n.t(transitionCopy.confirm)}
 				</Button>

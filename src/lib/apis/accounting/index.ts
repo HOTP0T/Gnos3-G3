@@ -928,6 +928,36 @@ export const getTaxAccounts = async (companyId: number) =>
 export const updateTaxAccounts = async (companyId: number, mappings: Record<string, number[]>) =>
 	apiPut(`/companies/${companyId}/tax-accounts`, { mappings });
 
+// ─── Cash flow classes (operating / investing / financing per account) ─
+
+export type CashFlowClass = 'operating' | 'investing' | 'financing';
+
+export type CashFlowClassAccount = {
+	id: number;
+	code: string;
+	name: string;
+	account_type: 'asset' | 'liability' | 'equity';
+	parent_id: number | null;
+	level: number;
+	is_active: boolean;
+	value: CashFlowClass | 'cash';
+	source: 'set' | 'inherited' | 'default' | 'bank';
+	default: CashFlowClass | 'cash';
+	inherited_from: number | null;
+};
+
+export const getCashFlowClasses = async (
+	companyId: number
+): Promise<{ classes: CashFlowClass[]; accounts: CashFlowClassAccount[] }> =>
+	apiGet(`/companies/${companyId}/cash-flow-classes`);
+
+/** `{ account_id: class }` — `null` returns an account to its default. */
+export const updateCashFlowClasses = async (
+	companyId: number,
+	changes: Record<number, CashFlowClass | null>
+): Promise<{ classes: CashFlowClass[]; accounts: CashFlowClassAccount[] }> =>
+	apiPut(`/companies/${companyId}/cash-flow-classes`, { changes });
+
 export const getTaxPaymentPreview = async (
 	filingId: number,
 	payableAccountId?: number,
@@ -1244,8 +1274,36 @@ export const transitionExpenseSheet = async (
 		user_info?: string;
 		rejection_reason?: string;
 		payment_match_group_id?: number;
+		// Approve: accounts chosen in the dialog, saved for the next sheets.
+		category_accounts?: Record<number, number>;
+		payable_account_id?: number;
+		vat_input_account_id?: number;
 	}
 ) => apiPost(`/expense-sheets/${id}/transitions`, data);
+
+export type SheetAccount = { id: number; code: string; name: string };
+export type SheetApprovalCheck = {
+	categories: { category_id: number; label: string; account: SheetAccount | null }[];
+	payable: {
+		employee_id: number | null;
+		employee_name: string;
+		account: SheetAccount | null;
+		suggested_account_id: number | null;
+	};
+	vat: {
+		amount: string;
+		tax_kind?: string;
+		account: SheetAccount | null;
+		suggested_account_id: number | null;
+	} | null;
+	problems: string[];
+	options: { expense: SheetAccount[]; payable: SheetAccount[]; vat: SheetAccount[] };
+};
+
+// What approving needs: each line's account, the ones nobody chose yet, and
+// what must be fixed elsewhere first.
+export const getExpenseSheetApprovalCheck = async (id: number): Promise<SheetApprovalCheck> =>
+	apiGet(`/expense-sheets/${id}/approval-check`);
 
 // The module authenticates ONLY via the Authorization header, which a plain
 // <a href>/window.open cannot send — so exports must be fetched with the Bearer

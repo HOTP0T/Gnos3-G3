@@ -44,7 +44,6 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 	const detectionOrder = defaultLocale
 		? ['querystring', 'localStorage']
 		: ['querystring', 'localStorage', 'navigator'];
-	const fallbackDefaultLocale = defaultLocale ? [defaultLocale] : ['en-US'];
 
 	// Gnos3's own strings (modules, accounting, design-system primitives) live in
 	// gnos3.json next to Open WebUI's translation.json, so upstream merges never
@@ -53,7 +52,11 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 	// here, not at module level: i18next-parser imports this file under Node.)
 	const gnos3Locales = import.meta.glob('./locales/*/gnos3.json');
 	const loadResource = async (language: string, namespace: string) => {
-		const upstream = (await import(`./locales/${language}/${namespace}.json`)).default;
+		// A language Open WebUI ships no file for (uz-Latn-UZ), or a bare language code
+		// i18next also tries (fr for fr-CA), loads as empty instead of failing the load.
+		const upstream = await import(`./locales/${language}/${namespace}.json`)
+			.then((m) => m.default)
+			.catch(() => ({}));
 		const own = gnos3Locales[`./locales/${language}/gnos3.json`];
 		if (namespace !== 'translation' || !own) return upstream;
 		const ours = ((await own()) as { default: Record<string, string> }).default;
@@ -74,9 +77,13 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 				lookupQuerystring: 'lang',
 				lookupLocalStorage: 'locale'
 			},
+			// Untranslated strings show in English, never in the language the page was
+			// loaded in: en-US's values are empty (the keys are the English text), so a
+			// fallback to the starting language kept a French screen French after
+			// switching to English in Settings, until a reload.
 			fallbackLng: {
 				fr: ['fr-FR'],
-				default: fallbackDefaultLocale
+				default: ['en-US']
 			},
 			ns: 'translation',
 			returnEmptyString: false,

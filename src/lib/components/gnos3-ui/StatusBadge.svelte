@@ -106,6 +106,8 @@
 			approved: { label: 'Approved', icon: Check, tone: 'success' },
 			paid: ok('Paid'),
 			reimbursed: ok('Reimbursed'),
+			// a company-card expense: settled by the company, nothing paid to the employee
+			closed: ok('Closed'),
 			rejected: { label: 'Rejected', icon: CircleX, variant: 'danger' }
 		},
 		// closing checklist: shown bare (icon + word)
