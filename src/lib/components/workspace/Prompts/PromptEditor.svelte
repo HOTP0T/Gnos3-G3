@@ -18,7 +18,7 @@
 	import Check from '$lib/components/icons/Check.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import AccessControlModal from '../common/AccessControlModal.svelte';
-	import { user, settings } from '$lib/stores';
+	import { user, settings, isAdmin } from '$lib/stores';
 	import { slugify, formatDate, copyToClipboard } from '$lib/utils';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -472,7 +472,7 @@
 							resource={{ resource_type: 'prompt', resource_id: prompt.id }}
 						/>{/if}
 
-					{#if !disabled}{#if $user?.permissions?.sharing?.prompts || $user?.role === 'admin'}<AccessButton
+					{#if !disabled}{#if $user?.permissions?.sharing?.prompts || $isAdmin}<AccessButton
 								on:click={() => {
 									savedAccessGrants = structuredClone(accessGrants);
 									showAccessControlModal = true;

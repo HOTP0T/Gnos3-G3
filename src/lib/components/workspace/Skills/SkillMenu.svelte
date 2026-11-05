@@ -13,7 +13,7 @@
 	import DocumentDuplicate from '$lib/components/icons/DocumentDuplicate.svelte';
 	import Download from '$lib/components/icons/Download.svelte';
 	import Share from '$lib/components/icons/Share.svelte';
-	import { user, config } from '$lib/stores';
+	import { user, config, isAdmin } from '$lib/stores';
 
 	const i18n = getContext<typeof import('$lib/i18n').default>('i18n');
 
@@ -92,7 +92,7 @@
 				</button>
 			{/if}
 
-			{#if shareHandler && $config?.features?.enable_community_sharing && ($user?.role === 'admin' || $user?.permissions?.workspace?.skills_export)}
+			{#if shareHandler && $config?.features?.enable_community_sharing && ($isAdmin || $user?.permissions?.workspace?.skills_export)}
 				<button
 					type="button"
 					class="select-none flex h-[1.6875rem] w-full cursor-pointer items-center gap-2 rounded-xl bg-transparent px-2 text-[0.8125rem] hover:text-gray-900 dark:hover:text-gray-100"
@@ -118,7 +118,7 @@
 				<div class="flex items-center">{$i18n.t('Clone')}</div>
 			</button>
 
-			{#if $user?.role === 'admin' || $user?.permissions?.workspace?.skills_export}
+			{#if $isAdmin || $user?.permissions?.workspace?.skills_export}
 				<button
 					class="select-none flex h-[1.6875rem] w-full cursor-pointer items-center gap-2 rounded-xl bg-transparent px-2 text-[0.8125rem] hover:text-gray-900 dark:hover:text-gray-100"
 					on:click={() => {

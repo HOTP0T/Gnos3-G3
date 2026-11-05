@@ -1405,7 +1405,7 @@ async def get_sources_from_items(
         expanded_folders.add(folder_id)
 
         folder = await Folders.get_folder_by_id(folder_id)
-        if folder and (user.role == 'admin' or await has_folder_access(user.id, folder, 'read', db=None)):
+        if folder and (user.role in ('admin', 'superadmin') or await has_folder_access(user.id, folder, 'read', db=None)):
             files = await get_owner_accessible_folder_files(folder)
             folder_items.update((entry.get('type'), entry.get('id')) for entry in files if isinstance(entry, dict))
             items.extend(files)
@@ -1480,7 +1480,7 @@ async def get_sources_from_items(
             # Chat Attached
             chat = await Chats.get_chat_by_id(item.get('id'))
             has_read_access = bool(
-                chat and ((user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS) or chat.user_id == user.id)
+                chat and ((user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS) or chat.user_id == user.id)
             )
 
             if chat and not has_read_access:
@@ -1573,7 +1573,7 @@ async def get_sources_from_items(
                     else:
                         file_object = await Files.get_file_by_id(file_id)
                         if file_object and (
-                            user.role == 'admin'
+                            user.role in ('admin', 'superadmin')
                             or file_object.user_id == user.id
                             or await has_access_to_file(file_id, 'read', user)
                             or ('file', file_id) in folder_items
@@ -1613,7 +1613,7 @@ async def get_sources_from_items(
                 else:
                     if item.get('context') == 'full' or bypass_embedding_and_retrieval:
                         if knowledge_base and (
-                            user.role == 'admin'
+                            user.role in ('admin', 'superadmin')
                             or knowledge_base.user_id == user.id
                             or await AccessGrants.has_access(
                                 user_id=user.id,

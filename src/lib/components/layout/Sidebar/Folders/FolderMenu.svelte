@@ -4,7 +4,7 @@
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import DropdownMenu from '$lib/components/common/DropdownMenu.svelte';
@@ -92,7 +92,7 @@
 				<div class="flex items-center">{$i18n.t('Edit')}</div>
 			</button>
 
-			{#if $user?.role === 'admin' || ($user?.permissions?.chat?.export ?? true)}
+			{#if $isAdmin || ($user?.permissions?.chat?.export ?? true)}
 				<button
 					class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] select-none cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-900"
 					on:click={() => {

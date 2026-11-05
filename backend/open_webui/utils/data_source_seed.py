@@ -27,15 +27,15 @@ import os
 
 import httpx
 
-from open_webui.config import PersistentConfig
 from open_webui.models.data_connector import DataConnectorForm, DataConnectors
 from open_webui.models.groups import Groups
 from open_webui.models.users import Users
+from open_webui.utils.gnos3_settings import StoredValue
 from open_webui.utils.rbac_seed import ensure_default_rbac_groups
 
 log = logging.getLogger(__name__)
 
-SEEDED = PersistentConfig('GNOS3_DATA_SOURCES_SEEDED', 'gnos3.data_sources_seeded', [])
+SEEDED = StoredValue('gnos3.data_sources_seeded', [])
 
 # Where Gnos3 reaches the modules on an appliance's stack network.
 K4MI_URL = os.environ.get('K4MI_MODULE_URL', 'http://k4mi:8000').rstrip('/')
@@ -117,13 +117,13 @@ def readers(groups, paths) -> list[dict]:
 
 
 async def _mark(kind: str) -> None:
-    SEEDED.value = [*SEEDED.value, kind]
-    await SEEDED.async_save()
+    await SEEDED.set([*await SEEDED.get(), kind])
 
 
 async def ensure_default_data_sources() -> None:
     async with _lock:
-        pending = [kind for kind in SOURCES if kind not in SEEDED.value]
+        seeded = await SEEDED.get()
+        pending = [kind for kind in SOURCES if kind not in seeded]
         if not pending:
             return
         owner = await Users.get_super_admin_user()

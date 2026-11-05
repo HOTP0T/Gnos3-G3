@@ -4,7 +4,7 @@
 	import TrashIcon from '$lib/components/layout/Sidebar/icons/Trash.svelte';
 	import ChevronRightIcon from '$lib/components/layout/Sidebar/icons/ChevronRight.svelte';
 	import { resolveLocalizedFunction } from '$lib/utils/localizedContent';
-	import { functions as localizedFunctions } from '$lib/stores';
+	import { functions as localizedFunctions, isAdmin } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 
 	import { createEventDispatcher, onDestroy } from 'svelte';
@@ -1655,8 +1655,8 @@
 										</Tooltip>
 									{/each}
 
-									{#if $user?.role === 'admin' || ($user?.permissions?.chat?.delete_message ?? true)}
-										{#if (!readOnly || ($user?.role === 'admin' && $config?.features?.enable_admin_chat_access)) && siblings.length > 1}
+									{#if $isAdmin || ($user?.permissions?.chat?.delete_message ?? true)}
+										{#if (!readOnly || ($isAdmin && $config?.features?.enable_admin_chat_access)) && siblings.length > 1}
 											<Tooltip content={$i18n.t('Delete')} placement="bottom">
 												<button
 													type="button"

@@ -190,7 +190,7 @@
 
 			<div class="px-5 pb-5 w-full flex flex-col justify-center">
 				<div class=" text-xs text-gray-600 dark:text-gray-300 mb-2">
-					<!-- LICENSE covers this Gnos3 wordmark.
+					<!-- LICENSE covers this Open WebUI wordmark.
 					Do not alter, remove, obscure, or replace it except as LICENSE permits:
 					https://docs.openwebui.com/license. -->
 					{$i18n.t('Gnos3 can use tools provided by any OpenAPI server.')} <br /><a

@@ -2,7 +2,7 @@
 	import { getContext, onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 
-	import { config, user, tools as _tools, mobile, knowledge, visibleControls } from '$lib/stores';
+	import { config, user, tools as _tools, mobile, knowledge, visibleControls, isAdmin } from '$lib/stores';
 	import { getKnowledgeBases } from '$lib/apis/knowledge';
 
 	import { createPicker } from '$lib/utils/google-drive-picker';
@@ -339,7 +339,7 @@
 						</Tooltip>
 					{/if}
 
-					{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true)) && $visibleControls['chat.attach_notes']}
+					{#if ($config?.features?.enable_notes ?? false) && ($isAdmin || ($user?.permissions?.features?.notes ?? true)) && $visibleControls['chat.attach_notes']}
 						<Tooltip
 							content={fileUploadCapableModels.length !== selectedModels.length
 								? $i18n.t('Model(s) do not support file upload')

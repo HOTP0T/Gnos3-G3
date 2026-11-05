@@ -26,7 +26,8 @@
 		pinnedNotes,
 		mobile,
 		showSidebar,
-		settings
+		settings,
+		isAdmin
 	} from '$lib/stores';
 	import {
 		createNewNote,
@@ -694,7 +695,7 @@
 														<NoteMenu
 															onAccess={(note.user_id === $user?.id &&
 																$user?.permissions?.sharing?.notes) ||
-															$user?.role === 'admin'
+															$isAdmin
 																? () => accessModal.open(note.id)
 																: null}
 															show={openNoteMenuId === note.id}
@@ -792,7 +793,7 @@
 														<NoteMenu
 															onAccess={(note.user_id === $user?.id &&
 																$user?.permissions?.sharing?.notes) ||
-															$user?.role === 'admin'
+															$isAdmin
 																? () => accessModal.open(note.id)
 																: null}
 															onDownload={(type) => {

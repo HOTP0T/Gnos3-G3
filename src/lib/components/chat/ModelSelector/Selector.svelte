@@ -35,7 +35,9 @@
 		settings,
 		config,
 		showSettings,
-		visibleControls
+		visibleControls,
+		isAdmin,
+		isSuperadmin
 	} from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 	import { capitalizeFirstLetter, sanitizeResponseContent, splitStream } from '$lib/utils';
@@ -309,7 +311,7 @@
 
 	$: sanitizedSearchValue = searchValue.trim();
 	$: downloadTargets =
-		!selectionOnly && sanitizedSearchValue && $user?.role === 'admin'
+		!selectionOnly && sanitizedSearchValue && $isAdmin
 			? [
 					...(ollamaVersion
 						? [
@@ -726,7 +728,7 @@
 	};
 
 	const setProviderDownloadConnections = async () => {
-		if ($user?.role !== 'admin') {
+		if (!$isAdmin) {
 			providerDownloadConnections = [];
 			return;
 		}
@@ -1076,7 +1078,7 @@
 
 					<div class="group relative flex min-h-0 flex-1 flex-col">
 						{#if filteredItems.length === 0}
-							{#if items.length === 0 && $isAdmin}
+							{#if items.length === 0 && $isSuperadmin}
 								<div
 									class="my-2 flex w-full flex-col items-start justify-center px-4 py-3 text-start"
 								>

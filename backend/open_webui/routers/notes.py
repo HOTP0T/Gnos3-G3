@@ -53,7 +53,7 @@ async def check_notes_access(user: UserModel, db: AsyncSession):
             detail=ERROR_MESSAGES.FEATURE_DISABLED('Notes'),
         )
 
-    if user.role != 'admin' and not await has_permission(
+    if user.role not in ('admin', 'superadmin') and not await has_permission(
         user.id, 'features.notes', await Config.get('user.permissions'), db=db
     ):
         raise HTTPException(
@@ -87,7 +87,7 @@ async def leave_note_rooms_for_revoked_users(
 
     users = await Users.get_users_by_user_ids(list(revoked_user_ids), db=db)
     # Admins retain access to notes regardless of grants.
-    user_ids = [user.id for user in users if user.role != 'admin']
+    user_ids = [user.id for user in users if user.role not in ('admin', 'superadmin')]
     page_rooms = [
         f'doc_note:{note.id}:page:{p["id"]}:{p.get("generation", 0)}' for p in normalize_pages(note.data)['pages']
     ]
@@ -416,7 +416,7 @@ async def get_note_chats_by_id(
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    if user.role != 'admin' and (
+    if user.role not in ('admin', 'superadmin') and (
         user.id != note.user_id
         and not await AccessGrants.has_access(
             user_id=user.id,
@@ -468,7 +468,7 @@ async def create_note_chat_by_id(
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    if user.role != 'admin' and (
+    if user.role not in ('admin', 'superadmin') and (
         user.id != note.user_id
         and not await AccessGrants.has_access(
             user_id=user.id,
@@ -530,7 +530,7 @@ async def update_note_by_id(
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    if user.role != 'admin' and (
+    if user.role not in ('admin', 'superadmin') and (
         user.id != note.user_id
         and not await AccessGrants.has_access(
             user_id=user.id,
@@ -620,7 +620,7 @@ async def update_note_access_by_id(
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    if user.role != 'admin' and (
+    if user.role not in ('admin', 'superadmin') and (
         user.id != note.user_id
         and not await AccessGrants.has_access(
             user_id=user.id,
@@ -671,7 +671,7 @@ async def pin_note_by_id(
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    if user.role != 'admin' and (
+    if user.role not in ('admin', 'superadmin') and (
         user.id != note.user_id
         and not await AccessGrants.has_access(
             user_id=user.id,

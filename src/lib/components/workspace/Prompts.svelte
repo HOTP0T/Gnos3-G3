@@ -17,7 +17,7 @@
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
-	import { WEBUI_NAME, config, user, workspaceActions, workspaceCounts } from '$lib/stores';
+	import { WEBUI_NAME, config, user, workspaceActions, workspaceCounts, isAdmin } from '$lib/stores';
 	import { COMMUNITY_ORIGINS } from '$lib/constants';
 
 	import {
@@ -114,7 +114,7 @@
 				id: 'prompts-import',
 				label: $i18n.t('Import JSON'),
 				onClick: () => promptsImportInputElement?.click(),
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.prompts_import
+				visible: $isAdmin || $user?.permissions?.workspace?.prompts_import
 			},
 			{
 				id: 'prompts-export',
@@ -132,7 +132,7 @@
 					});
 					saveAs(blob, `prompts-export-${Date.now()}.json`);
 				},
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.prompts_export
+				visible: $isAdmin || $user?.permissions?.workspace?.prompts_export
 			}
 		]);
 	}
@@ -225,7 +225,7 @@
 	};
 
 	const shareHandler = async (prompt) => {
-		// LICENSE covers this Gnos3 Community wordmark.
+		// LICENSE covers this Open WebUI Community wordmark.
 		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Gnos3 Community'));
@@ -704,7 +704,7 @@
 													onComment={(request) => (comments = request)}
 													resourceId={prompt.id}
 													accessHandler={$user?.permissions?.sharing?.prompts ||
-													$user?.role === 'admin'
+													$isAdmin
 														? () => accessModal.open(prompt.id)
 														: null}
 													writeAccess={prompt.write_access}
@@ -804,7 +804,7 @@
 			{/if}
 		</div>
 
-		{#if $config?.features.enable_community_sharing}
+		{#if $config?.features?.enable_community_sharing && $isAdmin}
 			<CommunityDiscover
 				href="https://openwebui.com/search?type=prompt"
 				title={$i18n.t('Discover a prompt')}

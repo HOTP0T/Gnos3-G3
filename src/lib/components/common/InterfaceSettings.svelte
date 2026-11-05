@@ -7,7 +7,7 @@
 		canUseWebSearch,
 		isSettingsAdmin
 	} from '$lib/utils/settings-access';
-	import { config, settings, terminalServers, user, visibleControls } from '$lib/stores';
+	import { config, settings, terminalServers, user, visibleControls, isAdmin } from '$lib/stores';
 	import { onMount, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { updateUserInfo } from '$lib/apis/users';
@@ -30,7 +30,7 @@
 	$: externalSettings = settingsValue !== null;
 	$: defaultSettings = ($config?.ui?.default_interface_settings ?? {}) as Record<string, any>;
 	$: hasDirectToolServerAccess =
-		$user?.role === 'admin' || ($user?.permissions?.features?.direct_tool_servers ?? true);
+		$isAdmin || ($user?.permissions?.features?.direct_tool_servers ?? true);
 	$: hasDirectTerminal =
 		($terminalServers ?? []).some((server) => !server.id) ||
 		(currentSettings?.terminalServers ?? []).some((server) => server.url);

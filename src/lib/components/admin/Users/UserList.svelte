@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
-	import { adminUserCount, config, user } from '$lib/stores';
+	import { adminUserCount, config, user, isSuperadmin } from '$lib/stores';
 	import { getContext, onDestroy } from 'svelte';
 
 	import dayjs from 'dayjs';
@@ -85,7 +85,7 @@
 	};
 
 	const roleClass = (role) => {
-		if (role === 'admin') {
+		if (role === 'admin' || role === 'superadmin') {
 			return 'text-[#4f6f93] dark:text-[#8ba6c6]';
 		}
 		if (role === 'user') {
@@ -450,7 +450,7 @@
 									</Tooltip>
 								{/if}
 
-								{#if user.role !== 'admin'}
+								{#if $isSuperadmin && user.role !== 'admin' && user.role !== 'superadmin'}
 									<Tooltip content={$i18n.t('Preview Access')}>
 										<button
 											class="self-center w-fit p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg"
@@ -517,14 +517,14 @@
 		<div class="mt-3 mb-3 pb-1 text-gray-700 dark:text-gray-300">
 			<div class="max-w-3xl text-xs leading-5">
 				<div class="text-gray-900 dark:text-gray-100">
-					<!-- LICENSE covers this Gnos3 wordmark.
+					<!-- LICENSE covers this Open WebUI wordmark.
 					Do not alter, remove, obscure, or replace it except as LICENSE permits:
 					https://docs.openwebui.com/license. -->
 					{$i18n.t('Running Gnos3 for a team?')}
 				</div>
 				<div class="mt-2 space-y-2">
 					<p>
-						<!-- LICENSE covers this Gnos3 branding copy.
+						<!-- LICENSE covers this Open WebUI branding copy.
 						Do not alter, remove, obscure, or replace it except as LICENSE permits:
 						https://docs.openwebui.com/license. -->
 						{$i18n.t(
@@ -532,7 +532,7 @@
 						)}
 					</p>
 					<p class="text-gray-500 dark:text-gray-400">
-						<!-- LICENSE covers this Gnos3 branding copy.
+						<!-- LICENSE covers this Open WebUI branding copy.
 						Do not alter, remove, obscure, or replace it except as LICENSE permits:
 						https://docs.openwebui.com/license. -->
 						{$i18n.t(

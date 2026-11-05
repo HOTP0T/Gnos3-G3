@@ -259,7 +259,7 @@ async def _execute_channel_automation(
 
     from open_webui.utils.access_control import has_permission
 
-    if user.role != 'admin' and not await has_permission(
+    if user.role not in ('admin', 'superadmin') and not await has_permission(
         user.id, 'features.channels', await Config.get('user.permissions')
     ):
         raise ValueError('Owner no longer permitted to use channels')
@@ -364,8 +364,8 @@ async def execute_automation(app, automation: AutomationModel) -> None:
         # Re-gate the rehydrated owner: a demoted/deactivated or de-permissioned owner must not run.
         from open_webui.utils.access_control import has_permission
 
-        if user.role not in ('user', 'admin') or (
-            user.role != 'admin'
+        if user.role not in ('user', 'admin', 'superadmin') or (
+            user.role not in ('admin', 'superadmin')
             and not await has_permission(user.id, 'features.automations', await Config.get('user.permissions'))
         ):
             error = 'Owner no longer permitted to run automations'

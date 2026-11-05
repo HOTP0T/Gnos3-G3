@@ -54,7 +54,8 @@
 		showFileNavPath,
 		showFileNavDir,
 		chatRequestQueues,
-		desktopEvent
+		desktopEvent,
+		isAdmin
 	} from '$lib/stores';
 	import { refreshChatList, refreshFolderChatLists } from '$lib/stores/chatList';
 
@@ -381,7 +382,7 @@
 
 		webSearchActive = Boolean(
 			$config?.features?.enable_web_search &&
-			($user?.role === 'admin' || $user?.permissions?.features?.web_search) &&
+			($isAdmin || $user?.permissions?.features?.web_search) &&
 			(webSearchEnabled ||
 				(allModelsSupportWebSearch && ($settings?.webSearch ?? false) === 'always'))
 		);
@@ -430,9 +431,9 @@
 	// Non-owners may reply when the sharing mode allows it, but cannot save chat edits.
 	$: isShared = chat != null && chat.user_id !== $user?.id;
 	$: if (isShared && $showCallOverlay) showCallOverlay.set(false);
-	$: canClone = isShared && ($user?.role === 'admin' || ($user?.permissions?.chat?.import ?? true));
+	$: canClone = isShared && ($isAdmin || ($user?.permissions?.chat?.import ?? true));
 	$: sideChatAllowed =
-		$user?.role === 'admin' ||
+		$isAdmin ||
 		($user?.role === 'user' &&
 			($user.permissions?.chat?.temporary ?? true) &&
 			($user.permissions?.chat?.side_chat ?? false));
@@ -1116,7 +1117,7 @@
 			const featureAvailable = (feature: 'web_search' | 'image_generation' | 'code_interpreter') =>
 				supports(feature) &&
 				$config?.features?.[`enable_${feature}`] &&
-				($user?.role === 'admin' || $user?.permissions?.features?.[feature]);
+				($isAdmin || $user?.permissions?.features?.[feature]);
 			const defaultFeature = (feature: 'web_search' | 'image_generation' | 'code_interpreter') =>
 				featureAvailable(feature) &&
 				currentModels.every((model) => model.info?.meta?.defaultFeatureIds?.includes(feature));
@@ -2613,12 +2614,12 @@
 	const openCallOverlay = () => {
 		if (isShared) return;
 
-		if (!($user?.role === 'admin' || ($user?.permissions?.chat?.call ?? true))) {
+		if (!($isAdmin || ($user?.permissions?.chat?.call ?? true))) {
 			return;
 		}
 
 		if (
-			$user?.role !== 'admin' &&
+			!$isAdmin &&
 			!($user?.permissions?.chat?.stt ?? true) &&
 			!$config?.audio?.realtime?.enabled
 		) {
@@ -2779,7 +2780,7 @@
 			}
 		}
 
-		if (!($user?.role === 'admin' || ($user?.permissions?.chat?.multiple_models ?? true))) {
+		if (!($isAdmin || ($user?.permissions?.chat?.multiple_models ?? true))) {
 			selectedModels = selectedModels.length > 0 ? [selectedModels[0]] : [''];
 		}
 
@@ -3829,7 +3830,7 @@
 			toast.message($i18n.t('No chat to fork'));
 			return;
 		}
-		if (!($user?.role === 'admin' || ($user?.permissions?.chat?.import ?? true))) {
+		if (!($isAdmin || ($user?.permissions?.chat?.import ?? true))) {
 			toast.error($i18n.t('Access prohibited'));
 			return;
 		}

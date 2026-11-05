@@ -3,7 +3,7 @@
 	import { writable } from 'svelte/store';
 	import { goto } from '$app/navigation';
 
-	import { config, mobile, showSidebar, user } from '$lib/stores';
+	import { config, mobile, showSidebar, user, isAdmin } from '$lib/stores';
 	import { getAutomationItems } from '$lib/apis/automations';
 	import type i18nType from '$lib/i18n';
 	import { formatNumber } from '$lib/utils';
@@ -56,7 +56,7 @@
 	onMount(async () => {
 		if (
 			!($config?.features as any)?.enable_automations ||
-			($user?.role !== 'admin' && !($user?.permissions?.features?.automations ?? false))
+			(!$isAdmin && !($user?.permissions?.features?.automations ?? false))
 		) {
 			goto('/');
 			return;

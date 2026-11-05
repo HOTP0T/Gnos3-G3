@@ -83,7 +83,7 @@ async def get_tools(
     db: AsyncSession = Depends(get_async_session),
 ):
     tools = []
-    bypass_access_control = user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL
+    bypass_access_control = user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL
     user_group_ids = (
         set()
         if bypass_access_control
@@ -327,7 +327,7 @@ async def get_tool_list(user=Depends(get_verified_user), db: AsyncSession = Depe
     if not ENABLE_TOOLS:
         return []
 
-    bypass_access_control = user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL
+    bypass_access_control = user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL
     user_group_ids = (
         set()
         if bypass_access_control
@@ -374,7 +374,7 @@ async def toggle_tool_by_id(
     if tool is None:
         raise HTTPException(status_code=404, detail=ERROR_MESSAGES.NOT_FOUND)
     if not (
-        (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL)
+        (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL)
         or tool.user_id == user.id
         or await AccessGrants.has_access(
             user_id=user.id, resource_type='tool', resource_id=id, permission='write', db=db
@@ -1122,7 +1122,7 @@ async def update_tools_user_valves_by_id(
 
 
 async def can_change_tool_code(user, db):
-    return user.role == 'admin' or (
+    return user.role in ('admin', 'superadmin') or (
         await has_permission(user.id, 'workspace.tools', await Config.get('user.permissions'), db=db)
         or await has_permission(user.id, 'workspace.tools_import', await Config.get('user.permissions'), db=db)
     )
@@ -1133,7 +1133,7 @@ async def require_tool_history_access(id, user, db):
     if not resource:
         raise HTTPException(404, 'Not found')
     if not (
-        (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL)
+        (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL)
         or resource.user_id == user.id
         or await AccessGrants.has_access(
             user_id=user.id, resource_type='tool', resource_id=id, permission='write', db=db

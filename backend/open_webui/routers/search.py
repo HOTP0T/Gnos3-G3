@@ -473,7 +473,7 @@ async def search(
     permissions = await Config.get('user.permissions')
     for feature, result_kind in [('channels', 'message'), ('notes', 'note')]:
         if await Config.get(feature + '.enable') and (
-            user.role == 'admin' or await has_permission(user.id, 'features.' + feature, permissions, db=db)
+            user.role in ('admin', 'superadmin') or await has_permission(user.id, 'features.' + feature, permissions, db=db)
         ):
             enabled.append(result_kind)
     return await search_workspace(db, user, q, kind, sharing, scope, page, tuple(enabled))

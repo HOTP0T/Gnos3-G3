@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { skills, user, config } from '$lib/stores';
+	import { skills, user, config, isAdmin } from '$lib/stores';
 	import { COMMUNITY_ORIGINS } from '$lib/constants';
 	import { onMount, getContext } from 'svelte';
 
@@ -37,7 +37,7 @@
 			if (!COMMUNITY_ORIGINS.includes(event.origin) || event.source !== window.opener) return;
 			if (
 				!$config?.features?.enable_community_sharing ||
-				($user?.role !== 'admin' && !$user?.permissions?.workspace?.skills_import)
+				(!$isAdmin && !$user?.permissions?.workspace?.skills_import)
 			)
 				return;
 			try {

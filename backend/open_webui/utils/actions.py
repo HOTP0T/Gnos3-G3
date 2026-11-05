@@ -55,7 +55,7 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
 
     # Direct connections carry a client-supplied model the caller already owns,
     # so scope the model-bound checks to server-resolved models.
-    if not getattr(request.state, 'direct', False) and user.role != 'admin':
+    if not getattr(request.state, 'direct', False) and user.role not in ('admin', 'superadmin'):
         await check_model_access(user, model)
         # model['actions'] entries are '<function_id>' or '<function_id>.<sub_id>';
         # the function id is always the prefix.

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ModelSettingsLabel from './ModelSettingsLabel.svelte';
 	import { getContext, onMount } from 'svelte';
-	import { config, settings, user } from '$lib/stores';
+	import { config, settings, user, isAdmin } from '$lib/stores';
 
 	import KnowledgeSelector from './Knowledge/KnowledgeSelector.svelte';
 	import FileItemModal from '$lib/components/common/FileItemModal.svelte';

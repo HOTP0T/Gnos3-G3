@@ -82,7 +82,7 @@ async def resource_queries(user, db):
     from open_webui.models.shared_chats import SharedChat
     from open_webui.utils.access_control import has_permission
 
-    if user.role not in {'user', 'admin'}:
+    if user.role not in {'user', 'admin', 'superadmin'}:
         return {}
     groups = [g.id for g in await Groups.get_groups_by_member_id(user.id, db=db, include_inherited=True)]
     config = await Config.get_many(
@@ -93,7 +93,7 @@ async def resource_queries(user, db):
         'automations.enable',
         'user.permissions',
     )
-    admin = user.role == 'admin'
+    admin = user.role in ('admin', 'superadmin')
 
     def grant(kind, column):
         return AccessGrants.has_grant_expression(user.id, kind, column, user_group_ids=groups)
@@ -171,7 +171,7 @@ async def resource_queries(user, db):
 async def eligible_recipients(recipients, resource_type, resource_id, actor_id, db):
     from open_webui.models.users import User, UserModel
 
-    users = (await db.scalars(select(User).where(User.id.in_(recipients), User.role.in_(['user', 'admin'])))).all()
+    users = (await db.scalars(select(User).where(User.id.in_(recipients), User.role.in_(['user', 'admin', 'superadmin'])))).all()
     eligible = {}
     for row in users:
         kind = recipients[row.id]
@@ -229,7 +229,7 @@ async def visible_clause(user, db):
                 and_(resources, or_(*objects)),
             ),
         )
-        if user.role in {'user', 'admin'}
+        if user.role in {'user', 'admin', 'superadmin'}
         else false()
     )
 

@@ -223,7 +223,7 @@ async def load_challenge(token: str, kinds: set[str], *, attempt: bool = False):
         ):
             raise HTTPException(401, 'This authentication step expired. Please start again.')
         user = await Users.get_user_by_id(user_id)
-        if user is None or user.role not in {'admin', 'user'}:
+        if user is None or user.role not in {'admin', 'user', 'superadmin'}:
             raise HTTPException(403, 'Account is awaiting approval.')
         if not (await get_mfa_config()).ENABLE_MFA:
             raise HTTPException(403, 'MFA is disabled. Please sign in again.')
@@ -257,7 +257,7 @@ async def load_challenge(token: str, kinds: set[str], *, attempt: bool = False):
 
 
 def setup_details(secret: str, email: str) -> dict:
-    uri = pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name='Open WebUI')
+    uri = pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name='Gnos3')
     buffer = io.BytesIO()
     qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage).save(buffer)
     return {

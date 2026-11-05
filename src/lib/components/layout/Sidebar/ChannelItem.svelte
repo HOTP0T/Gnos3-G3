@@ -216,7 +216,7 @@
 		<ChannelMenu
 			{channel}
 			sidebar
-			onEdit={channel.type !== 'dm' && ($user?.role === 'admin' || channel.user_id === $user?.id)
+			onEdit={channel.type !== 'dm' && ($isAdmin || channel.user_id === $user?.id)
 				? () => {
 						showEditChannelModal = true;
 					}

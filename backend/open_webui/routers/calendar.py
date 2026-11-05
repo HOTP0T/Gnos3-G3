@@ -438,7 +438,7 @@ async def update_calendar_access_by_id(
 ):
     await check_calendar_permission(request, user)
     cal = await _check_calendar_access(calendar_id, user, 'write')
-    if cal.user_id != user.id and user.role != 'admin':
+    if cal.user_id != user.id and user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=403, detail='Only owner can manage sharing')
 
     grants = await validate_access_grants(

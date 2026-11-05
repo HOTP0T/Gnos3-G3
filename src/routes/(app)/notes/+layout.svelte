@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
-	import { WEBUI_NAME, config, user } from '$lib/stores';
+	import { WEBUI_NAME, config, user, isAdmin } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	// Gnos3: the Notes vault (folders, [[links]], graph…) stays mounted while notes change.

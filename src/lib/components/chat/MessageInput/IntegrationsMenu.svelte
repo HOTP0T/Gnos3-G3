@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolveLocalizedResource, resolveLocalizedFunction } from '$lib/utils/localizedContent';
-	import { functions as localizedFunctions } from '$lib/stores';
+	import { functions as localizedFunctions, isAdmin } from '$lib/stores';
 	import { getContext, onDestroy, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 
@@ -647,7 +647,7 @@
 											</div>
 										{/if}
 
-										{#if tools?.[toolId]?.has_user_valves && ($user?.role === 'admin' || ($user?.permissions?.chat?.valves ?? true))}
+										{#if tools?.[toolId]?.has_user_valves && ($isAdmin || ($user?.permissions?.chat?.valves ?? true))}
 											<div class=" shrink-0">
 												<Tooltip content={$i18n.t('Valves')}>
 													<button

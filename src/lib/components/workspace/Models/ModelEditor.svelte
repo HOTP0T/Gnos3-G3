@@ -13,7 +13,7 @@
 	import DiffEditorModal from '$lib/components/common/DiffEditorModal.svelte';
 
 	import { onMount, onDestroy, getContext, tick } from 'svelte';
-	import { config, models, tools, functions, user, settings, visibleControls } from '$lib/stores';
+	import { config, models, tools, functions, user, settings, visibleControls, isAdmin } from '$lib/stores';
 	import { WEBUI_BASE_URL, DEFAULT_CAPABILITIES } from '$lib/constants';
 
 	import { getTools } from '$lib/apis/tools';
@@ -345,7 +345,7 @@
 	$: chatVariablesPreview = getChatVariablesPreview(system ?? '');
 
 	$: includeHidden =
-		$user?.role === 'admin' || ($user?.permissions?.workspace?.models_hidden ?? false);
+		$isAdmin || ($user?.permissions?.workspace?.models_hidden ?? false);
 
 	const getBaseModelItems = (models: any[] = []) => {
 		const currentModelId = (model as any)?.id;
@@ -859,12 +859,12 @@
 			bind:show={showAccessControlModal}
 			bind:accessGrants
 			accessRoles={preset ? ['read', 'write'] : ['read']}
-			share={$user?.permissions?.sharing?.models || $user?.role === 'admin'}
-			sharePublic={$user?.permissions?.sharing?.public_models || $user?.role === 'admin'}
+			share={$user?.permissions?.sharing?.models || $isAdmin}
+			sharePublic={$user?.permissions?.sharing?.public_models || $isAdmin}
 			shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) ||
-				$user?.role === 'admin'}
+				$isAdmin}
 			allowGroups={($user?.permissions?.access_grants?.allow_groups ?? true) ||
-				$user?.role === 'admin'}
+				$isAdmin}
 			onChange={async (grants) => {
 				if (edit && model?.id) {
 					loading = true;
@@ -933,7 +933,7 @@
 						/>
 					{/if}
 
-					{#if !historical && !readOnly && ($user?.permissions?.sharing?.models || $user?.role === 'admin')}
+					{#if !historical && !readOnly && ($user?.permissions?.sharing?.models || $isAdmin)}
 						<AccessButton on:click={() => (showAccessControlModal = true)} />
 					{/if}
 				</div>
@@ -1404,7 +1404,7 @@
 							</fieldset>
 
 							<div class="px-2.5 md:px-4">
-								{#if $user?.role === 'admin' && !readOnly}
+								{#if $isAdmin && !readOnly}
 									<div class="mt-2">
 										<ProviderDetails model={reportedModel} />
 									</div>

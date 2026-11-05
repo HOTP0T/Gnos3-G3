@@ -59,7 +59,7 @@ def search_yacy(
         query_url,
         auth=yacy_auth,
         headers={
-            # LICENSE covers this Gnos3 user-agent identifier.
+            # LICENSE covers this Open WebUI user-agent identifier.
             # Do not alter, remove, obscure, or replace it except as LICENSE permits:
             # https://docs.openwebui.com/license.
             'User-Agent': 'Gnos3 (https://github.com/open-webui/open-webui) RAG Bot',

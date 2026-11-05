@@ -26,6 +26,7 @@ from langchain_core.documents import Document
 
 from open_webui.connectors import get_connector_class
 from open_webui.connectors.base import BaseConnector, DocumentContent, WebhookAction
+from open_webui.models.config import Config
 from open_webui.models.data_connector import (
     DataConnectorDocuments,
     DataConnectorModel,
@@ -34,7 +35,7 @@ from open_webui.models.data_connector import (
 from open_webui.models.files import FileForm, Files
 from open_webui.models.knowledge import KnowledgeForm, Knowledges
 from open_webui.retrieval.vector.factory import VECTOR_DB_CLIENT
-from open_webui.routers.retrieval import save_docs_to_vector_db
+from open_webui.routers.retrieval import RETRIEVAL_CONFIG_KEYS, save_docs_to_vector_db
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ def _index_file_content_sync(
     title: str,
     user_id: str,
     external_url: Optional[str] = None,
+    config: Optional[dict] = None,
 ) -> None:
     """Chunk, embed, and store content in the vector DB via the existing pipeline.
     Must run in a thread — save_docs_to_vector_db uses run_coroutine_threadsafe
@@ -138,6 +140,7 @@ def _index_file_content_sync(
         request=request,
         docs=docs,
         collection_name=collection_name,
+        config=config,
         metadata={"file_id": file_id},
         overwrite=False,
         split=True,
@@ -155,11 +158,12 @@ async def _index_file_content(
     external_url: Optional[str] = None,
 ) -> None:
     """Async wrapper that runs embedding in a thread pool to avoid blocking the event loop."""
+    config = await Config.get_many(*RETRIEVAL_CONFIG_KEYS.values())
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
         _sync_thread_pool,
         _index_file_content_sync,
-        request, file_id, collection_name, content, title, user_id, external_url,
+        request, file_id, collection_name, content, title, user_id, external_url, config,
     )
 
 

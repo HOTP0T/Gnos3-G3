@@ -35,7 +35,8 @@
 		showFileNavPath,
 		showFileNavDir,
 		pyodideWorker,
-		desktopEvent
+		desktopEvent,
+		isAdmin
 	} from '$lib/stores';
 	import { refreshChatList } from '$lib/stores/chatList';
 	import { getFileBlobById, getFileContentById } from '$lib/apis/files';
@@ -633,7 +634,7 @@
 
 			if ($isLastActiveTab) {
 				if ($settings?.notificationEnabled ?? false) {
-					new Notification(`${data.title} / Open WebUI`, {
+					new Notification(`${data.title} / Gnos3`, {
 						body: timeStr,
 						// LICENSE covers this Open WebUI notification identifier.
 						// Do not alter, remove, obscure, or replace it except as LICENSE permits:
@@ -795,7 +796,7 @@
 
 					if ($isLastActiveTab) {
 						if ($settings?.notificationEnabled ?? false) {
-							new Notification(`${displayTitle} / Open WebUI`, {
+							new Notification(`${displayTitle} / Gnos3`, {
 								body: contentPreview,
 								// LICENSE covers this Open WebUI notification identifier.
 								// Do not alter, remove, obscure, or replace it except as LICENSE permits:
@@ -935,7 +936,7 @@
 						// LICENSE covers this Open WebUI notification identifier.
 						// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 						// https://docs.openwebui.com/license.
-						new Notification(`${title} / Open WebUI`, {
+						new Notification(`${title} / Gnos3`, {
 							body: content,
 							icon: `${WEBUI_API_BASE_URL}/users/${data?.user?.id}/profile/image`
 						});

@@ -510,7 +510,7 @@ async def update_config(request: Request, form_data: OpenAIConfigForm, user=Depe
 
 @router.post('/audio/speech')
 async def speech(request: Request, user=Depends(get_verified_user)):
-    if user.role != 'admin' and not await has_permission(user.id, 'chat.tts', await Config.get('user.permissions')):
+    if user.role not in ('admin', 'superadmin') and not await has_permission(user.id, 'chat.tts', await Config.get('user.permissions')):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
@@ -577,7 +577,7 @@ async def speech(request: Request, user=Depends(get_verified_user)):
             # https://docs.openwebui.com/license.
             raise HTTPException(
                 status_code=r.status if r else 500,
-                detail=detail if detail else 'Open WebUI: Server Connection Error',
+                detail=detail if detail else 'Gnos3: Server Connection Error',
             )
 
     except ValueError:
@@ -777,7 +777,7 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
 @router.get('/models')
 @router.get('/models/{url_idx}')
 async def get_models(request: Request, url_idx: int | None = None, user=Depends(get_verified_user)):
-    if url_idx is not None and user.role != 'admin':
+    if url_idx is not None and user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=401, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     if not await Config.get('openai.enable'):
@@ -842,7 +842,7 @@ async def get_models(request: Request, url_idx: int | None = None, user=Depends(
                 # LICENSE covers this Open WebUI error identifier.
                 # Do not alter, remove, obscure, or replace it except as LICENSE permits:
                 # https://docs.openwebui.com/license.
-                raise HTTPException(status_code=500, detail='Open WebUI: Server Connection Error')
+                raise HTTPException(status_code=500, detail='Gnos3: Server Connection Error')
             except Exception as e:
                 log.exception(f'Unexpected error: {e}')
                 error_detail = f'Unexpected error: {str(e)}'
@@ -2038,7 +2038,7 @@ async def proxy(path: str, request: Request, user=Depends(get_verified_user)):
         # https://docs.openwebui.com/license.
         raise HTTPException(
             status_code=r.status if r else 500,
-            detail='Open WebUI: Server Connection Error',
+            detail='Gnos3: Server Connection Error',
         )
     finally:
         if not streaming:

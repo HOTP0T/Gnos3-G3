@@ -344,7 +344,7 @@
 								</Tooltip>
 							{/if}
 
-							{#if message.user_id === $user?.id || $user?.role === 'admin'}
+							{#if message.user_id === $user?.id || $isAdmin}
 								{#if onEdit}
 									<Tooltip content={$i18n.t('Edit')}>
 										<button

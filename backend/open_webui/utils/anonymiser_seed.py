@@ -40,6 +40,9 @@ async def ensure_anonymise_filter(app) -> None:
         return
 
     module, function_type, frontmatter = await load_function_module_by_id(FUNCTION_ID, content=content)
+    # Upstream fills this cache on demand now, so it may not exist yet at startup.
+    if not hasattr(app.state, 'FUNCTIONS'):
+        app.state.FUNCTIONS = {}
     app.state.FUNCTIONS[FUNCTION_ID] = module
 
     if existing is not None:

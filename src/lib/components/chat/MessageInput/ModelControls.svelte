@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext, tick } from 'svelte';
-	import { models, mobile, settings, user, type Model } from '$lib/stores';
+	import { models, mobile, settings, user, type Model, isAdmin } from '$lib/stores';
 	import Controls from '../Controls/Controls.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
@@ -23,7 +23,7 @@
 	export let params: Record<string, any> = {};
 	export let onParamChange: (key: string, value: unknown) => void = () => {};
 	let controlsOpen = false;
-	$: controlsAllowed = $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true);
+	$: controlsAllowed = $isAdmin || ($user?.permissions?.chat?.controls ?? true);
 	let saving = false;
 	$: modelControls = $settings?.params?.model_controls ?? {};
 	let active: {

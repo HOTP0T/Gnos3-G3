@@ -84,17 +84,27 @@ class InUse:
         self.value = value
         self.saves = 0
 
-    async def async_save(self):
+    async def get(self):
+        return self.value
+
+    async def set(self, value):
+        self.value = value
         self.saves += 1
 
 
-def app(default='qwen3.8:latest', embedding='qwen3-embedding:latest'):
-    return SimpleNamespace(state=SimpleNamespace(config=SimpleNamespace(
-        DEFAULT_MODELS=default, RAG_EMBEDDING_MODEL=embedding)))
+class FakeConfig:
+    def __init__(self, default='qwen3.8:latest', embedding='qwen3-embedding:latest'):
+        self.rows = {'ui.default_models': default, 'rag.embedding_model': embedding}
+
+    async def get(self, key, default=None):
+        return self.rows.get(key, default)
+
+    async def upsert(self, updates):
+        self.rows.update(updates)
 
 
-def run(a, models, users, in_use):
-    asyncio.run(follow_model_roles(a, models=models, users=users, in_use=in_use, model_form=Form))
+def run(config, models, users, in_use):
+    asyncio.run(follow_model_roles(models=models, users=users, in_use=in_use, model_form=Form, config=config))
 
 
 def test_replace_keeps_order_and_drops_duplicates():
@@ -110,11 +120,11 @@ def test_a_new_chat_model_takes_over(monkeypatch):
         entry('qwen3.8:latest', grants=[('group', 'g-accountants', 'read'), ('user', '*', 'read')]),
     )
     users = FakeUsers(person('u1', ['qwen3.8:latest']), person('u2', ['gemma4:latest']))
-    in_use, a = InUse('qwen3.8:latest'), app()
+    in_use, a = InUse('qwen3.8:latest'), FakeConfig()
 
     run(a, models, users, in_use)
 
-    assert a.state.config.DEFAULT_MODELS == 'qwen4:latest'
+    assert a.rows['ui.default_models'] == 'qwen4:latest'
     assert models.rows[TASK_MODEL_ID].base_model_id == 'qwen4:latest'
     form, owner = models.inserted[0]
     assert form.id == 'qwen4:latest' and owner == 'admin-1'
@@ -130,21 +140,21 @@ def test_a_new_chat_model_takes_over(monkeypatch):
 def test_an_admin_setup_of_the_new_model_is_kept(monkeypatch):
     monkeypatch.setenv('GNOS3_CHAT_MODEL', 'qwen4:latest')
     models = FakeModels(entry('qwen3.8:latest', grants=[('user', '*', 'read')]), entry('qwen4:latest'))
-    run(app(), models, FakeUsers(), InUse('qwen3.8:latest'))
+    run(FakeConfig(), models, FakeUsers(), InUse('qwen3.8:latest'))
     assert models.inserted == []
 
 
 def test_another_default_model_is_left_alone(monkeypatch):
     monkeypatch.setenv('GNOS3_CHAT_MODEL', 'qwen4:latest')
-    a = app(default='gemma4:latest')
+    a = FakeConfig(default='gemma4:latest')
     run(a, FakeModels(), FakeUsers(), InUse('qwen3.8:latest'))
-    assert a.state.config.DEFAULT_MODELS == 'gemma4:latest'
+    assert a.rows['ui.default_models'] == 'gemma4:latest'
 
 
 def test_first_start_only_records_the_model(monkeypatch):
     monkeypatch.setenv('GNOS3_CHAT_MODEL', 'qwen3.8:latest')
     models, users, in_use = FakeModels(entry(TASK_MODEL_ID, base='qwen3.8:latest')), FakeUsers(), InUse('')
-    run(app(), models, users, in_use)
+    run(FakeConfig(), models, users, in_use)
     assert models.updated == [] and models.inserted == [] and users.saved == {}
     assert in_use.value == 'qwen3.8:latest' and in_use.saves == 1
 
@@ -152,7 +162,7 @@ def test_first_start_only_records_the_model(monkeypatch):
 def test_unchanged_model_does_nothing(monkeypatch):
     monkeypatch.setenv('GNOS3_CHAT_MODEL', 'qwen3.8:latest')
     in_use = InUse('qwen3.8:latest')
-    run(app(), FakeModels(), FakeUsers(), in_use)
+    run(FakeConfig(), FakeModels(), FakeUsers(), in_use)
     assert in_use.saves == 0
 
 
@@ -160,15 +170,15 @@ def test_without_the_setting_nothing_happens(monkeypatch):
     monkeypatch.delenv('GNOS3_CHAT_MODEL', raising=False)
     monkeypatch.delenv('GNOS3_EMBEDDING_MODEL', raising=False)
     in_use = InUse('qwen3.8:latest')
-    run(app(), FakeModels(), FakeUsers(), in_use)
+    run(FakeConfig(), FakeModels(), FakeUsers(), in_use)
     assert in_use.saves == 0
 
 
 def test_a_new_embedding_model_only_warns(monkeypatch, caplog):
     monkeypatch.delenv('GNOS3_CHAT_MODEL', raising=False)
     monkeypatch.setenv('GNOS3_EMBEDDING_MODEL', 'qwen4-embedding:latest')
-    a = app()
+    a = FakeConfig()
     with caplog.at_level('WARNING'):
         run(a, FakeModels(), FakeUsers(), InUse(''))
-    assert a.state.config.RAG_EMBEDDING_MODEL == 'qwen3-embedding:latest'
+    assert a.rows['rag.embedding_model'] == 'qwen3-embedding:latest'
     assert 're-index' in caplog.text

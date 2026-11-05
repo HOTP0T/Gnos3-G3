@@ -19,7 +19,7 @@
 		getArchivedChatList,
 		unarchiveAllChats
 	} from '$lib/apis/chats';
-	import { chatId, showSettings, user, visibleControls } from '$lib/stores';
+	import { chatId, showSettings, user, visibleControls, isAdmin } from '$lib/stores';
 	import { refreshChatList, refreshSidebar } from '$lib/stores/chatList';
 	import { formatNumber } from '$lib/utils';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -265,7 +265,7 @@
 						</button>
 					{/if}
 
-					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.export ?? true)}
+					{#if $isAdmin || ($user?.permissions?.chat?.export ?? true)}
 						<button
 							class="flex h-[1.6875rem] w-full cursor-pointer select-none items-center gap-2 rounded-lg bg-transparent px-2 text-xs hover:text-gray-900 disabled:cursor-default disabled:opacity-30 dark:hover:text-gray-100"
 							disabled={loading || chatCount === 0}
@@ -412,7 +412,7 @@
 										</button>
 									</Tooltip>
 								{/if}
-								{#if $user?.role === 'admin' || ($user?.permissions?.chat?.delete ?? true)}
+								{#if $isAdmin || ($user?.permissions?.chat?.delete ?? true)}
 									<Tooltip content={$i18n.t('Delete Chat')}>
 										<button
 											class="rounded-lg p-1 text-gray-400 transition-colors hover:text-gray-700 dark:text-gray-600 dark:hover:text-gray-300"

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { models, pinnedModels, settings, user } from '$lib/stores';
+	import { models, pinnedModels, settings, user, isAdmin } from '$lib/stores';
 	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import Selector from './ModelSelector/Selector.svelte';
@@ -83,7 +83,7 @@
 					{showSetDefault}
 					onSetDefault={saveDefaultModel}
 					multipleEnabled={multipleEnabled &&
-						($user?.role === 'admin' || ($user?.permissions?.chat?.multiple_models ?? true))}
+						($isAdmin || ($user?.permissions?.chat?.multiple_models ?? true))}
 					{disabled}
 					bind:compareEnabled={compareModels}
 					bind:values={selectedModels}

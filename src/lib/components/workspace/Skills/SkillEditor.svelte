@@ -20,7 +20,7 @@
 	import LocalizedField from '$lib/components/common/LocalizedField.svelte';
 	let locale = '';
 	let meta: { i18n?: Record<string, Record<string, string>>; [key: string]: any } = {};
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 	import { slugify, parseFrontmatter, formatSkillName } from '$lib/utils';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { updateSkillAccessGrants } from '$lib/apis/skills';
@@ -375,7 +375,7 @@
 					/>
 
 					{#if !disabled}
-						{#if $user?.permissions?.sharing?.skills || $user?.role === 'admin'}
+						{#if $user?.permissions?.sharing?.skills || $isAdmin}
 							<AccessButton
 								on:click={() => {
 									savedAccessGrants = structuredClone(accessGrants);
@@ -490,7 +490,7 @@
 						onSave={submitHandler}
 						onContentChange={handleContentChange}
 						canExport={edit &&
-							($user?.role === 'admin' || $user?.permissions?.workspace?.skills_export)}
+							($isAdmin || $user?.permissions?.workspace?.skills_export)}
 					>
 						{#snippet version()}
 							{#if edit}

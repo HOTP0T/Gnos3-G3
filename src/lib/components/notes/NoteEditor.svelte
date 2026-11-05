@@ -10,7 +10,8 @@
 		socket,
 		user,
 		WEBUI_NAME,
-		pinnedNotes
+		pinnedNotes,
+		isAdmin
 	} from '$lib/stores';
 	import CommentsPanel, {
 		type CommentsRequest

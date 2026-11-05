@@ -16,7 +16,7 @@
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
 
-	import { WEBUI_NAME, user, workspaceActions, workspaceCounts } from '$lib/stores';
+	import { WEBUI_NAME, user, workspaceActions, workspaceCounts, isAdmin } from '$lib/stores';
 	import {
 		deleteKnowledgeById,
 		searchKnowledgeBases,

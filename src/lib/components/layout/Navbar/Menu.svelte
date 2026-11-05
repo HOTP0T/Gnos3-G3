@@ -21,7 +21,8 @@
 		folders,
 		showEmbeds,
 		artifactContents,
-		visibleControls
+		visibleControls,
+		isAdmin
 	} from '$lib/stores';
 
 	import { getChatById } from '$lib/apis/chats';
@@ -453,7 +454,7 @@
 				/>
 			{/if}
 
-			{#if $user?.role === 'admin' || ($user.permissions?.chat?.export ?? true)}
+			{#if $isAdmin || ($user.permissions?.chat?.export ?? true)}
 				<DropdownSub contentClass="select-none z-50">
 					<button
 						slot="trigger"
@@ -510,7 +511,7 @@
 				</button>
 			{/if}
 
-			{#if $user?.role === 'admin' || ($user.permissions?.chat?.export ?? true)}
+			{#if $isAdmin || ($user.permissions?.chat?.export ?? true)}
 				<button
 					draggable="false"
 					class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] cursor-pointer select-none hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
@@ -579,7 +580,7 @@
 					</button>
 				{/if}
 
-				{#if $user?.role === 'admin' || ($user?.permissions?.chat?.delete ?? true)}
+				{#if $isAdmin || ($user?.permissions?.chat?.delete ?? true)}
 					<button
 						draggable="false"
 						class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] cursor-pointer select-none hover:bg-gray-50/40 dark:hover:bg-gray-800/40"

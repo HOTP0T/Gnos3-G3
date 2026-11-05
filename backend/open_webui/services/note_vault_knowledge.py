@@ -172,7 +172,9 @@ async def _drop_file(kb: str, file_id: str) -> None:
     await Files.delete_file_by_id(file_id)
 
 
-def _embed(request: Request, kb: str, file_id: str, title: str, text: str, owner_id: str, note_id: str) -> None:
+def _embed(
+    request: Request, kb: str, file_id: str, title: str, text: str, owner_id: str, note_id: str, config: dict
+) -> None:
     """Runs in a thread: save_docs_to_vector_db blocks on the event loop it was started from."""
     from langchain_core.documents import Document
 
@@ -195,13 +197,14 @@ def _embed(request: Request, kb: str, file_id: str, title: str, text: str, owner
         request,
         docs=docs,
         collection_name=f'file-{file_id}',
+        config=config,
         metadata={'file_id': file_id},
         overwrite=True,
         split=True,
         add=False,
     )
     save_docs_to_vector_db(
-        request, docs=docs, collection_name=kb, metadata={'file_id': file_id}, overwrite=False, split=True, add=True
+        request, docs=docs, collection_name=kb, config=config, metadata={'file_id': file_id}, overwrite=False, split=True, add=True
     )
 
 
@@ -211,6 +214,10 @@ async def sync_vault(
     """Embed the notes that changed since their last embedding (at most `limit`, only the notes
     in `only` when given); drop the ones that left the vault.
     Returns {'knowledge_id', 'synced', 'pending'}."""
+    from open_webui.models.config import Config
+    from open_webui.routers.retrieval import RETRIEVAL_CONFIG_KEYS
+
+    retrieval_config = await Config.get_many(*RETRIEVAL_CONFIG_KEYS.values())
     lock = _locks.setdefault(vault.id, asyncio.Lock())
     async with lock:
         kb = await ensure_knowledge(vault)
@@ -282,7 +289,7 @@ async def sync_vault(
             try:
                 if text.strip():
                     await loop.run_in_executor(
-                        _executor, _embed, request, kb, file_id, title, text, vault.owner_id, note_id
+                        _executor, _embed, request, kb, file_id, title, text, vault.owner_id, note_id, retrieval_config
                     )
                 await Files.update_file_data_by_id(file_id, {'status': 'completed'})
                 synced += 1

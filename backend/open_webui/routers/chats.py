@@ -105,7 +105,7 @@ async def get_optional_verified_user(
     except HTTPException:
         return None
 
-    if user.role not in {'user', 'admin'}:
+    if user.role not in {'user', 'admin', 'superadmin'}:
         return None
     return user
 
@@ -122,7 +122,7 @@ async def is_open_shared_chat(shared, db: AsyncSession) -> bool:
 async def can_read_shared_chat(user, shared, db: AsyncSession) -> bool:
     if user.role == 'pending':
         return False
-    if user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+    if user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS:
         return True
     if shared.user_id == user.id:
         return True
@@ -244,7 +244,7 @@ def chat_config_updates(data: dict) -> dict:
 
 
 async def require_chat_import_permission(request: Request, user, db: AsyncSession):
-    if user.role != 'admin' and not await has_permission(
+    if user.role not in ('admin', 'superadmin') and not await has_permission(
         user.id, 'chat.import', await Config.get('user.permissions'), db=db
     ):
         raise HTTPException(
@@ -1234,7 +1234,7 @@ async def get_shared_chat_by_id(
 
     # Fallback: admins can also access any chat directly by chat ID
     chat = None
-    if user is not None and user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+    if user is not None and user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS:
         chat = await Chats.get_chat_by_id(share_id, db=db)
         if chat:
             data = await shared_chat_response(chat, user, db=db)
@@ -1538,7 +1538,7 @@ async def delete_chat_message_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    if chat.user_id != user.id and not (user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS):
+    if chat.user_id != user.id and not (user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
@@ -1655,7 +1655,7 @@ async def delete_chat_by_id(
         await stop_item_tasks(request.app.state.redis, child_id)
         await Chats.delete_chat_by_id_and_user_id(child_id, chat.user_id)
 
-    if user.role == 'admin':
+    if user.role in ('admin', 'superadmin'):
         result = await Chats.delete_chat_by_id(id, db=db)
     else:
         result = await Chats.delete_chat_by_id_and_user_id(id, user.id, db=db)
@@ -1927,7 +1927,7 @@ async def clone_shared_chat_by_id(
         chat = await Chats.get_chat_by_id(shared.chat_id, db=db)
 
     # Fallback: admins can also access any chat directly by chat ID
-    if not chat and user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+    if not chat and user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS:
         chat = await Chats.get_chat_by_id(id, db=db)
 
     if not chat:
@@ -2105,7 +2105,7 @@ async def update_shared_chat_access_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+    if user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS:
         chat = await Chats.get_chat_by_id(id, db=db)
     else:
         chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
@@ -2143,7 +2143,7 @@ async def get_shared_chat_access_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+    if user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS:
         chat = await Chats.get_chat_by_id(id, db=db)
     else:
         chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)

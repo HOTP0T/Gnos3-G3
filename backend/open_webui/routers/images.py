@@ -802,7 +802,7 @@ async def image_generations(
             # persists the global default and switches the shared backend. Only an
             # admin may do that; a non-admin generates on the currently configured
             # checkpoint. The model field is not a per-user selection on this backend.
-            if form_data.model and user.role == 'admin':
+            if form_data.model and user.role in ('admin', 'superadmin'):
                 await set_image_model(request, form_data.model)
 
             data = {
@@ -874,7 +874,7 @@ async def edit_images(request: Request, form_data: EditImageForm, user=Depends(g
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    if user.role != 'admin' and not await has_permission(
+    if user.role not in ('admin', 'superadmin') and not await has_permission(
         user.id, 'features.image_generation', image_config.USER_PERMISSIONS
     ):
         raise HTTPException(

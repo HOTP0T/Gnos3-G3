@@ -15,7 +15,7 @@
 </script>
 
 <script lang="ts">
-	import { visibleControls } from '$lib/stores';
+	import { visibleControls, isAdmin } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 	import dayjs, { getDayjsLocale } from '$lib/dayjs';
 	import relativeTime from 'dayjs/plugin/relativeTime';
@@ -272,7 +272,7 @@
 	};
 
 	const cloneChatHandler = async (id) => {
-		if (!($user?.role === 'admin' || ($user?.permissions?.chat?.import ?? true))) {
+		if (!($isAdmin || ($user?.permissions?.chat?.import ?? true))) {
 			toast.error($i18n.t('Access prohibited'));
 			return;
 		}
@@ -828,7 +828,7 @@
 						</Tooltip>
 					{/if}
 
-					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.delete ?? true)}
+					{#if $isAdmin || ($user?.permissions?.chat?.delete ?? true)}
 						<Tooltip content={$i18n.t('Delete')}>
 							<button
 								aria-label={$i18n.t('Delete')}

@@ -92,7 +92,7 @@ async def mentions(
         await db.scalars(
             select(User)
             .where(
-                User.role.in_(['user', 'admin']),
+                User.role.in_(['user', 'admin', 'superadmin']),
                 User.name.ilike(
                     '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%', escape='\\'
                 ),
@@ -354,7 +354,7 @@ async def remove(
     db: AsyncSession = Depends(get_async_session),
 ):
     comment, resource = await accessible_comment(id, user, db, lock=True, request=request)
-    if comment.user_id != user.id and resource.user_id != user.id and user.role != 'admin':
+    if comment.user_id != user.id and resource.user_id != user.id and user.role not in ('admin', 'superadmin'):
         raise HTTPException(403, 'Cannot delete this comment')
     if str(comment.updated_at) != etag:
         raise HTTPException(409, 'Comment changed. Reload before deleting.')

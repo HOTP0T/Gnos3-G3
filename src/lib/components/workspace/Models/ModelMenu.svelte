@@ -24,7 +24,8 @@
 		user as currentUser,
 		pinnedModels,
 		settings,
-		visibleControls
+		visibleControls,
+		isAdmin
 	} from '$lib/stores';
 	import Link from '$lib/components/icons/Link.svelte';
 	import { resolveLocalizedModelName } from '$lib/utils/localizedContent';

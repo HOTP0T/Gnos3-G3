@@ -121,7 +121,7 @@
 	};
 
 	const shareHandler = async () => {
-		// LICENSE covers this Gnos3 Community wordmark.
+		// LICENSE covers this Open WebUI Community wordmark.
 		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Gnos3 Community'));

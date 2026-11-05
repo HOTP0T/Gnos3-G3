@@ -16,7 +16,7 @@
 
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { config, user, settings } from '$lib/stores';
+	import { config, user, settings, isAdmin } from '$lib/stores';
 
 	import { uploadFile } from '$lib/apis/files';
 	import {

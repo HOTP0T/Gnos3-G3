@@ -210,7 +210,7 @@
 			generating);
 	$: canCompact = !!history?.currentId;
 	$: canSide =
-		($_user?.role === 'admin' ||
+		($isAdmin ||
 			($_user?.role === 'user' &&
 				($_user.permissions?.chat?.temporary ?? true) &&
 				($_user.permissions?.chat?.side_chat ?? false))) &&
@@ -238,7 +238,7 @@
 	$: canToggleTemporary =
 		!embedded &&
 		!chatId &&
-		($_user?.role === 'admin' ||
+		($isAdmin ||
 			($_user?.role === 'user' &&
 				($_user?.permissions?.chat?.temporary ?? true) &&
 				!($_user?.permissions?.chat?.temporary_enforced ?? false)));
@@ -854,7 +854,7 @@
 	$: fileUploadEnabled =
 		(getFilesystemUploadTerminal($selectedTerminalId, $terminalServers, $settings) ||
 			fileUploadCapableModels.length === selectedModelIds.length) &&
-		($_user?.role === 'admin' || $_user?.permissions?.chat?.file_upload);
+		($isAdmin || $_user?.permissions?.chat?.file_upload);
 
 	let webSearchCapableModels = [];
 	$: webSearchCapableModels = getCapableModelIds(
@@ -885,7 +885,7 @@
 	);
 	$: hasDirectToolServerAccess =
 		$config?.features?.enable_direct_integrations &&
-		($_user?.role === 'admin' || ($_user?.permissions?.features?.direct_tool_servers ?? true));
+		($isAdmin || ($_user?.permissions?.features?.direct_tool_servers ?? true));
 	$: showTerminalSelector =
 		terminalSelectionEnabled &&
 		$config?.features?.enable_tool_servers &&
@@ -945,28 +945,28 @@
 	$: showWebSearchButton =
 		selectedModelIds.length === webSearchCapableModels.length &&
 		$config?.features?.enable_web_search &&
-		(($_user.role === 'admin' || $_user.role === 'superadmin') || $_user?.permissions?.features?.web_search);
+		(($isAdmin || $_user.role === 'superadmin') || $_user?.permissions?.features?.web_search);
 
 	let showImageGenerationButton = false;
 	$: showImageGenerationButton =
 		selectedModelIds.length === imageGenerationCapableModels.length &&
 		$config?.features?.enable_image_generation &&
-		(($_user.role === 'admin' || $_user.role === 'superadmin') || $_user?.permissions?.features?.image_generation);
+		(($isAdmin || $_user.role === 'superadmin') || $_user?.permissions?.features?.image_generation);
 
 	let showCodeInterpreterButton = false;
 	$: showCodeInterpreterButton =
 		!$selectedTerminalId &&
 		selectedModelIds.length === codeInterpreterCapableModels.length &&
 		$config?.features?.enable_code_interpreter &&
-		(($_user.role === 'admin' || $_user.role === 'superadmin') || $_user?.permissions?.features?.code_interpreter);
+		(($isAdmin || $_user.role === 'superadmin') || $_user?.permissions?.features?.code_interpreter);
 
 	let showCallButton = false;
 	$: showCallButton =
-		($_user?.role === 'admin' || ($_user?.permissions?.chat?.call ?? true)) &&
+		($isAdmin || ($_user?.permissions?.chat?.call ?? true)) &&
 		(callActive ||
 			$config?.audio?.realtime?.enabled ||
 			($config?.audio?.stt?.engine !== 'web' &&
-				($_user?.role === 'admin' || ($_user?.permissions?.chat?.stt ?? true))));
+				($isAdmin || ($_user?.permissions?.chat?.stt ?? true))));
 
 	$: if (webSearchCapableModels.length < selectedModelIds.length) webSearchEnabled = false;
 	$: if (imageGenerationCapableModels.length < selectedModelIds.length)
@@ -1123,7 +1123,7 @@
 	};
 
 	const uploadFileHandler = async (file, process = true, itemData = {}) => {
-		if ($_user?.role !== 'admin' && !($_user?.permissions?.chat?.file_upload ?? true)) {
+		if (!$isAdmin && !($_user?.permissions?.chat?.file_upload ?? true)) {
 			toast.error($i18n.t('You do not have permission to upload files.'));
 			return null;
 		}
@@ -1667,7 +1667,7 @@
 					canFork: () =>
 						!!history?.currentId &&
 						!isTemporary &&
-						($_user?.role === 'admin' || ($_user?.permissions?.chat?.import ?? true)),
+						($isAdmin || ($_user?.permissions?.chat?.import ?? true)),
 					forkDisabled: () => isActive,
 					canTemporary: () => canToggleTemporary,
 					hasChatContent: hasChatContent,
@@ -2635,7 +2635,7 @@
 								</div>
 
 								<div class="flex flex-1 items-center min-w-0 overflow-x-auto scrollbar-none">
-									{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.valves ?? true))}
+									{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves && ($isAdmin || ($_user?.permissions?.chat?.valves ?? true))}
 										<div class="ml-1 flex gap-1.5 shrink-0">
 											<Tooltip content={$i18n.t('Valves')} placement="top">
 												<button
@@ -2717,7 +2717,7 @@
 														on:click|preventDefault={() => {
 															if (
 																filter?.has_user_valves &&
-																($_user?.role === 'admin' ||
+																($isAdmin ||
 																	($_user?.permissions?.chat?.valves ?? true))
 															) {
 																selectedValvesType = 'function';
@@ -2914,7 +2914,7 @@
 										</div>
 									{:else}
 										{#if !history?.currentId || history.messages[history.currentId]?.done == true}
-											{#if $_user?.role === 'admin' || ($_user?.permissions?.chat?.stt ?? true)}
+											{#if $isAdmin || ($_user?.permissions?.chat?.stt ?? true)}
 												<!-- {$i18n.t('Record voice')} -->
 												<Tooltip content={$i18n.t('Dictate')}>
 													<button

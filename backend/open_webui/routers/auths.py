@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 import asyncio
 import datetime
 import logging
@@ -12,7 +14,7 @@ from ssl import CERT_NONE, CERT_REQUIRED, PROTOCOL_TLS
 import jwt
 from aiohttp import BasicAuth, ClientSession
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import RedirectResponse, JSONResponse, Response
 from ldap3 import NONE, Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 from ldap3.utils.dn import parse_dn
@@ -873,7 +875,7 @@ async def signup_handler(
         # waited for an owner; set them up now rather than at the next restart.
         from open_webui.utils.first_account import after_first_account
 
-        await after_first_account(request.app)
+        after_first_account(request.app)
 
     await apply_default_group_assignment(
         await Config.get('ui.default_group_id'),
@@ -1629,7 +1631,7 @@ async def update_oauth_config(request: Request, form_data: OAuthConfigForm, user
 
 async def _check_api_key_permission(request: Request, user, db: AsyncSession):
     if not await Config.get('auth.enable_api_keys') or (
-        user.role != 'admin'
+        user.role not in ('admin', 'superadmin')
         and not await has_permission(user.id, 'features.api_keys', await Config.get('user.permissions'), db=db)
     ):
         raise HTTPException(

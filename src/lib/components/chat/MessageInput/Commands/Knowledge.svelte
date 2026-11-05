@@ -6,7 +6,7 @@
 
 	import { tick, getContext, onMount, onDestroy } from 'svelte';
 
-	import { folders, user } from '$lib/stores';
+	import { folders, user, isAdmin } from '$lib/stores';
 	import { getFolders } from '$lib/apis/folders';
 	import { searchKnowledgeBases, searchKnowledgeFiles } from '$lib/apis/knowledge';
 	import { removeLastWordFromString, isValidHttpUrl, isYoutubeUrl, decodeString } from '$lib/utils';
@@ -30,7 +30,7 @@
 
 	export let filteredItems = [];
 	let webUploadEnabled: boolean = true;
-	$: webUploadEnabled = $user?.role === 'admin' || ($user?.permissions?.chat?.web_upload ?? true);
+	$: webUploadEnabled = $isAdmin || ($user?.permissions?.chat?.web_upload ?? true);
 	$: filteredItems = [
 		...(query.startsWith('http')
 			? isYoutubeUrl(query)

@@ -15,12 +15,13 @@ from urllib.parse import urlsplit
 
 from starlette.requests import Request
 
-from open_webui.config import PersistentConfig
+from open_webui.models.config import Config
+from open_webui.utils.gnos3_settings import StoredValue
 from open_webui.utils.model_roles import TASK_MODEL_ID
 
 log = logging.getLogger(__name__)
 
-SETTINGS_VERSION = PersistentConfig('GNOS3_SETTINGS_VERSION', 'gnos3.settings_version', 0)
+SETTINGS_VERSION = StoredValue('gnos3.settings_version', 0)
 
 # Retrieval sized for the appliance's 16,384-token context (deploy/ollama/
 # memory-limits.conf): at most TOP_K chunks of CHUNK_SIZE tokens (~5k) leave
@@ -32,51 +33,54 @@ SETTINGS_VERSION = PersistentConfig('GNOS3_SETTINGS_VERSION', 'gnos3.settings_ve
 # takes ~0.2 s. The local reranker (a cross-encoder on the CPU) added 5-30 s
 # per question for the same sources (measured 2026-10-26).
 RETRIEVAL = {
-    'RAG_FULL_CONTEXT': False,
-    'BYPASS_EMBEDDING_AND_RETRIEVAL': False,
-    'ENABLE_RAG_HYBRID_SEARCH': True,
-    'TEXT_SPLITTER': 'token',
-    'CHUNK_SIZE': 400,
-    'CHUNK_OVERLAP': 50,
-    'TOP_K': 12,
-    'TOP_K_RERANKER': 6,
+    'rag.full_context': False,
+    'rag.bypass_embedding_and_retrieval': False,
+    'rag.enable_hybrid_search': True,
+    'rag.text_splitter': 'token',
+    'rag.chunk_size': 400,
+    'rag.chunk_overlap': 50,
+    'rag.top_k': 12,
+    'rag.top_k_reranker': 6,
 }
 WEB_SEARCH = {
-    'WEB_SEARCH_RESULT_COUNT': 3,
+    'web.search.result_count': 3,
     # Without a timeout one slow site holds the whole search for 5 minutes.
-    'WEB_LOADER_TIMEOUT': '10',
+    'web.loader.timeout': '10',
 }
-CHUNKING_KEYS = ('BYPASS_EMBEDDING_AND_RETRIEVAL', 'TEXT_SPLITTER', 'CHUNK_SIZE', 'CHUNK_OVERLAP')
+CHUNKING_KEYS = (
+    'rag.bypass_embedding_and_retrieval',
+    'rag.text_splitter',
+    'rag.chunk_size',
+    'rag.chunk_overlap',
+)
 
 
-def _set(config, values: dict) -> list[str]:
-    changed = []
-    for key, value in values.items():
-        if getattr(config, key) != value:
-            setattr(config, key, value)
-            changed.append(key)
-    return changed
+async def _set(values: dict) -> list[str]:
+    current = await Config.get_many(*values)
+    changed = {key: value for key, value in values.items() if current.get(key) != value}
+    if changed:
+        await Config.upsert(changed)
+    return list(changed)
 
 
 async def _step_1(app) -> None:
     """Web search and document retrieval that fit a 16k-token context."""
-    config = app.state.config
-    changed = _set(config, RETRIEVAL | WEB_SEARCH)
+    changed = await _set(RETRIEVAL | WEB_SEARCH)
 
     # Drop the in-process reranker; an external one (a GPU service an admin set
     # up on purpose) stays.
-    if config.RAG_RERANKING_ENGINE == '' and config.RAG_RERANKING_MODEL:
-        config.RAG_RERANKING_MODEL = ''
+    if await Config.get('rag.reranking_engine') == '' and await Config.get('rag.reranking_model'):
+        await Config.upsert({'rag.reranking_model': ''})
         app.state.rf = None
         app.state.RERANKING_FUNCTION = None
-        changed.append('RAG_RERANKING_MODEL')
+        changed.append('rag.reranking_model')
 
     # The appliance's SearXNG listens on 8080 inside the stack network; 8888
     # is only its port on the host (production had searxng:8888, refused).
-    url = urlsplit(config.SEARXNG_QUERY_URL or '')
+    url = urlsplit(await Config.get('web.search.searxng_query_url') or '')
     if url.hostname == 'searxng' and url.port != 8080:
-        config.SEARXNG_QUERY_URL = url._replace(netloc='searxng:8080').geturl()
-        changed.append('SEARXNG_QUERY_URL')
+        await Config.upsert({'web.search.searxng_query_url': url._replace(netloc='searxng:8080').geturl()})
+        changed.append('web.search.searxng_query_url')
 
     log.info(f'Settings upgrade 1 changed: {", ".join(changed) or "nothing"}')
     if any(key in changed for key in CHUNKING_KEYS):
@@ -151,8 +155,7 @@ async def _step_2(app) -> None:
     from open_webui.models.models import ModelForm, ModelMeta, ModelParams, Models
     from open_webui.models.users import Users
 
-    config = app.state.config
-    if config.TASK_MODEL:
+    if await Config.get('task.model.default'):
         log.info('Settings upgrade 2: a task model is already chosen, left as is')
         return
     if await Models.get_model_by_id(TASK_MODEL_ID) is None:
@@ -177,7 +180,7 @@ async def _step_2(app) -> None:
         )
     # Unused when TASK_BASE_MODEL is not installed: Gnos3 then lists no such
     # model and tasks fall back to the chat model.
-    config.TASK_MODEL = TASK_MODEL_ID
+    await Config.upsert({'task.model.default': TASK_MODEL_ID})
     log.info(f'Settings upgrade 2: task model set to {TASK_MODEL_ID}')
 
 
@@ -186,8 +189,7 @@ STEPS = [(1, _step_1), (2, _step_2)]
 
 async def apply_settings_upgrades(app) -> None:
     for number, step in STEPS:
-        if SETTINGS_VERSION.value >= number:
+        if await SETTINGS_VERSION.get() >= number:
             continue
         await step(app)
-        SETTINGS_VERSION.value = number
-        await SETTINGS_VERSION.async_save()
+        await SETTINGS_VERSION.set(number)

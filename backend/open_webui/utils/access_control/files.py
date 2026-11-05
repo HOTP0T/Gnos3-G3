@@ -36,7 +36,7 @@ async def has_access_to_note_files(
 
     # Existing attachments may belong to another editor; only additions need permission.
     added_ids = get_note_file_ids(entries) - get_note_file_ids(get_note_files(note.data) if note else [])
-    if not added_ids or user.role == 'admin':
+    if not added_ids or user.role in ('admin', 'superadmin'):
         return True
 
     group_ids = {group.id for group in await Groups.get_groups_by_member_id(user.id, db=db, include_inherited=True)}
@@ -169,7 +169,7 @@ async def get_accessible_folder_files(
         for entry in entries
         if isinstance(entry, dict) and entry.get('type') in FOLDER_FILE_TYPES and entry.get('id')
     ]
-    if user.role == 'admin':
+    if user.role in ('admin', 'superadmin'):
         return entries
 
     if user_group_ids is None:

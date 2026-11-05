@@ -6,7 +6,7 @@
 	import dayjs from 'dayjs';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 
-	import { settings, chatId, WEBUI_NAME, models, config, user as sessionUser } from '$lib/stores';
+	import { settings, chatId, WEBUI_NAME, models, config, user as sessionUser, isAdmin } from '$lib/stores';
 	import { convertMessagesToHistory, createMessagesList, getDeepestChildId } from '$lib/utils';
 
 	import { getChatByShareId, cloneSharedChatById, forkChatById } from '$lib/apis/chats';
@@ -46,7 +46,7 @@
 	$: messages = createMessagesList(history, history.currentId);
 	$: canClone =
 		$sessionUser &&
-		($sessionUser.role === 'admin' || ($sessionUser.permissions?.chat?.import ?? true));
+		($isAdmin || ($sessionUser.permissions?.chat?.import ?? true));
 
 	// Reading history here would rerun this on every history change.
 	$: if ($page.params.id) {

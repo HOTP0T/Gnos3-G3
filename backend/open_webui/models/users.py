@@ -717,7 +717,7 @@ class UsersTable:
         """Return the earliest-created user (bootstrap admin detection)."""
         async with get_async_db_context(db) as session:
             # created_at has 1s resolution; admin wins ties
-            admin_first = case((User.role == 'admin', 0), else_=1)
+            admin_first = case((User.role.in_(['admin', 'superadmin']), 0), else_=1)
             stmt = select(User).order_by(User.created_at, admin_first, User.id).limit(1)
             row = (await session.execute(stmt)).scalars().first()
             return UserModel.model_validate(row) if row else None

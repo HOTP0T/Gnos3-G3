@@ -23,7 +23,8 @@
 		user,
 		skills as _skills,
 		workspaceActions,
-		workspaceCounts
+		workspaceCounts,
+		isAdmin
 	} from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -126,13 +127,13 @@
 				id: 'skills-new',
 				label: $i18n.t('Create'),
 				href: '/workspace/skills/create',
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.skills
+				visible: $isAdmin || $user?.permissions?.workspace?.skills
 			},
 			{
 				id: 'skills-import',
 				label: $i18n.t('Import'),
 				onClick: () => importInputElement?.click(),
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.skills_import
+				visible: $isAdmin || $user?.permissions?.workspace?.skills_import
 			},
 			{
 				id: 'skills-import-url',
@@ -140,13 +141,13 @@
 				onClick: () => {
 					showImportFromLink = true;
 				},
-				visible: $user?.role === 'admin'
+				visible: $isAdmin
 			},
 			{
 				id: 'skills-import-folder',
 				label: $i18n.t('Import folder'),
 				onClick: () => folderImportInput?.click(),
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.skills_import
+				visible: $isAdmin || $user?.permissions?.workspace?.skills_import
 			},
 			{
 				id: 'skills-export-zip',
@@ -158,7 +159,7 @@
 						toast.error(skillError(error));
 					}
 				},
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.skills_export
+				visible: $isAdmin || $user?.permissions?.workspace?.skills_export
 			},
 			{
 				id: 'skills-export',
@@ -175,7 +176,7 @@
 						saveAs(blob, `skills-export-${Date.now()}.json`);
 					}
 				},
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.skills_export
+				visible: $isAdmin || $user?.permissions?.workspace?.skills_export
 			}
 		]);
 	}
@@ -609,7 +610,7 @@
 														resourceId={skill.id}
 														shareHandler={() => shareHandler(skill)}
 														accessHandler={$user?.permissions?.sharing?.skills ||
-														$user?.role === 'admin'
+														$isAdmin
 															? () => accessModal.open(skill.id)
 															: null}
 														show={openSkillMenuId === skill.id}
@@ -733,7 +734,7 @@
 				>.
 			</div>
 		</DeleteConfirmDialog>
-		{#if $config?.features?.enable_community_sharing}
+		{#if $config?.features?.enable_community_sharing && $isAdmin}
 			<CommunityDiscover
 				href="https://openwebui.com/search?type=skill"
 				title={$i18n.t('Discover a skill')}

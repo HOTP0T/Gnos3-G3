@@ -330,7 +330,7 @@
 			</button>
 		</div>
 		<div class="px-4.5 pb-5 overflow-y-auto max-h-[70vh]">
-			<AdvancedParams admin={$user?.role === 'admin'} custom={true} bind:params />
+			<AdvancedParams admin={$isAdmin} custom={true} bind:params />
 		</div>
 	</div>
 </Modal>

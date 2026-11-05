@@ -51,7 +51,7 @@ async def get_apps(user=Depends(get_verified_user), db: AsyncSession = Depends(g
     return [
         {**get_app_response(app), 'connection_status': await connections.status(app)}
         for app in apps
-        if user.role == 'admin' or (app.is_active and await has_app_access(app, user, db=db))
+        if user.role in ('admin', 'superadmin') or (app.is_active and await has_app_access(app, user, db=db))
     ]
 
 

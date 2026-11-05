@@ -1148,7 +1148,7 @@ async def update_knowledge_by_id(
         )
 
     if form_data.meta is not None:
-        if knowledge.user_id != user.id and user.role != 'admin':
+        if knowledge.user_id != user.id and user.role not in ('admin', 'superadmin'):
             raise HTTPException(403, ERROR_MESSAGES.ACCESS_PROHIBITED)
         if is_external_knowledge(knowledge):
             external_knowledge_error()
@@ -1272,7 +1272,7 @@ async def get_pending_knowledge_files(
         )
 
     if not (
-        user.role == 'admin'
+        user.role in ('admin', 'superadmin')
         or knowledge.user_id == user.id
         or await AccessGrants.has_access(
             user_id=user.id,
@@ -1304,7 +1304,7 @@ async def get_pending_knowledge_files(
             if not refreshed_user:
                 break
             if not (
-                refreshed_user.role == 'admin'
+                refreshed_user.role in ('admin', 'superadmin')
                 or knowledge.user_id == refreshed_user.id
                 or await AccessGrants.has_access(
                     user_id=refreshed_user.id,
@@ -1364,7 +1364,7 @@ async def get_knowledge_files_by_id(
     page = max(page, 1)
 
     # Allow admins to configure page size; non-admins always get the default
-    if user.role == 'admin' and limit is not None:
+    if user.role in ('admin', 'superadmin') and limit is not None:
         limit = max(1, limit)
     else:
         limit = PAGE_ITEM_COUNT
@@ -1503,7 +1503,7 @@ async def add_file_to_knowledge_by_id(
         )
 
     # KB write-access alone is not enough — caller must also be able to read the file.
-    if file.user_id != user.id and user.role != 'admin':
+    if file.user_id != user.id and user.role not in ('admin', 'superadmin'):
         if not await has_access_to_file(file.id, 'read', user, db=db):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -1794,7 +1794,7 @@ async def delete_knowledge_by_id(
         # Connections are admin-owned and shared across knowledge bases
         if (
             connection_id
-            and user.role == 'admin'
+            and user.role in ('admin', 'superadmin')
             and await _get_knowledge_base_count_for_external_connection(connection_id, db=db) <= 1
         ):
             connections = [
@@ -1868,7 +1868,7 @@ async def reset_knowledge_by_id(
         pass
 
     for file in files:
-        if file.user_id == user.id or user.role == 'admin':
+        if file.user_id == user.id or user.role in ('admin', 'superadmin'):
             await delete_file_resource(file, db)
 
     knowledge = await Knowledges.reset_knowledge_by_id(id=id, include_directories=include_directories, db=db)
@@ -2073,7 +2073,7 @@ async def sync_knowledge_cleanup(
         if (
             not ENABLE_KNOWLEDGE_FILE_RETENTION
             and not linked_knowledges
-            and (file.user_id == user.id or user.role == 'admin')
+            and (file.user_id == user.id or user.role in ('admin', 'superadmin'))
         ):
             await delete_file_resource(file, db)
 
@@ -2149,7 +2149,7 @@ async def add_files_to_knowledge_batch(
         )
 
     # Per-file read-access check — same gate as the single-file endpoint.
-    if user.role != 'admin':
+    if user.role not in ('admin', 'superadmin'):
         for file in files:
             if file.user_id != user.id and not await has_access_to_file(file.id, 'read', user, db=db):
                 raise HTTPException(
@@ -2314,7 +2314,7 @@ async def _verify_knowledge_write_access(id: str, user, db: AsyncSession):
             permission='write',
             db=db,
         )
-        and user.role != 'admin'
+        and user.role not in ('admin', 'superadmin')
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -2432,7 +2432,7 @@ async def delete_knowledge_directory(
         if (
             not ENABLE_KNOWLEDGE_FILE_RETENTION
             and not await Knowledges.get_knowledges_by_file_id(file.id, db=db)
-            and (file.user_id == user.id or user.role == 'admin')
+            and (file.user_id == user.id or user.role in ('admin', 'superadmin'))
         ):
             await delete_file_resource(file, db)
 

@@ -12,7 +12,7 @@
 	import VersionDiff from '$lib/components/workspace/common/VersionDiff.svelte';
 	import ToolHistory from './ToolHistory.svelte';
 	import { getToolHistoryDiff } from '$lib/apis/tools';
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 	import { updateToolAccessGrants } from '$lib/apis/tools';
 
 	import { extractFrontmatter, formatSkillName, nameToId } from '$lib/utils';
@@ -368,7 +368,7 @@ class Tools:
 						)}
 					/>
 
-					{#if $user?.permissions?.sharing?.tools || $user?.role === 'admin'}
+					{#if $user?.permissions?.sharing?.tools || $isAdmin}
 						<AccessButton
 							disabled={!!selected || loading || selecting || promoting}
 							on:click={() => {

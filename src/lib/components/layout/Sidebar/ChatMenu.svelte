@@ -14,7 +14,7 @@
 		getChatPinnedStatusById,
 		toggleChatPinnedStatusById
 	} from '$lib/apis/chats';
-	import { chats, folders, settings, theme, user, visibleControls } from '$lib/stores';
+	import { chats, folders, settings, theme, user, visibleControls, isAdmin } from '$lib/stores';
 	import { createMessagesList } from '$lib/utils';
 	import { getOutputText } from '$lib/components/chat/Messages/structuredOutput';
 	import ArchiveBoxIcon from '$lib/components/icons/ArchiveBox.svelte';
@@ -454,7 +454,7 @@
 					{/if}
 				</button>
 
-				{#if $user?.role === 'admin' || ($user?.permissions?.chat?.import ?? true)}
+				{#if $isAdmin || ($user?.permissions?.chat?.import ?? true)}
 					<button
 						role="menuitem"
 						draggable="false"
@@ -515,7 +515,7 @@
 					</button>
 				{/if}
 
-				{#if $user?.role === 'admin' || ($user?.permissions?.chat?.delete ?? true)}
+				{#if $isAdmin || ($user?.permissions?.chat?.delete ?? true)}
 					<button
 						role="menuitem"
 						draggable="false"

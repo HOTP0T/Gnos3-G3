@@ -12,7 +12,7 @@
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
 	import Link from '$lib/components/icons/Link.svelte';
 	import Pencil from '$lib/components/icons/Pencil.svelte';
-	import { config, pinnedModels, settings, showSettings, user, visibleControls } from '$lib/stores';
+	import { config, pinnedModels, settings, showSettings, user, visibleControls, isAdmin, isSuperadmin } from '$lib/stores';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 
 	const i18n = getContext('i18n');
@@ -30,7 +30,7 @@
 	$: canEdit =
 		model?.preset || model?.info?.base_model_id
 			? model?.info?.user_id === $user?.id
-			: $user?.role === 'admin';
+			: $isSuperadmin;
 	const providerSupportsDelete = (provider = '') => provider === 'llama.cpp';
 	$: showComments =
 		$config?.features?.enable_comments &&
@@ -38,7 +38,7 @@
 		model?.id &&
 		!model?.direct &&
 		!model?.arena &&
-		(model?.info || $user?.role === 'admin');
+		(model?.info || $isAdmin);
 </script>
 
 <Dropdown

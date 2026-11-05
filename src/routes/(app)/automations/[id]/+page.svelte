@@ -4,7 +4,7 @@
 	import { onMount, onDestroy } from 'svelte';
 
 	import { page } from '$app/stores';
-	import { user, config } from '$lib/stores';
+	import { user, config, isAdmin } from '$lib/stores';
 	import { getAutomationById, type AutomationResponse } from '$lib/apis/automations';
 
 	import AutomationEditor from '$lib/components/automations/AutomationEditor.svelte';

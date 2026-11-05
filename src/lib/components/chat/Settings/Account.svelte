@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { onMount, getContext } from 'svelte';
 
-	import { user, config } from '$lib/stores';
+	import { user, config, isAdmin } from '$lib/stores';
 	import {
 		updateUserProfile,
 		createAPIKey,

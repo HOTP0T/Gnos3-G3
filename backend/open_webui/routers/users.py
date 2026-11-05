@@ -447,7 +447,7 @@ async def update_default_user_permissions(request: Request, form_data: UserPermi
 
 
 @router.get('/default/permissions/defaults', response_model=UserPermissions)
-async def get_default_user_permissions_defaults(user=Depends(get_admin_user)):
+async def get_default_user_permissions_defaults(user=Depends(get_admin_or_above_user)):
     from open_webui.config import DEFAULT_USER_PERMISSIONS
 
     return {
@@ -497,7 +497,7 @@ async def update_user_settings_by_session_user(
     ui_settings = updated_user_settings.get('ui')
 
     if isinstance(ui_settings, dict):
-        if user.role != 'admin' and not await has_permission(
+        if user.role not in ('admin', 'superadmin') and not await has_permission(
             user.id, 'settings.interface', await Config.get('user.permissions'), db=db
         ):
             # Omitted fields are unchanged, so unauthorized Interface fields can be discarded.
@@ -505,7 +505,7 @@ async def update_user_settings_by_session_user(
                 ui_settings.pop(key, None)
 
         if (
-            user.role != 'admin'
+            user.role not in ('admin', 'superadmin')
             and 'system' in ui_settings
             and (
                 not await has_permission(user.id, 'chat.controls', await Config.get('user.permissions'), db=db)
@@ -528,7 +528,7 @@ async def update_user_settings_by_session_user(
 
     ui_notifications = ui_settings.get('notifications') if isinstance(ui_settings, dict) else None
     if (
-        user.role != 'admin'
+        user.role not in ('admin', 'superadmin')
         and (
             'notifications' in updated_user_settings
             or (isinstance(ui_notifications, dict) and 'webhook_url' in ui_notifications)
@@ -887,6 +887,8 @@ async def get_user_active_status_by_id(
 # Update User By Id
 
 
+# Gnos3: sessions and API keys of other people stay superadmin-only (get_admin_user): rotating a
+# key returns it, so an `admin` could otherwise take over a superadmin's account.
 @router.post('/{user_id}/sessions/revoke', response_model=bool)
 async def revoke_user_sessions(request: Request, user_id: str, session_user=Depends(get_admin_user)):
     target = await Users.get_user_by_id(user_id)
@@ -919,7 +921,7 @@ async def rotate_user_api_key_by_id(
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACTION_PROHIBITED)
 
     if not await Config.get('auth.enable_api_keys') or (
-        target_user.role != 'admin'
+        target_user.role not in ('admin', 'superadmin')
         and not await has_permission(target_user.id, 'features.api_keys', await Config.get('user.permissions'), db=db)
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.API_KEY_CREATION_NOT_ALLOWED)

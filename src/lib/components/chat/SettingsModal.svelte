@@ -9,7 +9,7 @@
 	import { getContext, tick } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
-	import { config, mobile, models, settings, user, visibleControls } from '$lib/stores';
+	import { config, mobile, models, settings, user, visibleControls, isAdmin, isSuperadmin } from '$lib/stores';
 	import type { SettingsModalRequest } from '$lib/stores';
 	import { getUserSettings, updateUserSettings } from '$lib/apis/users';
 	import { getBackendConfig, getModels as _getModels } from '$lib/apis';
@@ -402,7 +402,7 @@
 
 			if (tab.id === 'audio') {
 				return (
-					$user?.role === 'admin' ||
+					$isAdmin ||
 					($user?.permissions?.chat?.stt ?? true) ||
 					($user?.permissions?.chat?.tts ?? true) ||
 					($user?.permissions?.chat?.call ?? true)
@@ -424,7 +424,7 @@
 		});
 
 		return (
-			$user?.role === 'admin' ? [...personalSettings, ...administratorTabs] : personalSettings
+			$isSuperadmin ? [...personalSettings, ...administratorTabs] : personalSettings
 		).filter(
 			(tab) =>
 				(tab.id !== 'admin:analytics' || ($config?.features?.enable_admin_analytics ?? true)) &&
@@ -512,7 +512,7 @@
 		tabElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
 	};
 
-	$: if ($user?.role !== 'admin' && isAdminTab(selectedTab)) {
+	$: if (!$isSuperadmin && isAdminTab(selectedTab)) {
 		selectedTab = 'general';
 	}
 

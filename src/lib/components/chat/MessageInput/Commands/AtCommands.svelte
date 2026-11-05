@@ -9,7 +9,8 @@
 		selectedTerminalId,
 		settings,
 		terminalServers,
-		user
+		user,
+		isAdmin
 	} from '$lib/stores';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { getFolders } from '$lib/apis/folders';
@@ -63,7 +64,7 @@
 
 	$: filteredModels = query ? fuse.search(query).map((e) => e.item) : modelItems;
 	let webUploadEnabled: boolean = true;
-	$: webUploadEnabled = $user?.role === 'admin' || ($user?.permissions?.chat?.web_upload ?? true);
+	$: webUploadEnabled = $isAdmin || ($user?.permissions?.chat?.web_upload ?? true);
 	$: knowledgeResults = [
 		...filesystemItems,
 		...(query.startsWith('http')

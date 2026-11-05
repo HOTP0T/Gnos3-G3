@@ -17,6 +17,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from open_webui.internal.db import get_async_db_context
+from open_webui.models.config import Config
 from open_webui.models.files import Files, File, FileForm
 from open_webui.models.knowledge import Knowledges, Knowledge
 from open_webui.storage.provider import Storage
@@ -39,7 +40,7 @@ async def permitted(request, user):
         return True
     # The base holds only the user's own Office files and is created for them,
     # so Office access is enough; workspace.knowledge gates hand-made bases.
-    return await has_permission(user.id,'modules.office.read',request.app.state.config.USER_PERMISSIONS)
+    return await has_permission(user.id,'modules.office.read',await Config.get('user.permissions'))
 
 async def private_knowledge(user, create=True):
     identity=str(uuid.uuid5(uuid.NAMESPACE_URL,'gnos3-office-knowledge:'+user.id))
@@ -97,8 +98,9 @@ async def import_file(request,client,headers,knowledge_id,user,source):
         await Knowledges.add_file_to_knowledge_by_id(knowledge_id,file_id,user.id)
     try:
         if content is None:
-            from open_webui.routers.retrieval import build_loader_from_config,get_loader_config
-            loader=build_loader_from_config(request,await get_loader_config())
+            from open_webui.retrieval.utils import build_loader_from_config
+            from open_webui.routers.retrieval import RETRIEVAL_CONFIG_KEYS
+            loader=build_loader_from_config(await Config.get_many(*RETRIEVAL_CONFIG_KEYS.values()))
             loader.user=user
             loader.metadata={'file_id':file_id,'file_name':source['name'],'file_content_type':meta['content_type']}
             local=await asyncio.to_thread(Storage.get_file,path)

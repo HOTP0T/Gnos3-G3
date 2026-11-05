@@ -384,7 +384,7 @@
 
 			<div class="px-5 pt-2 pb-5">
 				<div class="text-sm text-gray-500 dark:text-gray-400">
-					<!-- LICENSE covers this Gnos3 Community wordmark.
+					<!-- LICENSE covers this Open WebUI Community wordmark.
 					Do not alter, remove, obscure, or replace it except as LICENSE permits:
 					https://docs.openwebui.com/license. -->
 					{$i18n.t('Do you want to sync your usage stats with Gnos3 Community?')}
@@ -404,7 +404,7 @@
 						{$i18n.t('What is shared:')}
 					</div>
 					<ul class="list-disc list-inside space-y-0.5 ml-1 mb-2">
-						<!-- LICENSE covers this Gnos3 wordmark.
+						<!-- LICENSE covers this Open WebUI wordmark.
 						Do not alter, remove, obscure, or replace it except as LICENSE permits:
 						https://docs.openwebui.com/license. -->
 						<li>{$i18n.t('Gnos3 version')}</li>

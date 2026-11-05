@@ -7,7 +7,7 @@
 	import { getUsage } from '$lib/apis';
 	import { getLogoutRedirectUrl, getSessionUser, userSignOut } from '$lib/apis/auths';
 
-	import { showSettings, mobile, showSidebar, user, config, settings } from '$lib/stores';
+	import { showSettings, mobile, showSidebar, user, config, settings, isAdmin } from '$lib/stores';
 
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 
@@ -143,7 +143,7 @@
 						</div>
 						<div class="self-center min-w-0 flex-1 truncate">{$user.name}</div>
 
-						{#if showActiveUsers && ($config?.features?.enable_public_active_users_count || role === 'admin') && usage?.user_count}
+						{#if showActiveUsers && ($config?.features?.enable_public_active_users_count || (role === 'admin' || role === 'superadmin')) && usage?.user_count}
 							<Tooltip
 								content={usage?.model_ids && usage?.model_ids.length > 0
 									? `${$i18n.t('Running')}: ${usage.model_ids.join(', ')} ✨`
@@ -152,7 +152,7 @@
 								<div
 									class="ml-auto flex shrink-0 items-center justify-end gap-1 rounded-full px-1.5 py-0.5 text-[0.6875rem] leading-none text-gray-500 dark:text-gray-400"
 									on:mouseenter={() => {
-										if ($config?.features?.enable_public_active_users_count || role === 'admin') {
+										if ($config?.features?.enable_public_active_users_count || (role === 'admin' || role === 'superadmin')) {
 											getUsageInfo();
 										}
 									}}
@@ -250,7 +250,7 @@
 				<hr class="border-gray-50/30 dark:border-gray-800/30 my-0.5 mx-1 p-0" />
 			{/if}
 
-			{#if $user?.role === 'admin' || $user?.permissions?.workspace?.models || $user?.permissions?.workspace?.knowledge || $user?.permissions?.workspace?.prompts || $user?.permissions?.workspace?.tools || $user?.permissions?.workspace?.skills}
+			{#if $isAdmin || $user?.permissions?.workspace?.models || $user?.permissions?.workspace?.knowledge || $user?.permissions?.workspace?.prompts || $user?.permissions?.workspace?.tools || $user?.permissions?.workspace?.skills}
 				<div
 					class="user-menu-row flex items-center w-full rounded-xl hover:bg-gray-50/60 dark:hover:bg-gray-800/60 transition-colors"
 				>
@@ -301,7 +301,7 @@
 				</div>
 			{/if}
 
-			{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))}
+			{#if ($config?.features?.enable_notes ?? false) && ($isAdmin || ($user?.permissions?.features?.notes ?? true))}
 				<div
 					class="user-menu-row flex items-center w-full rounded-xl hover:bg-gray-50/60 dark:hover:bg-gray-800/60 transition-colors"
 				>
@@ -352,7 +352,7 @@
 				</div>
 			{/if}
 
-			{#if $config?.features?.enable_calendar && ($user?.role === 'admin' || $user?.permissions?.features?.calendar)}
+			{#if $config?.features?.enable_calendar && ($isAdmin || $user?.permissions?.features?.calendar)}
 				<div
 					class="user-menu-row flex items-center w-full rounded-xl hover:bg-gray-50/60 dark:hover:bg-gray-800/60 transition-colors"
 				>
@@ -403,7 +403,7 @@
 				</div>
 			{/if}
 
-			{#if $config?.features?.enable_automations && ($user?.role === 'admin' || $user?.permissions?.features?.automations)}
+			{#if $config?.features?.enable_automations && ($isAdmin || $user?.permissions?.features?.automations)}
 				<div
 					class="user-menu-row flex items-center w-full rounded-xl hover:bg-gray-50/60 dark:hover:bg-gray-800/60 transition-colors"
 				>
@@ -454,7 +454,7 @@
 				</div>
 			{/if}
 
-			{#if role === 'admin'}
+			{#if (role === 'admin' || role === 'superadmin')}
 				<div
 					class="user-menu-row flex items-center w-full rounded-xl hover:bg-gray-50/60 dark:hover:bg-gray-800/60 transition-colors"
 				>
@@ -510,7 +510,7 @@
 
 				<!-- {$i18n.t('Help')} -->
 
-				{#if $user?.role === 'admin'}
+				{#if $isAdmin}
 					<a
 						role="menuitem"
 						href="https://docs.openwebui.com"

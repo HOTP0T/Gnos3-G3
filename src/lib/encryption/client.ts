@@ -1,3 +1,4 @@
+import { isAdminRole } from '$lib/utils/roles';
 import type { Socket } from 'socket.io-client';
 import type { SessionUser } from '$lib/stores';
 import { writable } from 'svelte/store';
@@ -50,7 +51,7 @@ export function canUseEncryption(
 	return !!(
 		features?.enable_channels &&
 		features?.enable_encrypted_channels &&
-		(account?.role === 'admin' ||
+		(isAdminRole(account?.role) ||
 			(account?.role === 'user' &&
 				account.permissions?.features?.channels === true &&
 				account.permissions?.features?.encrypted_channels === true))

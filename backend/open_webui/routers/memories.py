@@ -38,7 +38,7 @@ async def check_memories_permission(user):
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if user.role != 'admin' and not await has_permission(user.id, 'features.memories', config.get('user.permissions')):
+    if user.role not in ('admin', 'superadmin') and not await has_permission(user.id, 'features.memories', config.get('user.permissions')):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,

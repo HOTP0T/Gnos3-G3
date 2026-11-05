@@ -257,7 +257,7 @@
 		<ChatParticipants participants={liveParticipants} mode="presence" avatarClass="size-5" />
 	{/if}
 
-	{#if shareEnabled && chat?.id && (Object.keys(history?.messages ?? {}).length > 0 || scrollToTop || ($artifactContents ?? []).length > 0 || (!readOnly && !$temporaryChatEnabled) || $user?.role === 'admin' || ($user?.permissions?.chat?.export ?? true))}
+	{#if shareEnabled && chat?.id && (Object.keys(history?.messages ?? {}).length > 0 || scrollToTop || ($artifactContents ?? []).length > 0 || (!readOnly && !$temporaryChatEnabled) || $isAdmin || ($user?.permissions?.chat?.export ?? true))}
 		<Menu
 			{chat}
 			{shareEnabled}
@@ -351,7 +351,7 @@
 								</h1>
 							{/if}
 
-							{#if !$temporaryChatEnabled && ($user?.role === 'admin' || ($user?.permissions?.chat?.delete ?? true))}
+							{#if !$temporaryChatEnabled && ($isAdmin || ($user?.permissions?.chat?.delete ?? true))}
 								<button
 									id="delete-chat-button"
 									aria-label={$i18n.t('Delete')}

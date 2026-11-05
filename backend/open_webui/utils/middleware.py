@@ -2304,7 +2304,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     if folder_id and user:
         folder = await Folders.get_folder_by_id(folder_id)
-        if folder and user.role != 'admin' and not await has_folder_access(user.id, folder, 'read', db=None):
+        if folder and user.role not in ('admin', 'superadmin') and not await has_folder_access(user.id, folder, 'read', db=None):
             folder = None
 
         if folder and folder.data:
@@ -2406,7 +2406,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             and await Config.get('memories.system_context.enable')
         ):
             # features is client-supplied; re-check the permission the native FC path enforces.
-            if getattr(user, 'role', None) == 'admin' or await has_permission(
+            if getattr(user, 'role', None) in ('admin', 'superadmin') or await has_permission(
                 getattr(user, 'id', ''),
                 'features.memories',
                 await Config.get('user.permissions'),
@@ -2415,7 +2415,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
         if 'web_search' in features and features['web_search'] and await Config.get('web.search.enable'):
             # features is client-supplied; re-check the permission the native FC path enforces.
-            if getattr(user, 'role', None) == 'admin' or await has_permission(
+            if getattr(user, 'role', None) in ('admin', 'superadmin') or await has_permission(
                 getattr(user, 'id', ''),
                 'features.web_search',
                 await Config.get('user.permissions'),
@@ -2426,7 +2426,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
         if 'image_generation' in features and features['image_generation']:
             # features is client-supplied; re-check the permission the direct /images routes enforce.
-            if getattr(user, 'role', None) == 'admin' or await has_permission(
+            if getattr(user, 'role', None) in ('admin', 'superadmin') or await has_permission(
                 getattr(user, 'id', ''),
                 'features.image_generation',
                 await Config.get('user.permissions'),
@@ -2475,7 +2475,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         use_builtin_tools
         and (model.get('info', {}).get('meta', {}).get('builtinTools') or {}).get('skills', True)
         and (
-            user.role == 'admin'
+            user.role in ('admin', 'superadmin')
             or await has_permission(user.id, 'workspace.skills', await Config.get('user.permissions'))
         )
     )
@@ -4647,7 +4647,7 @@ async def streaming_chat_response_handler(response, ctx):
                 and await Config.get('code_interpreter.enable')
                 and model_capabilities.get('code_interpreter', True)
                 and (
-                    getattr(user, 'role', None) == 'admin'
+                    getattr(user, 'role', None) in ('admin', 'superadmin')
                     or await has_permission(
                         getattr(user, 'id', ''),
                         'features.code_interpreter',

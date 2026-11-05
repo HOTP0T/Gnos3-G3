@@ -2,7 +2,7 @@
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
 	import { getContext, onMount } from 'svelte';
-	import { models, config, user } from '$lib/stores';
+	import { models, config, user, isAdmin } from '$lib/stores';
 
 	import { toast } from 'svelte-sonner';
 	import {
@@ -43,7 +43,7 @@
 		const _chat = chat.chat;
 		console.log('share', _chat);
 
-		// LICENSE covers this Gnos3 Community wordmark.
+		// LICENSE covers this Open WebUI Community wordmark.
 		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Gnos3 Community'));
@@ -169,12 +169,12 @@
 					<AccessControl
 						bind:accessGrants
 						accessRoles={['read']}
-						sharePublic={$user?.permissions?.sharing?.public_chats || $user?.role === 'admin'}
-						shareOpen={$user?.permissions?.sharing?.open_chats || $user?.role === 'admin'}
+						sharePublic={$user?.permissions?.sharing?.public_chats || $isAdmin}
+						shareOpen={$user?.permissions?.sharing?.open_chats || $isAdmin}
 						shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) ||
-							$user?.role === 'admin'}
+							$isAdmin}
 						allowGroups={($user?.permissions?.access_grants?.allow_groups ?? true) ||
-							$user?.role === 'admin'}
+							$isAdmin}
 						onChange={saveAccessGrants}
 					>
 						{#if accessGrants.length > 0}
@@ -202,7 +202,7 @@
 								shareChat();
 							}}
 						>
-							<!-- LICENSE covers this Gnos3 Community wordmark.
+							<!-- LICENSE covers this Open WebUI Community wordmark.
 							Do not alter, remove, obscure, or replace it except as LICENSE permits:
 							https://docs.openwebui.com/license. -->
 							{$i18n.t('Share to Gnos3 Community')}

@@ -140,7 +140,7 @@ async def _verify_background_image(url: str | None, user, db, previous_url: str 
     file_id = url.split('/')[-2]
     file = await Files.get_file_by_id(file_id, db=db)
     if not file or not (
-        user.role == 'admin' or file.user_id == user.id or await has_access_to_file(file_id, 'read', user, db=db)
+        user.role in ('admin', 'superadmin') or file.user_id == user.id or await has_access_to_file(file_id, 'read', user, db=db)
     ):
         raise HTTPException(status_code=403, detail='Background image is not accessible.')
     try:
@@ -176,7 +176,7 @@ async def _verify_voice_avatar(avatar, user, db, previous=None) -> None:
             continue
         file = await Files.get_file_by_id(file_id, db=db)
         if not file or not (
-            user.role == 'admin' or file.user_id == user.id or await has_access_to_file(file_id, 'read', user, db=db)
+            user.role in ('admin', 'superadmin') or file.user_id == user.id or await has_access_to_file(file_id, 'read', user, db=db)
         ):
             raise HTTPException(status_code=403, detail='Avatar or animation file is not accessible. Upload it again.')
         try:
@@ -194,7 +194,7 @@ async def _verify_knowledge_file_access(
     db: AsyncSession,
 ) -> None:
     """Raise 403 if any knowledge item references a file the caller cannot read."""
-    if not knowledge_items or user.role == 'admin':
+    if not knowledge_items or user.role in ('admin', 'superadmin'):
         return
     for item in knowledge_items:
         if not isinstance(item, dict) or item.get('type') != 'file':
@@ -369,7 +369,7 @@ async def create_new_model(
             detail=ERROR_MESSAGES.MODEL_ID_TAKEN,
         )
 
-    if user.role != 'admin':
+    if user.role not in ('admin', 'superadmin'):
         if not form_data.base_model_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -577,7 +577,7 @@ async def import_models(
                             )
 
                         if (
-                            user.role != 'admin'
+                            user.role not in ('admin', 'superadmin')
                             and existing_model.base_model_id
                             and not model_data.get('base_model_id', existing_model.base_model_id)
                         ):
@@ -603,7 +603,7 @@ async def import_models(
                         model_data['params'] = model_data.get('params', {})
                         new_model = ModelForm(**model_data)
 
-                        if user.role != 'admin':
+                        if user.role not in ('admin', 'superadmin'):
                             if not new_model.base_model_id:
                                 log.warning(
                                     'import_models: user %s skipped model %s (no base model set)',
@@ -826,7 +826,7 @@ async def authorized_model_history(id, user, db):
         raise HTTPException(404, ERROR_MESSAGES.NOT_FOUND)
     if not (
         user.id == model.user_id
-        or (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL)
+        or (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL)
         or await AccessGrants.has_access(
             user_id=user.id, resource_type='model', resource_id=id, permission='write', db=db
         )
@@ -884,7 +884,7 @@ async def _verify_version_dependencies(request, form, user, db):
     async def require_resource(resource_type, resource_id, resource):
         if not resource or getattr(resource, 'is_active', True) is False:
             raise HTTPException(400, f'Referenced {resource_type} is unavailable: {resource_id}')
-        if not (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL) and resource.user_id != user.id:
+        if not (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL) and resource.user_id != user.id:
             if not await AccessGrants.has_access(
                 user_id=user.id, resource_type=resource_type, resource_id=resource_id, permission='read', db=db
             ):
@@ -899,7 +899,7 @@ async def _verify_version_dependencies(request, form, user, db):
             continue
         if item.get('type') == 'file':
             file = await Files.get_file_by_id(item['id'], db=db)
-            if not file or not (user.role == 'admin' or await has_access_to_file(file.id, 'read', user, db=db)):
+            if not file or not (user.role in ('admin', 'superadmin') or await has_access_to_file(file.id, 'read', user, db=db)):
                 raise HTTPException(400, 'A referenced knowledge file is missing or inaccessible.')
         elif item.get('type') == 'note':
             await require_resource('note', item['id'], await Notes.get_note_by_id(item['id'], db=db))
@@ -941,7 +941,7 @@ async def set_model_version(
     form = ModelForm(id=id, **deepcopy(entry.snapshot))
     # A missing historical controls key means an empty configuration, not "preserve current".
     form.params.model_fields_set.add('model_controls')
-    if user.role != 'admin' and model.base_model_id and not form.base_model_id:
+    if user.role not in ('admin', 'superadmin') and model.base_model_id and not form.base_model_id:
         raise HTTPException(403, ERROR_MESSAGES.ACCESS_PROHIBITED)
     await _check_model_controls(form, model, user, request)
     await _verify_version_dependencies(request, form, user, db)
@@ -970,7 +970,7 @@ async def get_model_profile_image(
     profile_image_url = None
     updated_at = None
 
-    bypass_access_control = BYPASS_MODEL_ACCESS_CONTROL or (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL)
+    bypass_access_control = BYPASS_MODEL_ACCESS_CONTROL or (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL)
 
     # First, check the database for regular models
     model_meta = await Models.get_model_meta_by_id(id, db=db)
@@ -1000,7 +1000,7 @@ async def get_model_profile_image(
                 access_grants = arena_meta.get('access_grants', [])
                 if (
                     bypass_access_control
-                    or (not access_grants and user.role == 'admin')
+                    or (not access_grants and user.role in ('admin', 'superadmin'))
                     or await has_access(user.id, permission='read', access_grants=access_grants, db=db)
                 ):
                     profile_image_url = arena_meta.get('profile_image_url')
@@ -1159,7 +1159,7 @@ async def update_model_by_id(
         # Should never be stored: a model cannot be based on itself.
         form_data.base_model_id = None
 
-    if user.role != 'admin' and model.base_model_id and not form_data.base_model_id:
+    if user.role not in ('admin', 'superadmin') and model.base_model_id and not form_data.base_model_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.UNAUTHORIZED,

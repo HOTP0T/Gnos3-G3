@@ -83,7 +83,7 @@
 		if (closing) return;
 		bridge = new AppBridge(
 			null,
-			{ name: 'Open WebUI', version: WEBUI_VERSION },
+			{ name: 'Gnos3', version: WEBUI_VERSION },
 			{
 				openLinks: {},
 				serverTools: {},

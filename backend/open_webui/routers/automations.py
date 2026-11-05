@@ -122,7 +122,7 @@ async def check_automation_channel_access(form_data: AutomationForm, user, db: A
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if user.role == 'admin':
+    if user.role in ('admin', 'superadmin'):
         return
     if not await has_permission(user.id, 'features.channels', await Config.get('user.permissions')):
         raise HTTPException(

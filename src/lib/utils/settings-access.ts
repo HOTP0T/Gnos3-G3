@@ -1,35 +1,36 @@
+import { isAdminRole } from './roles';
 import { CONTROL_LABELS, isControlVisible, type ControlId } from './ui-visibility';
 import type { SettingsAccessContext } from './settings-search';
 
 export const canEditSystemPrompt = ({ user }: SettingsAccessContext) =>
-	user?.role === 'admin' ||
+	isAdminRole(user?.role) ||
 	((user?.permissions?.chat?.controls ?? true) && (user?.permissions?.chat?.system_prompt ?? true));
 export const canEditParameters = ({ user }: SettingsAccessContext) =>
-	user?.role === 'admin' ||
+	isAdminRole(user?.role) ||
 	((user?.permissions?.chat?.controls ?? true) && (user?.permissions?.chat?.params ?? true));
 export const canManageChats = (
 	{ user }: SettingsAccessContext,
 	action: 'import' | 'export' | 'delete'
-) => user?.role === 'admin' || (user?.permissions?.chat?.[action] ?? true);
+) => isAdminRole(user?.role) || (user?.permissions?.chat?.[action] ?? true);
 export const canUseApiKeys = ({ user, config }: SettingsAccessContext) =>
 	(config?.features?.enable_api_keys ?? true) &&
-	(user?.role === 'admin' || (user?.permissions?.features?.api_keys ?? false));
+	(isAdminRole(user?.role) || (user?.permissions?.features?.api_keys ?? false));
 export const canUseNotificationTargets = ({ user, config }: SettingsAccessContext) =>
 	config?.features?.enable_user_webhooks &&
-	(user?.role === 'admin' || (user?.permissions?.features?.webhooks ?? false));
+	(isAdminRole(user?.role) || (user?.permissions?.features?.webhooks ?? false));
 export const canUseTemporaryChats = ({ user }: SettingsAccessContext) =>
-	user?.role === 'admin' || user?.permissions?.chat?.temporary;
+	isAdminRole(user?.role) || user?.permissions?.chat?.temporary;
 export const canUseChannels = ({ user, config }: SettingsAccessContext) =>
 	config?.features?.enable_channels &&
-	(user?.role === 'admin' || (user?.permissions?.features?.channels ?? true));
+	(isAdminRole(user?.role) || (user?.permissions?.features?.channels ?? true));
 export const canUseCalls = ({ user }: SettingsAccessContext) =>
-	user?.role === 'admin' || (user?.permissions?.chat?.call ?? true);
+	isAdminRole(user?.role) || (user?.permissions?.chat?.call ?? true);
 export const canUseWebSearch = ({ user, config }: SettingsAccessContext) =>
 	config?.features?.enable_web_search &&
-	(user?.role === 'admin' || user?.permissions?.features?.web_search);
+	(isAdminRole(user?.role) || user?.permissions?.features?.web_search);
 export const canRegenerateResponses = ({ user }: SettingsAccessContext) =>
-	user?.role === 'admin' || (user?.permissions?.chat?.regenerate_response ?? true);
-export const isSettingsAdmin = ({ user }: SettingsAccessContext) => user?.role === 'admin';
+	isAdminRole(user?.role) || (user?.permissions?.chat?.regenerate_response ?? true);
+export const isSettingsAdmin = ({ user }: SettingsAccessContext) => isAdminRole(user?.role);
 
 /** Search follows the same permissions and visibility as the rendered controls. */
 export function canSearchSetting(

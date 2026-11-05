@@ -38,7 +38,9 @@
 		showTabs,
 		mobile,
 		chatId,
-		chats
+		chats,
+		isAdmin,
+		isSuperadmin
 	} from '$lib/stores';
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
@@ -216,7 +218,7 @@
 		handledSettingsUrl = urlKey;
 
 		showSettings.set(
-			requestedSettings.startsWith('admin:') && $user?.role !== 'admin'
+			requestedSettings.startsWith('admin:') && !$isSuperadmin
 				? 'general'
 				: requestedSettings
 		);
@@ -388,9 +390,7 @@
 		};
 		setupKeyboardShortcuts();
 
-		if ($isAdmin && ($settings?.showChangelog ?? true)) {
-			showChangelog.set($settings?.version !== $config.version);
-		}
+		// Gnos3: no automatic "What's New": those are Open WebUI's release notes, not ours.
 
 		if ($isAdmin || ($user?.permissions?.chat?.temporary ?? true)) {
 			if ($page.url.searchParams.get('temporary-chat') === 'true') {

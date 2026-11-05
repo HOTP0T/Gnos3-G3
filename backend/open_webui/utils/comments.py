@@ -33,7 +33,7 @@ def resource_models():
 
 async def provider_comment_resource(resource_id, user, request):
     # Unconfigured provider models are visible only to admins, as in the catalog.
-    if user.role != 'admin' or request is None:
+    if user.role not in ('admin', 'superadmin') or request is None:
         raise HTTPException(404, 'Resource not found')
     providers = getattr(request.app.state, 'BASE_MODELS', [])
     if not providers:
@@ -51,7 +51,7 @@ async def comment_resource(resource_type, resource_id, user, db, *, lock=False, 
     if not await Config.get('comments.enable'):
         raise HTTPException(403, 'Comments are disabled')
     model = resource_models().get(resource_type)
-    if model is None or user.role not in {'user', 'admin'}:
+    if model is None or user.role not in {'user', 'admin', 'superadmin'}:
         raise HTTPException(404, 'Resource not found')
     query = select(model).where(model.id == resource_id)
     resource = await db.scalar(query.with_for_update() if lock else query)
@@ -67,13 +67,13 @@ async def comment_resource(resource_type, resource_id, user, db, *, lock=False, 
     else:
         if resource_type == 'note':
             if not await Config.get('notes.enable') or (
-                user.role != 'admin'
+                user.role not in ('admin', 'superadmin')
                 and not await has_permission(user.id, 'features.notes', await Config.get('user.permissions'), db=db)
             ):
                 raise HTTPException(404, 'Resource not found')
         allowed = (
             allowed
-            or (user.role == 'admin' and (resource_type == 'note' or BYPASS_ADMIN_ACCESS_CONTROL))
+            or (user.role in ('admin', 'superadmin') and (resource_type == 'note' or BYPASS_ADMIN_ACCESS_CONTROL))
             or await AccessGrants.has_access(user.id, resource_type, resource_id, 'read', db=db)
         )
     if not allowed:

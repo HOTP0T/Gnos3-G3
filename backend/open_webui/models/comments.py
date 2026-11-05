@@ -131,7 +131,7 @@ async def comment_responses(db: AsyncSession, comments: list[Comment], user, own
             'reactions': reactions.get(comment.id, []),
             'can_edit': not comment.deleted_at and comment.user_id == user.id,
             'can_delete': not comment.deleted_at
-            and (comment.user_id == user.id or owner_id == user.id or user.role == 'admin'),
+            and (comment.user_id == user.id or owner_id == user.id or user.role in ('admin', 'superadmin')),
         }
         for comment in comments
     ]

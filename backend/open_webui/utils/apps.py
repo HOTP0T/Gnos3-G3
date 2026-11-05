@@ -245,7 +245,7 @@ async def get_app_by_id(app_id: str, db: AsyncSession, require_active: bool = Fa
 
 
 async def has_app_access(app: AppModel, user: UserModel, db: AsyncSession) -> bool:
-    return user.role == 'admin' or await AccessGrants.has_access(user.id, 'app', app.id, 'read', db=db)
+    return user.role in ('admin', 'superadmin') or await AccessGrants.has_access(user.id, 'app', app.id, 'read', db=db)
 
 
 async def check_app_channel_access(
@@ -263,9 +263,9 @@ async def check_app_channel_access(
     if not channel or channel.type == 'dm' or channel.deleted_at or channel.archived_at:
         raise HTTPException(404, 'Channel unavailable')
     if user:
-        if user.role not in ('user', 'admin'):
+        if user.role not in ('user', 'admin', 'superadmin'):
             raise HTTPException(403, 'User is inactive')
-        if user.role == 'admin':
+        if user.role in ('admin', 'superadmin'):
             return channel
         if require_manager:
             allowed = await Channels.is_user_channel_manager(channel_id, user.id, db=db)
@@ -482,7 +482,7 @@ async def send_app_invocation(
     envelope = {
         'id': operation_id,
         'type': event_type,
-        'actor': {'id': user.id, 'name': user.name, 'is_admin': user.role == 'admin'},
+        'actor': {'id': user.id, 'name': user.name, 'is_admin': user.role in ('admin', 'superadmin')},
         'channel': {'id': channel_id},
         'data': data,
         'execution_token': token,
@@ -622,7 +622,7 @@ async def authorize_app_execution(form_data: AppTokenForm, app: AppModel, db: As
     return {
         'authorized': True,
         'operation_id': value['operation_id'],
-        'actor': {'id': user.id, 'name': user.name, 'is_admin': user.role == 'admin'},
+        'actor': {'id': user.id, 'name': user.name, 'is_admin': user.role in ('admin', 'superadmin')},
         'channel_id': value['channel_id'],
         'type': value.get('type'),
         'data': value.get('data'),

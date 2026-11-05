@@ -672,7 +672,7 @@ async def get_builtin_tools(
         )
 
     async def has_user_chat_permission(permission_key: str) -> bool:
-        if user.get('role') == 'admin':
+        if user.get('role') in ('admin', 'superadmin'):
             return True
         return await has_permission(
             user.get('id', ''),
@@ -883,13 +883,13 @@ async def get_builtin_tools(
             builtin_functions.extend([view_skill, read_skill_file, grep_skill_files])
         if workspace_skill_ids:
             builtin_functions.append(update_skill_files)
-        if user.get('role') == 'admin' or await has_permission(
+        if user.get('role') in ('admin', 'superadmin') or await has_permission(
             user.get('id', ''), 'workspace.skills', await Config.get('user.permissions')
         ):
             builtin_functions.append(create_skill)
 
     if ENABLE_TOOLS and is_builtin_tool_enabled('tools'):
-        if user.get('role') == 'admin' or await has_permission(
+        if user.get('role') in ('admin', 'superadmin') or await has_permission(
             user.get('id', ''), 'workspace.tools', await Config.get('user.permissions')
         ):
             builtin_functions.append(create_tool)

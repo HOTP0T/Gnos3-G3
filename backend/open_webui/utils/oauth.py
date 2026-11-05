@@ -575,7 +575,7 @@ async def get_oauth_client_info_with_dynamic_client_registration(
         redirect_base_url = (str(webui_url or request.base_url)).rstrip('/')
 
         oauth_client_metadata = OAuthClientMetadata(
-            # LICENSE covers this Gnos3 OAuth client identifier.
+            # LICENSE covers this Open WebUI OAuth client identifier.
             # Do not alter, remove, obscure, or replace it except as LICENSE permits:
             # https://docs.openwebui.com/license.
             client_name='Gnos3',
@@ -1610,9 +1610,10 @@ class OAuthManager:
         auth_config = await get_oauth_runtime_config()
         user_count = await Users.get_num_users()
         if user and user_count == 1:
-            # If the user is the only user, assign the role "admin" - actually repairs role for single user on login
-            log.debug('Assigning the only user the admin role')
-            return 'admin'
+            # If the user is the only user, assign the platform-owner role ('superadmin'),
+            # as a first sign-up does - actually repairs role for single user on login
+            log.debug('Assigning the only user the superadmin role')
+            return 'superadmin'
         if not user and user_count == 0:
             # First-user bootstrap: skip role management gating so the
             # instance can be initialized.  We intentionally return the
@@ -2209,7 +2210,7 @@ class OAuthManager:
                     # insert to avoid TOCTOU race on first-user registration.
                     # Matches signup_handler pattern.
                     if await Users.get_num_users(db=db) == 1:
-                        await Users.update_user_role_by_id(user.id, 'admin', db=db)
+                        await Users.update_user_role_by_id(user.id, 'superadmin', db=db)
                         user = await Users.get_user_by_id(user.id, db=db)
 
                     default_group_id = await Config.get('ui.default_group_id')

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timedelta
 from threading import Lock
 from time import monotonic
-from typing import Union
+from typing import List, Optional, Union
 
 import bcrypt
 import jwt
@@ -748,7 +748,7 @@ async def create_signin_response(
     if current.session_stamp != auth.session_stamp or current.password != auth.password:
         raise HTTPException(409, 'Authentication changed. Please sign in again.')
     config = await get_mfa_config()
-    if config.ENABLE_MFA and user.role not in {'admin', 'user'}:
+    if config.ENABLE_MFA and user.role not in {'admin', 'user', 'superadmin'}:
         return {'next_step': 'pending'}
     if is_mfa_required(source, config):
         return await start_mfa_login(current, source, oauth_session_id=oauth_session_id, provider=provider)

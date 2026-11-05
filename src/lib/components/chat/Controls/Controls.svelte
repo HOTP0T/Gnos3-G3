@@ -9,7 +9,7 @@
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
 
-	import { config, user, settings } from '$lib/stores';
+	import { config, user, settings, isAdmin } from '$lib/stores';
 	export let models = [];
 	export let chatFiles = [];
 	export let params: Record<string, any> = {};

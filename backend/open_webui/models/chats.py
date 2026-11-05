@@ -645,7 +645,7 @@ class ChatTable:
         from open_webui.utils.access_control import get_permissions
 
         user = await Users.get_user_by_id(user_id, db=db)
-        if user and user.role == 'admin':
+        if user and user.role in ('admin', 'superadmin'):
             return
         if not user:
             raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
@@ -1994,14 +1994,14 @@ class ChatTable:
         permission: Literal['read', 'write'] = 'read',
         chat: Chat | ChatModel | None = None,
     ) -> ChatModel | None:
-        if user.role not in {'user', 'admin'}:
+        if user.role not in {'user', 'admin', 'superadmin'}:
             return None
         chat = chat if chat is not None else await self.get_chat_by_id(id, db=db)
         if not chat:
             return None
         if (
             chat.user_id == user.id
-            or user.role == 'admin'
+            or user.role in ('admin', 'superadmin')
             and permission == 'read'
             and (ENABLE_ADMIN_CHAT_ACCESS or is_internal_chat(chat.meta))
         ):
@@ -2957,7 +2957,7 @@ class ChatTable:
                 continue
             if (
                 file.user_id == user_id
-                or (user and user.role == 'admin')
+                or (user and user.role in ('admin', 'superadmin'))
                 or (user and await has_access_to_file(file_id, 'read', user, db=db))
             ):
                 accessible_file_ids.append(file_id)

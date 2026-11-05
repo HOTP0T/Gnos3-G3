@@ -25,8 +25,11 @@ class Seeded:
     def __init__(self, value=()):
         self.value = list(value)
 
-    async def async_save(self):
-        pass
+    async def get(self):
+        return self.value
+
+    async def set(self, value):
+        self.value = list(value)
 
 
 class FakeConnectors:

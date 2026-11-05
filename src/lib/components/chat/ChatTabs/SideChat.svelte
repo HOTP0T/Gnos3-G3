@@ -11,7 +11,8 @@
 		toolServers,
 		terminalServers,
 		selectedTerminalId,
-		type Model
+		type Model,
+		isAdmin
 	} from '$lib/stores';
 	import { createTemporaryChatId } from '$lib/utils/chatId';
 	import { generateOpenAIChatCompletion, getErrorMessage } from '$lib/apis/openai';
@@ -29,7 +30,7 @@
 	export let systemPrompt = '';
 	const i18n = getContext<any>('i18n');
 	$: sideChatAllowed =
-		$user?.role === 'admin' ||
+		$isAdmin ||
 		($user?.role === 'user' &&
 			($user.permissions?.chat?.temporary ?? true) &&
 			($user.permissions?.chat?.side_chat ?? false));

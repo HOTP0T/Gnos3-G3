@@ -10,7 +10,9 @@
 		showSettings,
 		terminalServers,
 		selectedTerminalId,
-		user
+		user,
+		isAdmin,
+		isSuperadmin
 	} from '$lib/stores';
 	import { getToolServersData } from '$lib/apis';
 	import { isTemporaryChatId } from '$lib/utils/chatId';
@@ -251,7 +253,7 @@
 							>
 								{$i18n.t('System')}
 							</span>
-							{#if $user?.role === 'admin'}
+							{#if $isSuperadmin}
 								<Tooltip content={$i18n.t('Add Terminal')} placement="top">
 									<button
 										type="button"

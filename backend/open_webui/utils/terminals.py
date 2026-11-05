@@ -278,14 +278,14 @@ async def filter_user_terminal_tools(request, user, tools: dict, metadata: dict,
             'spec': {
                 **tool['spec'],
                 'description': tool['spec'].get('description', '')
-                + "\nReads the user's Open WebUI Terminal tab, separate from the Desktop. "
+                + "\nReads the user's Gnos3 Terminal tab, separate from the Desktop. "
                 'Use this tool when the user refers to an open terminal tab.',
             },
         }
 
 
 async def upload_files_to_terminal(request, user, files: list[dict], metadata: dict, extra_params: dict):
-    """Copy Open WebUI files to the selected terminal, adding terminal_path or terminal_error to each entry."""
+    """Copy Gnos3 files to the selected terminal, adding terminal_path or terminal_error to each entry."""
     if not metadata.get('terminal_id') or not files:
         return
     try:
@@ -310,11 +310,11 @@ async def upload_files_to_terminal(request, user, files: list[dict], metadata: d
                 entry['terminal_path'] = result['path']
             except Exception as error:
                 log.warning('File terminal upload failed (%s)', type(error).__name__)
-                entry['terminal_error'] = 'File saved in Open WebUI, but upload to the selected terminal failed.'
+                entry['terminal_error'] = 'File saved in Gnos3, but upload to the selected terminal failed.'
     except Exception as error:
         log.warning('File terminal unavailable (%s)', type(error).__name__)
         for entry in files:
-            entry['terminal_error'] = 'File saved in Open WebUI, but the selected terminal is unavailable.'
+            entry['terminal_error'] = 'File saved in Gnos3, but the selected terminal is unavailable.'
 
 
 async def get_terminal_agents_md(request, user, metadata: dict, extra_params: dict | None = None) -> str | None:

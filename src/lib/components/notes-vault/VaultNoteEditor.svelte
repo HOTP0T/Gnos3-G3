@@ -53,7 +53,7 @@
 	import RichTextInput from '$lib/components/common/RichTextInput.svelte';
 	import AccessControlModal from '$lib/components/workspace/common/AccessControlModal.svelte';
 	import VoiceRecording from '$lib/components/chat/MessageInput/VoiceRecording.svelte';
-	import Chat from '$lib/components/notes/NoteEditor/Chat.svelte';
+	import Chat from './note-chat/Chat.svelte';
 	import { downloadPdf } from '$lib/components/notes/utils';
 
 	import {

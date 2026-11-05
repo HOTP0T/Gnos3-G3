@@ -708,7 +708,7 @@ async def update_user(
     # Do not let SCIM's active flag demote an existing admin: a routine IdP sync or misconfiguration
     # must not silently strip a locally-provisioned admin's role and lock the instance out. Admin
     # role changes go through the dedicated admin endpoints, not SCIM provisioning.
-    if user_data.active is not None and user.role != 'admin':
+    if user_data.active is not None and user.role not in ('admin', 'superadmin'):
         update_data['role'] = 'user' if user_data.active else 'pending'
 
     if user_data.photos and len(user_data.photos) > 0:
@@ -800,7 +800,7 @@ async def patch_user(
                 if not isinstance(value, bool):
                     return scim_error(400, 'active must be a boolean', 'invalidValue')
                 # Same guard as update_user: never demote an existing admin via SCIM.
-                if user.role != 'admin':
+                if user.role not in ('admin', 'superadmin'):
                     update_data['role'] = 'user' if value else 'pending'
             elif path in fields:
                 if not isinstance(value, str):
@@ -871,7 +871,7 @@ async def delete_user(
         )
 
     # An IdP prune must not lock the instance out by deleting an admin.
-    if user.role == 'admin':
+    if user.role in ('admin', 'superadmin'):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACTION_PROHIBITED,

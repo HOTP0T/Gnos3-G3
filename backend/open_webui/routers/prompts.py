@@ -628,7 +628,7 @@ async def get_prompt_diff(
 
     # Check read access
     if not (
-        user.role == 'admin'
+        user.role in ('admin', 'superadmin')
         or prompt.user_id == user.id
         or await AccessGrants.has_access(
             user_id=user.id,

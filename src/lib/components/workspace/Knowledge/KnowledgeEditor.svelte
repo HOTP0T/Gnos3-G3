@@ -5,7 +5,7 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 	import { createNewKnowledge, updateKnowledgeById } from '$lib/apis/knowledge';
 
 	import AccessControl from '../common/AccessControl.svelte';
@@ -176,12 +176,12 @@
 				<AccessControl
 					bind:accessGrants
 					accessRoles={['read', 'write']}
-					share={$user?.permissions?.sharing?.knowledge || $user?.role === 'admin'}
-					sharePublic={$user?.permissions?.sharing?.public_knowledge || $user?.role === 'admin'}
+					share={$user?.permissions?.sharing?.knowledge || $isAdmin}
+					sharePublic={$user?.permissions?.sharing?.public_knowledge || $isAdmin}
 					shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) ||
-						$user?.role === 'admin'}
+						$isAdmin}
 					allowGroups={($user?.permissions?.access_grants?.allow_groups ?? true) ||
-						$user?.role === 'admin'}
+						$isAdmin}
 				/>
 			</div>
 		{/if}

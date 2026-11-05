@@ -1,3 +1,4 @@
+import { isAdminRole } from './roles';
 // Stable control IDs describe user actions or preferences, not component locations.
 export const CONTROL_LABELS = {
 	'model_editor.capabilities.vision': 'settings.admin.models.capabilities.vision.label',
@@ -103,4 +104,4 @@ export const CONTROL_GROUPS = [
 ] as const;
 
 export const isControlVisible = (id: ControlId, { user, config }: VisibilityContext) =>
-	user?.role === 'admin' || config?.ui?.visibility?.[id] !== false;
+	isAdminRole(user?.role) || config?.ui?.visibility?.[id] !== false;

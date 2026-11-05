@@ -16,7 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
-	import { chatId, mobile, selectedFolder, showSidebar, user } from '$lib/stores';
+	import { chatId, mobile, selectedFolder, showSidebar, user, isAdmin } from '$lib/stores';
 
 	import {
 		deleteFolderById,
@@ -263,7 +263,7 @@
 									return null;
 								});
 								if (!chat && item) {
-									if (!($user?.role === 'admin' || ($user?.permissions?.chat?.import ?? true))) {
+									if (!($isAdmin || ($user?.permissions?.chat?.import ?? true))) {
 										toast.error($i18n.t('Access prohibited'));
 										return;
 									}

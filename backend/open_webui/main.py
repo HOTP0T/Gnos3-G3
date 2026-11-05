@@ -365,7 +365,7 @@ https://github.com/open-webui/open-webui
         # LICENSE covers this Open WebUI CLI identifier.
         # Do not alter, remove, obscure, or replace it except as LICENSE permits:
         # https://docs.openwebui.com/license.
-        print(f'Open WebUI v{VERSION} - building the best AI user interface.\nhttps://github.com/open-webui/open-webui')
+        print(f'Gnos3 v{VERSION} - building the best AI user interface.\nhttps://github.com/open-webui/open-webui')
 
 
 @asynccontextmanager
@@ -450,7 +450,7 @@ async def lifespan(app: FastAPI):
     # the default model, the task preset and access from the old one.
     try:
         from open_webui.utils.model_roles import follow_model_roles
-        await follow_model_roles(app)
+        await follow_model_roles()
     except Exception as exc:
         log.warning(f'Following the model settings failed (non-fatal): {exc}')
 
@@ -1274,7 +1274,7 @@ async def chat_completion(
         tool_servers = form_data.pop('tool_servers', None)
         if (
             tool_servers
-            and user.role != 'admin'
+            and user.role not in ('admin', 'superadmin')
             and not await has_permission(
                 user.id,
                 'features.direct_tool_servers',
@@ -1338,7 +1338,10 @@ async def chat_completion(
                 'function_calling': (
                     form_data.get('params', {}).get('function_calling')
                     or model_info_params.get('function_calling')
-                    or 'native'
+                    # Gnos3: upstream's default is 'native' (the model decides whether to search or
+                    # read a knowledge base). We keep Gnos3's measured flow: the switch searches, and
+                    # results go through retrieval, sized for the 16k context. Per model: 'native'.
+                    or 'legacy'
                 ),
                 'tool_approval_mode': tool_approval_mode,
                 'model_controls': model_controls,
@@ -1377,7 +1380,7 @@ async def chat_completion(
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail=ERROR_MESSAGES.NOT_FOUND,
                     )
-                if user.role != 'admin':
+                if user.role not in ('admin', 'superadmin'):
                     if channel.type in ['group', 'dm']:
                         if not await Channels.is_user_channel_member(channel.id, user.id):
                             raise HTTPException(
@@ -1403,7 +1406,7 @@ async def chat_completion(
                     if target_message and (
                         target_message.channel_id != channel.id
                         # Write access is not authorship — block cross-member edits.
-                        or (user.role != 'admin' and target_message.user_id != user.id)
+                        or (user.role not in ('admin', 'superadmin') and target_message.user_id != user.id)
                     ):
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
@@ -2057,7 +2060,7 @@ async def generate_messages(
     pipeline, then converts the response back to Anthropic Messages format.
 
     Supports both streaming and non-streaming requests.
-    All models configured in Open WebUI are accessible via this endpoint.
+    All models configured in Gnos3 are accessible via this endpoint.
 
     Authentication: Supports both standard Authorization header and
     Anthropic's x-api-key header (via middleware translation).
@@ -2128,7 +2131,7 @@ async def verify_chat_ownership(chat_id: str | None, user) -> None:
             detail='Channel chats are not supported on this endpoint',
         )
 
-    if not (user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS) and not await Chats.is_chat_owner(chat_id, user.id):
+    if not (user.role in ('admin', 'superadmin') and ENABLE_ADMIN_CHAT_ACCESS) and not await Chats.is_chat_owner(chat_id, user.id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=ERROR_MESSAGES.DEFAULT(),
@@ -2326,7 +2329,7 @@ async def get_app_config(request: Request):
             user = await Users.get_user_by_id(data['id'])
 
     group_defaults = None
-    if user is not None and user.role in ('admin', 'user'):
+    if user is not None and user.role in ('admin', 'user', 'superadmin'):
         group_defaults, _ = resolve_group_default_models(
             await Groups.get_groups_by_member_id(user.id, include_inherited=True)
         )

@@ -355,7 +355,7 @@ async def _get_accessible_kb_ids(
 
     async def _has_access(kb):
         return (
-            user_role == 'admin'
+            user_role in ('admin', 'superadmin')
             or kb.user_id == user_id
             or await AccessGrants.has_access(
                 user_id=user_id,

@@ -12,7 +12,7 @@
 	import { toast } from 'svelte-sonner';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { user, config, models } from '$lib/stores';
+	import { user, config, models, isAdmin } from '$lib/stores';
 	import ModelSelector from '$lib/components/chat/ModelSelector/Selector.svelte';
 
 	import Textarea from '$lib/components/common/Textarea.svelte';
@@ -141,7 +141,7 @@
 				{/if}
 			</div>
 			<div class="flex items-center gap-1">
-				{#if edit && folder && ($user?.role === 'admin' || (folder.user_id === $user?.id && $user?.permissions?.sharing?.folders))}
+				{#if edit && folder && ($isAdmin || (folder.user_id === $user?.id && $user?.permissions?.sharing?.folders))}
 					<AccessButton disabled={loading} on:click={() => (showAccessModal = true)} />
 				{/if}
 				<button
@@ -345,6 +345,6 @@
 	</div>
 </Modal>
 
-{#if show && edit && folder && ($user?.role === 'admin' || folder.user_id === $user?.id)}
+{#if show && edit && folder && ($isAdmin || folder.user_id === $user?.id)}
 	<FolderShareModal bind:show={showAccessModal} {folder} />
 {/if}

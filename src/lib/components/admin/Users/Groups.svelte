@@ -7,7 +7,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
-	import { adminGroupCount, user } from '$lib/stores';
+	import { adminGroupCount, user, isAdmin, isSuperadmin } from '$lib/stores';
 
 	import Search from '$lib/components/icons/Search.svelte';
 	import EditGroupModal from './Groups/EditGroupModal.svelte';

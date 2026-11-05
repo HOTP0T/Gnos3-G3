@@ -25,22 +25,15 @@ Without GNOS3_CHAT_MODEL (the dev box, a plain install) nothing happens.
 import logging
 import os
 
+from open_webui.utils.gnos3_settings import StoredValue
+
 log = logging.getLogger(__name__)
 
 # The hidden preset settings_upgrade step 2 creates for titles, tags and searches.
 TASK_MODEL_ID = 'gnos3-tasks'
 
-_chat_model_in_use = None
-
-
-def chat_model_in_use():
-    """The chat model recorded at the last start (`gnos3.models.chat`)."""
-    global _chat_model_in_use
-    if _chat_model_in_use is None:
-        from open_webui.config import PersistentConfig
-
-        _chat_model_in_use = PersistentConfig('GNOS3_CHAT_MODEL_IN_USE', 'gnos3.models.chat', '')
-    return _chat_model_in_use
+# The chat model recorded at the last start.
+CHAT_MODEL_IN_USE = StoredValue('gnos3.models.chat', '')
 
 
 def replace_model(models: list, old: str, new: str) -> list:
@@ -52,13 +45,13 @@ def replace_in_csv(csv: str, old: str, new: str) -> str:
     return ','.join(replace_model([m.strip() for m in (csv or '').split(',') if m.strip()], old, new))
 
 
-async def move_chat_model(app, old: str, new: str, models, users, ModelForm) -> list[str]:
+async def move_chat_model(config, old: str, new: str, models, users, ModelForm) -> list[str]:
     """Point everything that used `old` at `new`. Returns what changed."""
     changed = []
-    config = app.state.config
 
-    if old in [m.strip() for m in (config.DEFAULT_MODELS or '').split(',')]:
-        config.DEFAULT_MODELS = replace_in_csv(config.DEFAULT_MODELS, old, new)
+    default_models = await config.get('ui.default_models') or ''
+    if old in [m.strip() for m in default_models.split(',')]:
+        await config.upsert({'ui.default_models': replace_in_csv(default_models, old, new)})
         changed.append('default model')
 
     task = await models.get_model_by_id(TASK_MODEL_ID)
@@ -109,11 +102,14 @@ async def move_chat_model(app, old: str, new: str, models, users, ModelForm) -> 
     return changed
 
 
-async def follow_model_roles(app, models=None, users=None, in_use=None, model_form=None) -> None:
+async def follow_model_roles(models=None, users=None, in_use=None, model_form=None, config=None) -> None:
+    if config is None:
+        from open_webui.models.config import Config as config
+
     chat = os.environ.get('GNOS3_CHAT_MODEL', '').strip()
     if chat:
-        in_use = in_use or chat_model_in_use()
-        previous = (in_use.value or '').strip()
+        in_use = in_use or CHAT_MODEL_IN_USE
+        previous = (await in_use.get() or '').strip()
         if previous and previous != chat:
             if models is None:
                 from open_webui.models.models import Models as models
@@ -121,16 +117,16 @@ async def follow_model_roles(app, models=None, users=None, in_use=None, model_fo
                 from open_webui.models.users import Users as users
             if model_form is None:
                 from open_webui.models.models import ModelForm as model_form
-            changed = await move_chat_model(app, previous, chat, models, users, model_form)
+            changed = await move_chat_model(config, previous, chat, models, users, model_form)
             log.info(f'Chat model {previous} -> {chat}: moved {", ".join(changed) or "nothing"}')
         if previous != chat:
-            in_use.value = chat
-            await in_use.async_save()
+            await in_use.set(chat)
 
     embedding = os.environ.get('GNOS3_EMBEDDING_MODEL', '').strip()
-    if embedding and embedding != app.state.config.RAG_EMBEDDING_MODEL:
+    current_embedding = await config.get('rag.embedding_model')
+    if embedding and embedding != current_embedding:
         log.warning(
             f'models.env names {embedding} for embeddings, but knowledge bases use '
-            f'{app.state.config.RAG_EMBEDDING_MODEL}. Switch it in Admin > Settings > Documents '
+            f'{current_embedding}. Switch it in Admin > Settings > Documents '
             f'and re-index the knowledge bases.'
         )

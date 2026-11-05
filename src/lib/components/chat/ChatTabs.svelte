@@ -25,7 +25,8 @@
 		showFileNavPath,
 		selectedTerminalId,
 		user,
-		visibleControls
+		visibleControls,
+		isAdmin
 	} from '$lib/stores';
 
 	import { commentsRequest, resourceQuery } from '$lib/apis/comments';
@@ -471,7 +472,7 @@
 		(selectedSystemTerminalAvailable ||
 			(!selectedSystemTerminal &&
 				$config?.features?.enable_direct_integrations &&
-				($user?.role === 'admin' || ($user?.permissions?.features?.direct_tool_servers ?? true))))
+				($isAdmin || ($user?.permissions?.features?.direct_tool_servers ?? true))))
 	);
 	$: showFilesTab =
 		terminalFilesAvailable ||
@@ -554,7 +555,7 @@
 			);
 		return !!(
 			$config?.features?.enable_direct_integrations &&
-			($user?.role === 'admin' || ($user?.permissions?.features?.direct_tool_servers ?? true)) &&
+			($isAdmin || ($user?.permissions?.features?.direct_tool_servers ?? true)) &&
 			directTerminals.some((terminal) => terminal.url === selector)
 		);
 	};
@@ -652,7 +653,7 @@
 	}
 	$: if (
 		!(
-			$user?.role === 'admin' ||
+			$isAdmin ||
 			($user?.role === 'user' &&
 				($user.permissions?.chat?.temporary ?? true) &&
 				($user.permissions?.chat?.side_chat ?? false))
@@ -725,7 +726,7 @@
 		!($terminalServers ?? []).some((t) => t.id && t.id === $selectedTerminalId) &&
 		!(
 			$config?.features?.enable_direct_integrations &&
-			($user?.role === 'admin' || ($user?.permissions?.features?.direct_tool_servers ?? true))
+			($isAdmin || ($user?.permissions?.features?.direct_tool_servers ?? true))
 		)
 	) {
 		selectedTerminalId.set(null);

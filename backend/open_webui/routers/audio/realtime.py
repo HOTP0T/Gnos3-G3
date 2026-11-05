@@ -390,7 +390,7 @@ async def realtime_call(ws: WebSocket):
         )
         if not config.get('audio.realtime.enabled'):
             raise ValueError('Realtime calls are disabled')
-        if user.role != 'admin' and not await has_permission(user.id, 'chat.call', config.get('user.permissions', {})):
+        if user.role not in ('admin', 'superadmin') and not await has_permission(user.id, 'chat.call', config.get('user.permissions', {})):
             raise ValueError('Call permission denied')
         chat_id = auth.get('chat_id')
         if chat_id:
@@ -408,7 +408,7 @@ async def realtime_call(ws: WebSocket):
         if not model or model.get('direct'):
             raise ValueError('Bridge requires a server-configured chat model')
         model_info = await Models.get_model_by_id(model_id)
-        if not BYPASS_MODEL_ACCESS_CONTROL and (user.role != 'admin' or not BYPASS_ADMIN_ACCESS_CONTROL):
+        if not BYPASS_MODEL_ACCESS_CONTROL and (user.role not in ('admin', 'superadmin') or not BYPASS_ADMIN_ACCESS_CONTROL):
             try:
                 await check_model_access(user, model, model_info=model_info)
             except Exception:
@@ -538,7 +538,7 @@ async def realtime_call(ws: WebSocket):
                 current = await get_verified_user_by_token(token, redis)
                 if not current or not await Config.get('audio.realtime.enabled'):
                     raise ValueError('Call authorization expired')
-                if current.role != 'admin' and not await has_permission(
+                if current.role not in ('admin', 'superadmin') and not await has_permission(
                     current.id, 'chat.call', await Config.get('user.permissions') or {}
                 ):
                     raise ValueError('Call permission revoked')

@@ -166,7 +166,7 @@ async def has_connection_access(
         # No grants configured → private, admin-only: admins must keep access
         # to connections only they can configure, even when they do not bypass
         # access control globally.
-        return user.role == 'admin'
+        return user.role in ('admin', 'superadmin')
 
     if user_group_ids is None:
         user_group_ids = {group.id for group in await Groups.get_groups_by_member_id(user.id, include_inherited=True)}
@@ -329,14 +329,14 @@ async def has_base_model_access(
         seen.add(base_model_id)
         base_model_info = await Models.get_model_by_id(base_model_id, db=db)
         if base_model_info is None:
-            if user_role != 'admin':
+            if user_role not in ('admin', 'superadmin'):
                 log.warning(
                     'Model access denied: user_id=%r model_id=%r base_model_id=%r reason=base_model_unregistered',
                     user_id,
                     model_info.id,
                     base_model_id,
                 )
-            return user_role == 'admin'
+            return user_role in ('admin', 'superadmin')
         if not (
             user_id == base_model_info.user_id
             or await AccessGrants.has_access(
@@ -384,7 +384,7 @@ async def check_model_access(
 
     if model_info:
         # Enforce for every non-admin role (including pending); never fail open.
-        if user.role != 'admin':
+        if user.role not in ('admin', 'superadmin'):
             from open_webui.models.access_grants import AccessGrants
 
             user_group_ids = {

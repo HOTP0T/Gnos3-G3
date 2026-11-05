@@ -15,7 +15,8 @@
 		settings,
 		terminalServers,
 		terminalSkills,
-		visibleControls
+		visibleControls,
+		isAdmin
 	} from '$lib/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ChatBubbleDotted from '$lib/components/icons/ChatBubbleDotted.svelte';
@@ -88,7 +89,7 @@
 			: []),
 		...(hasChatContent &&
 		canCreateSkill &&
-		($user?.role === 'admin' || $user?.permissions?.workspace?.skills) &&
+		($isAdmin || $user?.permissions?.workspace?.skills) &&
 		'skills:create'.startsWith(query.toLowerCase())
 			? [{ type: 'command', data: { id: 'skills:create' } }]
 			: [])

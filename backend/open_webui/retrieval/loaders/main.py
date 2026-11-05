@@ -1,6 +1,5 @@
 import asyncio
 import csv
-import os
 import logging
 import os
 import sys

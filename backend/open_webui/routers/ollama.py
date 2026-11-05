@@ -476,7 +476,7 @@ async def get_ollama_tags(
     user=Depends(get_verified_user),
 ):
     """List Ollama model tags, optionally from a specific backend."""
-    if url_idx is not None and user.role != 'admin':
+    if url_idx is not None and user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=401, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     if not await Config.get('ollama.enable'):
@@ -550,7 +550,7 @@ async def get_ollama_versions(
     url_idx: int | None = None,
 ):
     """Return the lowest Ollama version across all configured backends."""
-    if url_idx is not None and user.role != 'admin':
+    if url_idx is not None and user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=401, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     if not await Config.get('ollama.enable'):
@@ -1094,7 +1094,7 @@ class GenerateChatCompletionForm(BaseModel):
 async def validate_ollama_backend_idx(request: Request, model: str, url_idx: int | None, user) -> None:
     # A caller-supplied url_idx must point to a backend the model is actually
     # served from; the None path is already constrained to that allow-list.
-    if url_idx is None or user is None or getattr(user, 'role', None) == 'admin':
+    if url_idx is None or user is None or getattr(user, 'role', None) in ('admin', 'superadmin'):
         return
     models = request.app.state.OLLAMA_MODELS
     if not models or model not in models:
@@ -1518,7 +1518,7 @@ async def get_openai_models(
     db: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """List models in the OpenAI-compatible format."""
-    if url_idx is not None and user.role != 'admin':
+    if url_idx is not None and user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=401, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     if url_idx is None:

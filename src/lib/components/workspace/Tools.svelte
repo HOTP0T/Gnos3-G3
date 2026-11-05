@@ -23,7 +23,8 @@
 		tools as _tools,
 		user,
 		workspaceActions,
-		workspaceCounts
+		workspaceCounts,
+		isAdmin
 	} from '$lib/stores';
 
 	import { goto } from '$app/navigation';
@@ -129,13 +130,13 @@
 				onClick: () => {
 					showImportModal = true;
 				},
-				visible: $user?.role === 'admin'
+				visible: $isAdmin
 			},
 			{
 				id: 'tools-import',
 				label: $i18n.t('Import JSON'),
 				onClick: () => toolsImportInputElement?.click(),
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.tools_import
+				visible: $isAdmin || $user?.permissions?.workspace?.tools_import
 			},
 			{
 				id: 'tools-export',
@@ -153,7 +154,7 @@
 						saveAs(blob, `tools-export-${Date.now()}.json`);
 					}
 				},
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.tools_export
+				visible: $isAdmin || $user?.permissions?.workspace?.tools_export
 			}
 		]);
 	}
@@ -226,7 +227,7 @@
 			return null;
 		});
 
-		// LICENSE covers this Gnos3 Community wordmark.
+		// LICENSE covers this Open WebUI Community wordmark.
 		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Gnos3 Community'));
@@ -642,7 +643,7 @@
 													onComment={(request) => (comments = request)}
 													resourceId={tool.id}
 													accessHandler={$user?.permissions?.sharing?.tools ||
-													$user?.role === 'admin'
+													$isAdmin
 														? () => accessModal.open(tool.id)
 														: null}
 													show={openToolMenuId === tool.id}
@@ -741,7 +742,7 @@
 			{/if}
 		</div>
 
-		{#if $config?.features.enable_community_sharing}
+		{#if $config?.features?.enable_community_sharing && $isAdmin}
 			<CommunityDiscover
 				href="https://openwebui.com/search?type=tool"
 				title={$i18n.t('Discover a tool')}

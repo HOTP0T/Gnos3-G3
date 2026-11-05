@@ -111,7 +111,7 @@ async def _has_read_access_to_file(
     """Check if a user can read a file via ownership, admin role, model attachment, or access grants."""
     user_id = user.get('id')
     user_role = user.get('role', 'user')
-    if file.user_id == user_id or user_role == 'admin':
+    if file.user_id == user_id or user_role in ('admin', 'superadmin'):
         return True
     if model_knowledge and any(item.get('type') == 'file' and item.get('id') == file.id for item in model_knowledge):
         return True
@@ -149,7 +149,7 @@ async def notify(
     # LICENSE covers this Open WebUI notification identifier.
     # Do not alter, remove, obscure, or replace it except as LICENSE permits:
     # https://docs.openwebui.com/license.
-    app_name = getattr(app_name, 'WEBUI_NAME', 'Open WebUI')
+    app_name = getattr(app_name, 'WEBUI_NAME', 'Gnos3')
     try:
         result = await notify_target(user_id, message, target=target, title=title, app_name=app_name)
         return f'Notification sent to {result.get("target_id")}.'
@@ -1270,7 +1270,7 @@ async def view_note(
         from open_webui.models.access_grants import AccessGrants
 
         if (
-            __user__.get('role') != 'admin'
+            __user__.get('role') not in ('admin', 'superadmin')
             and note.user_id != user_id
             and not await AccessGrants.has_access(
                 user_id=user_id,
@@ -1412,7 +1412,7 @@ async def replace_note_content(
             return JSONCodec.dumps({'error': 'Note not found', 'code': 'not_found'})
 
         user_id = __user__.get('id')
-        if __user__.get('role') != 'admin' and not await _has_write_access_to_note(note, user_id):
+        if __user__.get('role') not in ('admin', 'superadmin') and not await _has_write_access_to_note(note, user_id):
             return JSONCodec.dumps({'error': 'Write access denied', 'code': 'write_access_denied'})
 
         page = get_page(note.data, page_id)
@@ -2371,7 +2371,7 @@ async def search_knowledge_files(
             # search_files_by_id does not enforce knowledge_id ownership; mirror the attached-KB check above.
             knowledge = await Knowledges.get_knowledge_by_id(knowledge_id)
             if not knowledge or not (
-                user_role == 'admin'
+                user_role in ('admin', 'superadmin')
                 or knowledge.user_id == user_id
                 or await AccessGrants.has_access(
                     user_id=user_id,
@@ -2787,7 +2787,7 @@ async def grep_knowledge_files(
                         continue
                     # Verify user can access this KB
                     if not (
-                        user_role == 'admin'
+                        user_role in ('admin', 'superadmin')
                         or knowledge.user_id == user_id
                         or await AccessGrants.has_access(
                             user_id=user_id,
@@ -3893,7 +3893,7 @@ async def create_tool(
 
         if __request__ is None or not __user__:
             raise ValueError('Request and user context required')
-        if __user__.get('role') != 'admin' and not await has_permission(
+        if __user__.get('role') not in ('admin', 'superadmin') and not await has_permission(
             __user__['id'], 'workspace.tools', await Config.get('user.permissions')
         ):
             raise ValueError('Tool authoring permission required')
@@ -3939,7 +3939,7 @@ async def create_skill(
         if any(f.get('encoding') or f.get('path') == 'SKILL.md' for f in files):
             raise ValueError('Supporting files must be UTF-8 text; pass SKILL.md in content')
         # Agent authoring requires the workspace editor permission, not just import access.
-        if __user__.get('role') != 'admin' and not await has_permission(
+        if __user__.get('role') not in ('admin', 'superadmin') and not await has_permission(
             __user__['id'], 'workspace.skills', await Config.get('user.permissions')
         ):
             raise ValueError('Skill authoring permission required')

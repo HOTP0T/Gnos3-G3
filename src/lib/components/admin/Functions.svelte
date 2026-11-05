@@ -8,7 +8,7 @@
 
 	dayjs.extend(relativeTime);
 
-	import { WEBUI_NAME, config, functions as _functions, models, settings, user } from '$lib/stores';
+	import { WEBUI_NAME, config, functions as _functions, models, settings, user, isAdmin } from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
 	import { goto } from '$app/navigation';
@@ -163,7 +163,7 @@
 			return null;
 		});
 
-		// LICENSE covers this Gnos3 Community wordmark.
+		// LICENSE covers this Open WebUI Community wordmark.
 		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Gnos3 Community'));

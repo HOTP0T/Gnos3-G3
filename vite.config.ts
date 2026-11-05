@@ -49,17 +49,16 @@ export default defineConfig({
 			ignored: ['**/venv/**', '**/.venv/**', '**/backend/data/**']
 		},
 		proxy: {
-			'/static': 'http://localhost:8080',
-			// The shorthand rewrites Host to localhost:8080; xfwd keeps the browser's
-			// host in X-Forwarded-Host, which /auths/k4mi/open uses to send LAN
-			// users to K4mi on the address they typed rather than to localhost.
-			'/api': { target: 'http://localhost:8080', changeOrigin: true, xfwd: true },
-			'/ollama': 'http://localhost:8080',
-			'/openai': 'http://localhost:8080',
-			'/ws/socket.io': {
-				target: 'http://localhost:8080',
-				ws: true
-			}
+			'/static': backendTarget,
+			// changeOrigin rewrites Host to the backend's; xfwd keeps the browser's host in
+			// X-Forwarded-Host, which /auths/k4mi/open uses to send LAN users to K4mi on the
+			// address they typed rather than to localhost.
+			'/api': { target: backendTarget, changeOrigin: true, xfwd: true, ws: true },
+			'/ollama': { target: backendTarget, changeOrigin: true },
+			'/openai': { target: backendTarget, changeOrigin: true },
+			'/oauth': { target: backendTarget, changeOrigin: true },
+			// Host stays the browser's: socket.io accepts the page's own origin by comparing them.
+			'/ws': { target: backendTarget, ws: true }
 		}
 	},
 	build: {
@@ -68,32 +67,6 @@ export default defineConfig({
 	},
 	optimizeDeps: {
 		esbuildOptions: { target: 'es2022' }
-	},
-	server: {
-		proxy: {
-			'/api': {
-				target: backendTarget,
-				changeOrigin: true,
-				ws: true
-			},
-			'/ollama': {
-				target: backendTarget,
-				changeOrigin: true
-			},
-			'/openai': {
-				target: backendTarget,
-				changeOrigin: true
-			},
-			'/oauth': {
-				target: backendTarget,
-				changeOrigin: true
-			},
-			'/ws': {
-				target: backendTarget,
-				changeOrigin: true,
-				ws: true
-			}
-		}
 	},
 	worker: {
 		format: 'es'

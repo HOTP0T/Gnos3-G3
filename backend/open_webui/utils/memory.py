@@ -447,7 +447,7 @@ async def review_memory_after_turn(
         return
 
     # features is client-supplied; re-check the permission the memory routes enforce.
-    if user.role != 'admin' and not await has_permission(user.id, 'features.memories', config.get('user.permissions')):
+    if user.role not in ('admin', 'superadmin') and not await has_permission(user.id, 'features.memories', config.get('user.permissions')):
         return
 
     task = asyncio.create_task(
@@ -576,7 +576,7 @@ Conversation:
                     # LICENSE covers this Open WebUI system identifier.
                     # Do not alter, remove, obscure, or replace it except as LICENSE permits:
                     # https://docs.openwebui.com/license.
-                    'content': "You are Open WebUI's private memory reviewer. Return only valid JSON.",
+                    'content': "You are Gnos3's private memory reviewer. Return only valid JSON.",
                 },
                 {'role': 'user', 'content': review_prompt},
             ],

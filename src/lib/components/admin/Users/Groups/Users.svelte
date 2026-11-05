@@ -115,7 +115,7 @@
 	};
 
 	const roleClass = (role: string) => {
-		if (role === 'admin') {
+		if (role === 'admin' || role === 'superadmin') {
 			return 'text-[#4f6f93] dark:text-[#8ba6c6]';
 		}
 		if (role === 'user') {

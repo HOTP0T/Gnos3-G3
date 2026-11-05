@@ -209,7 +209,7 @@ async def process_uploaded_file(
                     knowledge = await Knowledges.get_knowledge_by_id(id=knowledge_id, db=db_session)
                     can_write = bool(knowledge) and (
                         knowledge.user_id == user.id
-                        or user.role == 'admin'
+                        or user.role in ('admin', 'superadmin')
                         or await AccessGrants.has_access(
                             user_id=user.id,
                             resource_type='knowledge',
@@ -370,7 +370,7 @@ async def upload_file_handler(
             knowledge = await Knowledges.get_knowledge_by_id(knowledge_id, db=db)
             if not knowledge or not (
                 knowledge.user_id == user.id
-                or user.role == 'admin'
+                or user.role in ('admin', 'superadmin')
                 or await AccessGrants.has_access(
                     user_id=user.id, resource_type='knowledge', resource_id=knowledge_id, permission='write', db=db
                 )
@@ -582,7 +582,7 @@ async def count_files(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    user_id = None if (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL) else user.id
+    user_id = None if (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL) else user.id
     return await Files.count_files_by_user_id(user_id=user_id, db=db)
 
 
@@ -1040,7 +1040,7 @@ async def rename_file_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'write', user, db=db):
+    if file.user_id == user.id or user.role in ('admin', 'superadmin') or await has_access_to_file(id, 'write', user, db=db):
         result = await Files.update_file_name_by_id(id, form_data.filename, db=db)
         if result:
             await publish_event(

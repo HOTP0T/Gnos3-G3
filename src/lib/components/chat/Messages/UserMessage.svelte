@@ -8,7 +8,7 @@
 	import { tick, getContext, onMount } from 'svelte';
 	import type { Writable } from 'svelte/store';
 
-	import { models, settings } from '$lib/stores';
+	import { models, settings, isAdmin } from '$lib/stores';
 	import { user as _user } from '$lib/stores';
 	import {
 		copyToClipboard as _copyToClipboard,
@@ -580,7 +580,7 @@
 							</div>
 						{/if}
 					{/if}
-					{#if !compactPreview && (!readOnly || shareMode === 'continue') && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.edit ?? true))}
+					{#if !compactPreview && (!readOnly || shareMode === 'continue') && ($isAdmin || ($_user?.permissions?.chat?.edit ?? true))}
 						<Tooltip content={$i18n.t('Edit')} placement="bottom">
 							<button
 								class="{($settings?.highContrastMode ?? false)
@@ -612,7 +612,7 @@
 						</Tooltip>
 					{/if}
 
-					{#if $_user?.role === 'admin' || ($_user?.permissions?.chat?.delete_message ?? false)}
+					{#if $isAdmin || ($_user?.permissions?.chat?.delete_message ?? false)}
 						{#if !compactPreview && !readOnly && allowDelete && (!isFirstMessage || siblings.length > 1)}
 							<Tooltip content={$i18n.t('Delete')} placement="bottom">
 								<button

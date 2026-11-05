@@ -2,7 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 
 	import { goto } from '$app/navigation';
-	import { adminGroupCount, adminUserCount, config, user } from '$lib/stores';
+	import { adminGroupCount, adminUserCount, config, user, isAdmin } from '$lib/stores';
 	import { page } from '$app/stores';
 	import { getGroups } from '$lib/apis/groups';
 	import { getUsers } from '$lib/apis/users';

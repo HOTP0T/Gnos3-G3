@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { config, user } from '$lib/stores';
+	import { config, user, isAdmin } from '$lib/stores';
 	import { onMount } from 'svelte';
 
 	onMount(() => {

@@ -500,7 +500,7 @@ async def check_model_access(user, model, model_info=None, db=None):
         meta = model.get('info', {}).get('meta', {})
         access_grants = meta.get('access_grants', [])
         if not (
-            (not access_grants and user.role == 'admin')
+            (not access_grants and user.role in ('admin', 'superadmin'))
             or await has_access(
                 user.id,
                 permission='read',
@@ -591,7 +591,7 @@ async def get_filtered_models(models, user, db=None):
             if model.get('arena'):
                 meta = model.get('info', {}).get('meta', {})
                 access_grants = meta.get('access_grants', [])
-                if (not access_grants and user.role == 'admin') or await has_access(
+                if (not access_grants and user.role in ('admin', 'superadmin')) or await has_access(
                     user.id,
                     permission='read',
                     access_grants=access_grants,

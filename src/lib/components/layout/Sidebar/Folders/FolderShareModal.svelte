@@ -9,7 +9,7 @@
 	import AccessControl from '$lib/components/workspace/common/AccessControl.svelte';
 	import XMark from '../icons/XMark.svelte';
 	import { getFolderById, updateFolderAccessById } from '$lib/apis/folders';
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 
 	type AccessGrant = {
 		id?: string;
@@ -97,10 +97,10 @@
 				onChange={handleAccessChange}
 				accessRoles={['read', 'write']}
 				defaultPermission="write"
-				share={$user?.role === 'admin' || $user?.permissions?.sharing?.folders}
+				share={$isAdmin || $user?.permissions?.sharing?.folders}
 				sharePublic={false}
-				shareUsers={$user?.role === 'admin' || $user?.permissions?.access_grants?.allow_users}
-				allowGroups={$user?.role === 'admin' ||
+				shareUsers={$isAdmin || $user?.permissions?.access_grants?.allow_users}
+				allowGroups={$isAdmin ||
 					($user?.permissions?.access_grants?.allow_groups ?? true)}
 			>
 				{#if folder?.parent_id}

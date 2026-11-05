@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 	import TypeaheadSelector from './TypeaheadSelector.svelte';
 	type Skill = {
 		id: string;
@@ -28,7 +28,7 @@
 	placeholder={$i18n.t('Search skills')}
 	emptyLabel={$i18n.t('No skills found')}
 	emptyHint={$i18n.t('Add skills in the Skills workspace.')}
-	workspaceHref={$user?.role === 'admin' || $user?.permissions?.workspace?.skills
+	workspaceHref={$isAdmin || $user?.permissions?.workspace?.skills
 		? '/workspace/skills'
 		: ''}
 	variant="dropdown"

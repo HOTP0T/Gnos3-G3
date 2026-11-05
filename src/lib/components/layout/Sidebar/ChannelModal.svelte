@@ -11,7 +11,7 @@
 		deleteChannelById,
 		updateChannelAccessGrants
 	} from '$lib/apis/channels';
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';

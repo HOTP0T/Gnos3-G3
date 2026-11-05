@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.models.access_grants import AccessGrants
+from open_webui.models.config import Config
 from open_webui.models.notes import Notes
 from open_webui.models.note_vaults import NoteVaultModel
 from open_webui.services import note_vault_knowledge as knowledge
@@ -36,11 +37,11 @@ SUGGEST_NUM_CTX = 16384
 
 
 async def require_notes(request: Request, user) -> None:
-    if not request.app.state.config.ENABLE_NOTES:
+    if not await Config.get('notes.enable'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
     if vaults.is_admin(user):
         return
-    if not await has_permission(user.id, 'features.notes', request.app.state.config.USER_PERMISSIONS):
+    if not await has_permission(user.id, 'features.notes', await Config.get('user.permissions')):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.UNAUTHORIZED)
 
 
@@ -259,7 +260,7 @@ async def delete_vault(request: Request, vault_id: str, user=Depends(get_verifie
 @router.get('/{vault_id}/tree')
 async def vault_tree(request: Request, vault_id: str, user=Depends(get_verified_user)):
     vault, _ = await vault_for(request, user, vault_id, 'read')
-    return await vaults.vault_tree(vault)
+    return await vaults.vault_tree(vault, user.id)
 
 
 @router.get('/{vault_id}/graph')
@@ -564,7 +565,7 @@ async def vault_scope(request: Request, vault_id: str, form: ScopeForm, user=Dep
     """A folder or a tag for chat. Small enough → the notes themselves (read whole); larger → their
     embeddings (searched), at most the SCOPE_MAX_NOTES most recently edited."""
     vault, _ = await vault_for(request, user, vault_id, 'read')
-    tree = await vaults.vault_tree(vault)
+    tree = await vaults.vault_tree(vault, user.id)
     notes = tree['notes']
     if form.folder is not None:
         folder = nc.clean_folder(form.folder)
@@ -615,7 +616,7 @@ async def suggest_links(request: Request, note_id: str, form: SuggestForm, user=
     vault = await vaults.vault_of_note(note)
     if not await vaults.vault_permission(user, vault):
         return {'suggestions': []}
-    tree = await vaults.vault_tree(vault)
+    tree = await vaults.vault_tree(vault, user.id)
     links = await vaults.note_links(note, vault)
     linked = {o['note']['id'] for o in links['outgoing'] if o.get('note')}
     content = (note.data or {}).get('content') or {}
@@ -655,7 +656,7 @@ async def suggest_links(request: Request, note_id: str, form: SuggestForm, user=
         return {'suggestions': suggestions}
     by_title = {n['title']: n for n in pool}
     task_model_id = get_task_model_id(
-        form.model, request.app.state.config.TASK_MODEL, request.app.state.config.TASK_MODEL_EXTERNAL, models
+        form.model, await Config.get('task.model.default'), await Config.get('task.model.external'), models
     )
     language = form.lang or 'en'
     prompt = (

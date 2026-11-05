@@ -104,6 +104,16 @@ const toBundleCode = (code: string) => {
 	return languageCodes.find((bundle) => bundle.startsWith(`${baseLanguage}-`)) ?? code;
 };
 
+// Gnos3: every string a screen shows through t() says Gnos3, in any language, including keys with
+// no translation. One hook here instead of edits to hundreds of upstream strings and catalogs,
+// each of which would conflict at the next upgrade.
+const gnos3Brand = {
+	type: 'postProcessor' as const,
+	name: 'gnos3Brand',
+	process: (value: string) =>
+		typeof value === 'string' ? value.replace(/Open ?WebUI/g, 'Gnos3') : value
+};
+
 export const initI18n = (defaultLocale?: string, value: I18nOverrides = {}) => {
 	overrides = value;
 	const detector = new LanguageDetector();
@@ -112,8 +122,10 @@ export const initI18n = (defaultLocale?: string, value: I18nOverrides = {}) => {
 	return i18next
 		.use(resourcesToBackend(loadResource))
 		.use(detector)
+		.use(gnos3Brand)
 		.init({
 			debug: false,
+			postProcess: ['gnos3Brand'],
 			detection: {
 				order: ['querystring', 'localStorage', 'defaultLocale', 'navigator'],
 				caches: ['localStorage'],

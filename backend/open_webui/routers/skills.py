@@ -138,7 +138,7 @@ async def authorized_skill(id, user, permission='read', db=None):
     if not skill:
         raise HTTPException(404, 'Skill not found')
     if not (
-        (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL)
+        (user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL)
         or skill.user_id == user.id
         or await AccessGrants.has_access(
             user_id=user.id, resource_type='skill', resource_id=id, permission=permission, db=db
@@ -176,7 +176,7 @@ async def export_skills(
         [await authorized_skill(id, user, db=db) for id in ids]
         if ids is not None
         else await Skills.get_skills(
-            user_id=None if user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL else user.id, db=db
+            user_id=None if user.role in ('admin', 'superadmin') and BYPASS_ADMIN_ACCESS_CONTROL else user.id, db=db
         )
     )
     packages = []
@@ -761,7 +761,7 @@ async def read_import(files: list[UploadFile]):
 
 
 async def require_import(user, db):
-    if user.role != 'admin' and not await has_permission(
+    if user.role not in ('admin', 'superadmin') and not await has_permission(
         user.id, 'workspace.skills_import', await Config.get('user.permissions'), db=db
     ):
         raise HTTPException(403, 'Import permission required')

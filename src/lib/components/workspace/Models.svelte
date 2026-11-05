@@ -27,7 +27,8 @@
 		settings,
 		user,
 		workspaceActions,
-		workspaceCounts
+		workspaceCounts,
+		isAdmin
 	} from '$lib/stores';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import {
@@ -126,7 +127,7 @@
 				id: 'models-import',
 				label: $i18n.t('Import JSON'),
 				onClick: () => modelsImportInputElement?.click(),
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.models_import
+				visible: $isAdmin || $user?.permissions?.workspace?.models_import
 			},
 			{
 				id: 'models-export',
@@ -134,7 +135,7 @@
 				onClick: async () => {
 					await downloadModels();
 				},
-				visible: $user?.role === 'admin' || $user?.permissions?.workspace?.models_export
+				visible: $isAdmin || $user?.permissions?.workspace?.models_export
 			}
 		]);
 	}
@@ -283,7 +284,7 @@
 	};
 
 	const shareModelHandler = async (model) => {
-		// LICENSE covers this Gnos3 Community wordmark.
+		// LICENSE covers this Open WebUI Community wordmark.
 		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Gnos3 Community'));
@@ -942,7 +943,7 @@
 													<ModelMenu
 														onComment={(request) => (comments = request)}
 														accessHandler={$user?.permissions?.sharing?.models ||
-														$user?.role === 'admin'
+														$isAdmin
 															? () => accessModal.open(model.id)
 															: null}
 														user={$user}
@@ -1037,7 +1038,7 @@
 			{/if}
 		</div>
 
-		{#if $config?.features.enable_community_sharing}
+		{#if $config?.features?.enable_community_sharing && $isAdmin}
 			<CommunityDiscover
 				href="https://openwebui.com/search?type=model"
 				title={$i18n.t('Discover a model')}

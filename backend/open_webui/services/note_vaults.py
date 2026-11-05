@@ -886,8 +886,9 @@ async def _index(vault: NoteVaultModel, note_ids: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def vault_tree(vault: NoteVaultModel) -> dict:
-    """Every folder and every note's summary: what the sidebar, quick switcher and tags need."""
+async def vault_tree(vault: NoteVaultModel, user_id: str) -> dict:
+    """Every folder and every note's summary: what the sidebar, quick switcher and tags need.
+    Pinning is per person (upstream's pinned_note), so `is_pinned` is this reader's."""
     await refresh_index(vault)
     async with get_async_db_context() as db:
         folders = [
@@ -903,7 +904,6 @@ async def vault_tree(vault: NoteVaultModel) -> dict:
                 Note.id,
                 Note.title,
                 Note.user_id,
-                Note.is_pinned,
                 Note.created_at,
                 Note.updated_at,
                 NotePlacement.folder,
@@ -918,20 +918,21 @@ async def vault_tree(vault: NoteVaultModel) -> dict:
             .where(NotePlacement.vault_id == vault.id)
             .order_by(Note.title)
         )
+        pinned = set(await Notes.get_pinned_note_ids(user_id, db=db))
         notes = [
             {
                 'id': row[0],
                 'title': row[1] or '',
                 'user_id': row[2],
-                'is_pinned': bool(row[3]),
-                'created_at': row[4],
-                'updated_at': row[5],
-                'folder': row[6] or '',
-                'type': row[7],
-                'tags': row[8] or [],
-                'aliases': row[9] or [],
-                'word_count': row[10] or 0,
-                'excerpt': row[11] or '',
+                'is_pinned': row[0] in pinned,
+                'created_at': row[3],
+                'updated_at': row[4],
+                'folder': row[5] or '',
+                'type': row[6],
+                'tags': row[7] or [],
+                'aliases': row[8] or [],
+                'word_count': row[9] or 0,
+                'excerpt': row[10] or '',
             }
             for row in result.all()
         ]
@@ -1260,7 +1261,7 @@ _EXT = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp
 async def export_vault(vault: NoteVaultModel) -> bytes:
     """The vault as a zip of Markdown files with frontmatter, in its folders, with images under
     `_attachments/`. Opens as an Obsidian / Tolaria vault."""
-    tree = await vault_tree(vault)
+    tree = await vault_tree(vault, vault.owner_id)
     async with get_async_db_context() as db:
         titles = {
             row[0]: row[1] or ''

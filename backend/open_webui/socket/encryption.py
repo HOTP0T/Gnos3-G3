@@ -122,7 +122,7 @@ class Relay:
         auth = await self.authenticate(sid, wait_for_disconnect=False)
         require(auth and auth.get('id'))
         user = await Users.get_user_by_id(auth['id'])
-        require(user and user.role in ('user', 'admin'))
+        require(user and user.role in ('user', 'admin', 'superadmin'))
         record = await Channels.get_channel_by_id(channel)
         require(record and (record.type == 'dm' or (record.type == 'group' and record.is_private is True)))
         require(await Channels.is_user_channel_member(channel, user.id))
@@ -193,7 +193,7 @@ class Relay:
         )
         eligible = {}
         for user in users:
-            if user.role == 'admin':
+            if user.role in ('admin', 'superadmin'):
                 eligible[user.id] = user
             elif user.role == 'user':
                 permissions = deepcopy(defaults)

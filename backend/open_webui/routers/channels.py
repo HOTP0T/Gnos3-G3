@@ -616,7 +616,7 @@ async def update_member_mute_status(
     if channel.type in ['group', 'dm']:
         if not await Channels.is_user_channel_member(id, user.id, db=db):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
-    elif user.role != 'admin' and not await channel_has_access(user.id, channel, permission='read', db=db):
+    elif user.role not in ('admin', 'superadmin') and not await channel_has_access(user.id, channel, permission='read', db=db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
 
     is_channel_muted = await Channels.update_member_mute_status(id, user.id, form_data.is_channel_muted, db=db)
@@ -804,7 +804,7 @@ async def update_channel_access_by_id(
     channel = await Channels.get_channel_by_id(id, db=db)
     if not channel:
         raise HTTPException(status_code=404, detail=ERROR_MESSAGES.NOT_FOUND)
-    if channel.user_id != user.id and user.role != 'admin':
+    if channel.user_id != user.id and user.role not in ('admin', 'superadmin'):
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
     # Group and DM channels manage access through membership instead.
     if channel.type in ['group', 'dm']:
@@ -1737,7 +1737,7 @@ async def update_message_by_id(
         if not await Channels.is_user_channel_member(channel.id, user.id, db=db):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
         # Membership is not authorship — block cross-member edits.
-        if user.role != 'admin' and message.user_id != user.id:
+        if user.role not in ('admin', 'superadmin') and message.user_id != user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
     else:
         if user.role not in ('admin', 'superadmin') and not await channel_has_access(
@@ -1745,7 +1745,7 @@ async def update_message_by_id(
         ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
         # Write access is not authorship — block cross-member edits.
-        if user.role != 'admin' and message.user_id != user.id:
+        if user.role not in ('admin', 'superadmin') and message.user_id != user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
 
     form_data.meta = None
@@ -1958,7 +1958,7 @@ async def delete_message_by_id(
         if not await Channels.is_user_channel_member(channel.id, user.id, db=db):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
         # Membership is not authorship — block cross-member deletes.
-        if user.role != 'admin' and message.user_id != user.id:
+        if user.role not in ('admin', 'superadmin') and message.user_id != user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
     else:
         if user.role not in ('admin', 'superadmin') and not await channel_has_access(
@@ -1970,7 +1970,7 @@ async def delete_message_by_id(
         ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
         # Write access is not authorship — block cross-member deletes.
-        if user.role != 'admin' and message.user_id != user.id:
+        if user.role not in ('admin', 'superadmin') and message.user_id != user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
 
     try:
@@ -2055,7 +2055,7 @@ async def get_webhook_profile_image(
         if not await Channels.is_user_channel_member(channel.id, user.id, db=db):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
     else:
-        if user.role != 'admin' and not await channel_has_access(user.id, channel, permission='read', db=db):
+        if user.role not in ('admin', 'superadmin') and not await channel_has_access(user.id, channel, permission='read', db=db):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT())
 
     if webhook.profile_image_url:

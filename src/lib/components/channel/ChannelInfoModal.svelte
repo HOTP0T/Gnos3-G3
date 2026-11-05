@@ -3,7 +3,7 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext<any>('i18n');
 
-	import { config, user } from '$lib/stores';
+	import { config, user, isAdmin } from '$lib/stores';
 	import type { App } from '$lib/apis/apps';
 	import { removeMembersById, getChannelAppsById, removeAppFromChannel } from '$lib/apis/channels';
 
@@ -24,7 +24,7 @@
 	let joinedApps: App[] = [];
 	$: canManage =
 		channel?.type !== 'dm' &&
-		(channel?.is_manager || $user?.role === 'admin' || channel?.user_id === $user?.id);
+		(channel?.is_manager || $isAdmin || channel?.user_id === $user?.id);
 	const updateMembers = async () => {
 		await init();
 		onUpdate();

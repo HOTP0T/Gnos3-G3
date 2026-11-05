@@ -9,7 +9,8 @@
 		user,
 		mobile,
 		workspaceActions,
-		workspaceCounts
+		workspaceCounts,
+		isAdmin
 	} from '$lib/stores';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -46,13 +47,13 @@
 	const formatCount = (count: number | null) => formatNumber(count ?? 0);
 
 	const loadWorkspaceCounts = async () => {
-		const canViewModels = $user?.role === 'admin' || $user?.permissions?.workspace?.models;
-		const canViewKnowledge = $user?.role === 'admin' || $user?.permissions?.workspace?.knowledge;
-		const canViewPrompts = $user?.role === 'admin' || $user?.permissions?.workspace?.prompts;
-		const canViewSkills = $user?.role === 'admin' || $user?.permissions?.workspace?.skills;
+		const canViewModels = $isAdmin || $user?.permissions?.workspace?.models;
+		const canViewKnowledge = $isAdmin || $user?.permissions?.workspace?.knowledge;
+		const canViewPrompts = $isAdmin || $user?.permissions?.workspace?.prompts;
+		const canViewSkills = $isAdmin || $user?.permissions?.workspace?.skills;
 		const canViewTools =
 			$config?.features?.enable_tools &&
-			($user?.role === 'admin' || $user?.permissions?.workspace?.tools);
+			($isAdmin || $user?.permissions?.workspace?.tools);
 
 		const [modelRes, knowledgeRes, promptRes, skillRes, toolRes] = await Promise.all([
 			canViewModels
@@ -150,7 +151,7 @@
 						<div
 							class="flex min-w-0 mr-1.5 items-center gap-0.5 md:gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-normal bg-transparent py-1 touch-auto pointer-events-auto"
 						>
-							{#if $user?.role === 'admin' || $user?.permissions?.workspace?.models}
+							{#if $isAdmin || $user?.permissions?.workspace?.models}
 								<a
 									draggable="false"
 									data-sveltekit-keepfocus
@@ -168,7 +169,7 @@
 								</a>
 							{/if}
 
-							{#if $user?.role === 'admin' || $user?.permissions?.workspace?.knowledge}
+							{#if $isAdmin || $user?.permissions?.workspace?.knowledge}
 								<a
 									draggable="false"
 									data-sveltekit-keepfocus
@@ -186,7 +187,7 @@
 								</a>
 							{/if}
 
-							{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts}
+							{#if $isAdmin || $user?.permissions?.workspace?.prompts}
 								<a
 									draggable="false"
 									data-sveltekit-keepfocus
@@ -204,7 +205,7 @@
 								</a>
 							{/if}
 
-							{#if $user?.role === 'admin' || $user?.permissions?.workspace?.skills}
+							{#if $isAdmin || $user?.permissions?.workspace?.skills}
 								<a
 									draggable="false"
 									data-sveltekit-keepfocus
@@ -222,7 +223,7 @@
 								</a>
 							{/if}
 
-							{#if $config?.features?.enable_tools && ($user?.role === 'admin' || $user?.permissions?.workspace?.tools)}
+							{#if $config?.features?.enable_tools && ($isAdmin || $user?.permissions?.workspace?.tools)}
 								<a
 									draggable="false"
 									data-sveltekit-keepfocus

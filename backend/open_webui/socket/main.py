@@ -566,7 +566,7 @@ async def enter_room_for_users(room: str, user_ids: list[str]):
     try:
         default_permissions = await Config.get('user.permissions')
         for user in await Users.get_users_by_user_ids(user_ids):
-            if user.role != 'admin' and not await has_permission(user.id, 'features.channels', default_permissions):
+            if user.role not in ('admin', 'superadmin') and not await has_permission(user.id, 'features.channels', default_permissions):
                 continue
 
             session_ids = get_session_ids_from_room(f'user:{user.id}')
@@ -797,7 +797,7 @@ async def join_note(sid, data):
     if not user:
         return
 
-    if user.role != 'admin' and not await has_permission(
+    if user.role not in ('admin', 'superadmin') and not await has_permission(
         user.id, 'features.notes', await Config.get('user.permissions')
     ):
         return
@@ -1036,7 +1036,7 @@ async def ydoc_document_join(sid, data):
         document_id = normalize_document_id(data['document_id'])
 
         if document_id.startswith('note:'):
-            if user.get('role') != 'admin' and not await has_permission(
+            if user.get('role') not in ('admin', 'superadmin') and not await has_permission(
                 user.get('id'), 'features.notes', await Config.get('user.permissions')
             ):
                 return

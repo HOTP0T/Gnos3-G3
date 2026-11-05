@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { WEBUI_NAME, config, mobile, showSidebar, user } from '$lib/stores';
+	import { WEBUI_NAME, config, mobile, showSidebar, user, isAdmin } from '$lib/stores';
 	import {
 		getCalendars,
 		getCalendarEvents,
@@ -234,7 +234,7 @@
 	onMount(async () => {
 		if (
 			!$config?.features?.enable_calendar ||
-			($user?.role !== 'admin' && !$user?.permissions?.features?.calendar)
+			(!$isAdmin && !$user?.permissions?.features?.calendar)
 		) {
 			goto('/');
 			return;

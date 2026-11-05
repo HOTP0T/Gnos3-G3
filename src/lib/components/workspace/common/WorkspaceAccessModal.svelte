@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { user } from '$lib/stores';
+	import { user, isAdmin } from '$lib/stores';
 	import { getModelById, updateModelAccessGrants } from '$lib/apis/models';
 	import { getKnowledgeById, updateKnowledgeAccessGrants } from '$lib/apis/knowledge';
 	import { getPromptById, updatePromptAccessGrants } from '$lib/apis/prompts';
@@ -86,9 +86,9 @@
 	bind:accessGrants
 	disabled={saving}
 	accessRoles={resourceType === 'models' && !resource?.base_model_id ? ['read'] : ['read', 'write']}
-	share={$user?.permissions?.sharing?.[resourceType] || $user?.role === 'admin'}
-	sharePublic={$user?.permissions?.sharing?.[`public_${resourceType}`] || $user?.role === 'admin'}
-	shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) || $user?.role === 'admin'}
-	allowGroups={($user?.permissions?.access_grants?.allow_groups ?? true) || $user?.role === 'admin'}
+	share={$user?.permissions?.sharing?.[resourceType] || $isAdmin}
+	sharePublic={$user?.permissions?.sharing?.[`public_${resourceType}`] || $isAdmin}
+	shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) || $isAdmin}
+	allowGroups={($user?.permissions?.access_grants?.allow_groups ?? true) || $isAdmin}
 	onChange={save}
 />

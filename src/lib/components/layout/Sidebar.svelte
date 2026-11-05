@@ -26,7 +26,8 @@
 		visibleControls,
 		selectedFolder,
 		WEBUI_NAME,
-		sidebarWidth
+		sidebarWidth,
+		isAdmin
 	} from '$lib/stores';
 	import {
 		allLoaded,
@@ -46,7 +47,7 @@
 	// Preserve the former app sidebar label for i18n extraction.
 	// t('App navigation')
 
-	$: canImportChats = $user?.role === 'admin' || ($user?.permissions?.chat?.import ?? true);
+	$: canImportChats = $isAdmin || ($user?.permissions?.chat?.import ?? true);
 
 	// Module-name → landing page for the sidebar "Data" entry
 	const DATA_TAB_HREF: Record<string, string> = {
@@ -215,7 +216,7 @@
 	};
 	let showDeleteSelectedConfirm = false;
 	let deleteSelectedIds: string[] = [];
-	$: canDeleteChats = $user?.role === 'admin' || ($user?.permissions?.chat?.delete ?? true);
+	$: canDeleteChats = $isAdmin || ($user?.permissions?.chat?.delete ?? true);
 	setContext('sidebar-chat-selection', chatSelection);
 
 	const applySelectedChatAction = async (action: 'archive' | 'delete', ids: string[]) => {
@@ -570,7 +571,7 @@
 		// Only fetch channels if the feature is enabled and user has permission
 		if (
 			$config?.features?.enable_channels &&
-			($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))
+			($isAdmin || ($user?.permissions?.features?.channels ?? true))
 		) {
 			await initChannels();
 		}
@@ -1762,7 +1763,7 @@
 						</SidebarSection>
 					{/if}
 
-					{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true)) && $pinnedNotes.length > 0}
+					{#if ($config?.features?.enable_notes ?? false) && ($isAdmin || ($user?.permissions?.features?.notes ?? true)) && $pinnedNotes.length > 0}
 						<SidebarSection
 							id="sidebar-pinned-notes"
 							bind:open={showPinnedNotes}
@@ -1780,13 +1781,13 @@
 						</SidebarSection>
 					{/if}
 
-					{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
+					{#if $config?.features?.enable_channels && ($isAdmin || ($user?.permissions?.features?.channels ?? true))}
 						<SidebarSection
 							id="sidebar-channels"
 							bind:open={showChannels}
 							name={$i18n.t('Channels')}
 							dragAndDrop={false}
-							onAdd={$user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)
+							onAdd={$isAdmin || ($user?.permissions?.features?.channels ?? true)
 								? async () => {
 										await tick();
 
@@ -1813,7 +1814,7 @@
 						</SidebarSection>
 					{/if}
 
-					{#if $config?.features?.enable_folders && ($user?.role === 'admin' || ($user?.permissions?.features?.folders ?? true))}
+					{#if $config?.features?.enable_folders && ($isAdmin || ($user?.permissions?.features?.folders ?? true))}
 						<SidebarSection
 							id="sidebar-folders"
 							bind:open={showFolders}

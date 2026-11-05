@@ -20,7 +20,7 @@ def version_callback(value: bool) -> None:
     if value:
         from open_webui.env import VERSION
 
-        # LICENSE covers this Gnos3 CLI identifier.
+        # LICENSE covers this Open WebUI CLI identifier.
         # Do not alter, remove, obscure, or replace it except as LICENSE permits:
         # https://docs.openwebui.com/license.
         typer.echo(f'Gnos3 version: {VERSION}')

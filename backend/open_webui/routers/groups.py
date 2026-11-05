@@ -29,7 +29,7 @@ from open_webui.models.knowledge import Knowledges
 from open_webui.models.models import Models
 from open_webui.models.tools import Tools
 from open_webui.models.users import UserInfoResponse, Users, User
-from open_webui.utils.auth import get_admin_or_above_user, get_verified_user
+from open_webui.utils.auth import get_admin_or_above_user, get_admin_user, get_verified_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from pydantic import BaseModel
