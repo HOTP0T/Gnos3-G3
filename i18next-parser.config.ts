@@ -1,10 +1,5 @@
 // i18next-parser.config.ts
-import { getLanguages } from './src/lib/i18n/index.ts';
-
-const getLangCodes = async () => {
-	const languages = await getLanguages();
-	return languages.map((l) => l.code);
-};
+import languages from './src/lib/i18n/locales/languages.json';
 
 export default {
 	contextSeparator: '_',
@@ -22,13 +17,13 @@ export default {
 		default: ['JavascriptLexer']
 	},
 	lineEnding: 'auto',
-	locales: await getLangCodes(),
+	locales: languages.map(({ code }) => code),
 	namespaceSeparator: false,
 	output: 'src/lib/i18n/locales/$LOCALE/$NAMESPACE.json',
 	pluralSeparator: '_',
 	// Gnos3's own screens keep their strings in gnos3.json (npm run i18n:gnos3).
 	input: [
-		'src/**/*.{js,svelte}',
+		'src/**/*.{js,ts,svelte}',
 		'!src/lib/components/{accounting,invoices,business-cards,data-nav,gnos3-ui,ui,office,finances,anonymiser,notes-vault}/**',
 		'!src/routes/(app)/{accounting,invoices,business-cards,office,finances,anonymiser}/**'
 	],

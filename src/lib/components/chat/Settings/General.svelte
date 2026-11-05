@@ -1,16 +1,23 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
+	import {
+		canEditSystemPrompt as allowSystemPrompt,
+		canEditParameters
+	} from '$lib/utils/settings-access';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
 	import { getLanguages, changeLanguage } from '$lib/i18n';
 	const dispatch = createEventDispatcher();
 
 	import { config, models, settings, theme, user, isAdmin} from '$lib/stores';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	import AdvancedParams from './Advanced/AdvancedParams.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import UserSettingField from './UserSettingField.svelte';
+	import UserSettingRow from './UserSettingRow.svelte';
+	import UserSettingSection from './UserSettingSection.svelte';
+	import SettingsSelect from '$lib/components/common/SettingsSelect.svelte';
 	export let saveSettings: Function;
 	export let getModels: Function;
 
@@ -20,7 +27,6 @@
 
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
 	let lang = $i18n.language;
-	let notificationEnabled = false;
 	let system = '';
 
 	let showAdvanced = false;
@@ -40,26 +46,18 @@
 	const selectContentClass =
 		'z-10000 max-h-[min(20rem,var(--bits-select-content-available-height))]';
 
-	const toggleNotification = async () => {
-		const permission = await Notification.requestPermission();
-
-		if (permission === 'granted') {
-			notificationEnabled = !notificationEnabled;
-			saveSettings({ notificationEnabled: notificationEnabled });
-		} else {
-			toast.error(
-				$i18n.t(
-					'Response notifications cannot be activated as the website permissions have been denied. Please visit your browser settings to grant the necessary access.'
-				)
-			);
-		}
-	};
+	const systemPromptTextareaClass =
+		'w-full resize-y rounded-lg border border-gray-100/50 bg-gray-50/40 px-2 py-1.5 text-xs text-gray-700 outline-hidden transition-colors placeholder:text-gray-300 focus:border-blue-400 dark:border-white/[0.04] dark:bg-white/[0.03] dark:text-gray-300 dark:placeholder:text-gray-700 dark:focus:border-blue-500';
+	const actionButtonClass =
+		'text-xs text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-500 dark:hover:text-white';
 
 	let params = {
 		// Advanced
 		stream_response: null,
 		stream_delta_chunk_size: null,
+		compact_token_threshold: null,
 		function_calling: null,
+		reasoning_tags: null,
 		seed: null,
 		temperature: null,
 		reasoning_effort: null,
@@ -80,25 +78,41 @@
 		num_batch: null,
 		num_keep: null,
 		max_tokens: null,
-		num_gpu: null
+		use_mmap: null,
+		use_mlock: null,
+		num_thread: null,
+		num_gpu: null,
+		think: null,
+		format: null,
+		keep_alive: null
 	};
 
+	$: canEditSystemPrompt = allowSystemPrompt({ user: $user, config: $config });
+	$: canEditParams = canEditParameters({ user: $user, config: $config });
+
 	const saveHandler = async () => {
-		saveSettings({
-			system: system !== '' ? system : undefined,
-			params: {
+		const updated: Record<string, any> = {};
+		if (canEditSystemPrompt) {
+			updated.system = system !== '' ? system : null;
+		}
+		if (canEditParams) {
+			updated.params = {
+				...$settings.params,
 				stream_response: params.stream_response !== null ? params.stream_response : undefined,
 				stream_delta_chunk_size:
 					params.stream_delta_chunk_size !== null ? params.stream_delta_chunk_size : undefined,
+				compact_token_threshold:
+					params.compact_token_threshold !== null ? params.compact_token_threshold : undefined,
 				function_calling: params.function_calling !== null ? params.function_calling : undefined,
+				reasoning_tags: params.reasoning_tags !== null ? params.reasoning_tags : undefined,
 				seed: (params.seed !== null ? params.seed : undefined) ?? undefined,
 				stop: params.stop ? params.stop.split(',').filter((e) => e) : undefined,
 				temperature: params.temperature !== null ? params.temperature : undefined,
 				reasoning_effort: params.reasoning_effort !== null ? params.reasoning_effort : undefined,
 				logit_bias: params.logit_bias !== null ? params.logit_bias : undefined,
 				frequency_penalty: params.frequency_penalty !== null ? params.frequency_penalty : undefined,
-				presence_penalty: params.frequency_penalty !== null ? params.frequency_penalty : undefined,
-				repeat_penalty: params.frequency_penalty !== null ? params.frequency_penalty : undefined,
+				presence_penalty: params.presence_penalty !== null ? params.presence_penalty : undefined,
+				repeat_penalty: params.repeat_penalty !== null ? params.repeat_penalty : undefined,
 				repeat_last_n: params.repeat_last_n !== null ? params.repeat_last_n : undefined,
 				mirostat: params.mirostat !== null ? params.mirostat : undefined,
 				mirostat_eta: params.mirostat_eta !== null ? params.mirostat_eta : undefined,
@@ -117,10 +131,19 @@
 				num_gpu: params.num_gpu !== null ? params.num_gpu : undefined,
 				think: params.think !== null ? params.think : undefined,
 				keep_alive: params.keep_alive !== null ? params.keep_alive : undefined,
-				format: params.format !== null ? params.format : undefined
-			}
-		});
-		dispatch('save');
+				format: params.format !== null ? params.format : undefined,
+				custom_params:
+					params.custom_params && Object.keys(params.custom_params).length > 0
+						? params.custom_params
+						: undefined
+			};
+		}
+		try {
+			await saveSettings(updated);
+			dispatch('save');
+		} catch {
+			// The settings modal displays the save error; do not report success.
+		}
 	};
 
 	onMount(async () => {
@@ -128,7 +151,6 @@
 
 		languages = await getLanguages();
 
-		notificationEnabled = $settings.notificationEnabled ?? false;
 		system = $settings.system ?? '';
 
 		params = { ...params, ...$settings.params };
@@ -183,116 +205,107 @@
 </script>
 
 <div class="flex flex-col h-full justify-between text-sm" id="tab-general">
-	<div class="  overflow-y-scroll max-h-[28rem] md:max-h-full">
-		<div class="">
-			<div class=" mb-1 text-sm font-medium">{$i18n.t('WebUI Settings')}</div>
+	<h2 class="text-sm font-medium text-gray-900 dark:text-white mb-4">
+		{$i18n.t('settings.personal.general.title')}
+	</h2>
 
-			<div class="flex w-full justify-between">
-				<div class=" self-center text-xs font-medium">{$i18n.t('Theme')}</div>
-				<div class="flex items-center relative">
-					<Select.Root
-						type="single"
-						bind:value={selectedTheme}
-						onValueChange={(value) => themeChangeHandler(value)}
+	<div class="flex-1 min-h-0 overflow-y-auto scrollbar-hover pr-1.5">
+		<UserSettingSection
+			title={$i18n.t('settings.personal.general.sections.webuiSettings.title')}
+			first
+		>
+			<UserSettingRow
+				label={$i18n.t('settings.personal.general.theme.label')}
+				description={$i18n.t('settings.personal.general.theme.description')}
+			>
+				<Select.Root
+					type="single"
+					bind:value={selectedTheme}
+					onValueChange={(value) => themeChangeHandler(value)}
+				>
+					<Select.Trigger
+						class={selectTriggerClass}
+						aria-label={$i18n.t('settings.personal.general.theme.label')}
 					>
-						<Select.Trigger class={selectTriggerClass} aria-label={$i18n.t('Theme')}>
-							{themeLabels[selectedTheme] ?? themeLabels.system}
-						</Select.Trigger>
-						<Select.Content class={selectContentClass} align="end">
-							{#each Object.entries(themeLabels) as [value, label]}
-								<Select.Item {value} {label} class="text-xs" />
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
+						{themeLabels[selectedTheme] ?? themeLabels.system}
+					</Select.Trigger>
+					<Select.Content class={selectContentClass} align="end">
+						{#each Object.entries(themeLabels) as [value, label]}
+							<Select.Item {value} {label} class="text-xs" />
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</UserSettingRow>
 
-			<div class=" flex w-full justify-between">
-				<div class=" self-center text-xs font-medium">{$i18n.t('Language')}</div>
-				<div class="flex items-center relative">
-					<Select.Root
-						type="single"
-						bind:value={lang}
-						onValueChange={(value) => changeLanguage(value)}
+			<UserSettingRow
+				label={$i18n.t('settings.personal.general.language.label')}
+				description={$i18n.t('settings.personal.general.language.description')}
+			>
+				<Select.Root
+					type="single"
+					bind:value={lang}
+					onValueChange={(value) => changeLanguage(value)}
+				>
+					<Select.Trigger
+						class={selectTriggerClass}
+						aria-label={$i18n.t('settings.personal.general.language.label')}
 					>
-						<Select.Trigger class={selectTriggerClass} aria-label={$i18n.t('Language')}>
-							{languages.find((language) => language.code === lang)?.title ?? lang}
-						</Select.Trigger>
-						<Select.Content class={selectContentClass} align="end">
-							{#each languages as language}
-								<Select.Item value={language.code} label={language.title} class="text-xs" />
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
+						{languages.find((language) => language.code === lang)?.title ?? lang}
+					</Select.Trigger>
+					<Select.Content class={selectContentClass} align="end">
+						{#each languages as language}
+							<Select.Item value={language.code} label={language.title} class="text-xs" />
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</UserSettingRow>
+		</UserSettingSection>
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div class=" self-center text-xs font-medium">{$i18n.t('Notifications')}</div>
-
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							toggleNotification();
-						}}
-						type="button"
-						role="switch"
-						aria-checked={notificationEnabled}
-					>
-						{#if notificationEnabled === true}
-							<span class="ml-2 self-center">{$i18n.t('On')}</span>
-						{:else}
-							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-						{/if}
-					</button>
-				</div>
-			</div>
-		</div>
-
-		{#if $isAdmin || (($user?.permissions.chat?.controls ?? true) && ($user?.permissions.chat?.system_prompt ?? true))}
-			<hr class="border-gray-100/30 dark:border-gray-850/30 my-3" />
-
-			<div>
-				<div class=" my-2.5 text-sm font-medium">{$i18n.t('System Prompt')}</div>
-				<Textarea
-					bind:value={system}
-					className={'w-full text-sm outline-hidden resize-vertical' +
-						($settings.highContrastMode
-							? ' p-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-transparent text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 overflow-y-hidden'
-							: '  dark:text-gray-300 ')}
-					rows="4"
-					placeholder={$i18n.t('Enter system prompt here')}
-				/>
-			</div>
+		{#if canEditSystemPrompt}
+			<UserSettingSection title={$i18n.t('settings.personal.general.sections.systemPrompt.title')}>
+				<UserSettingField
+					description={$i18n.t('settings.personal.general.sections.systemPrompt.description')}
+				>
+					<Textarea
+						bind:value={system}
+						className={systemPromptTextareaClass}
+						rows="4"
+						placeholder={$i18n.t('Enter system prompt here')}
+					/>
+				</UserSettingField>
+			</UserSettingSection>
 		{/if}
 
-		{#if $isAdmin || (($user?.permissions.chat?.controls ?? true) && ($user?.permissions.chat?.params ?? true))}
-			<div class="mt-2 space-y-3 pr-1.5">
-				<div class="flex justify-between items-center text-sm">
-					<div class="  font-medium">{$i18n.t('Advanced Parameters')}</div>
+		{#if canEditParams}
+			<UserSettingSection
+				title={$i18n.t('settings.personal.general.sections.advancedParameters.title')}
+			>
+				<UserSettingRow
+					let:labelId
+					description={$i18n.t('settings.personal.general.modelParameters.description')}
+				>
+					<span slot="label">{$i18n.t('settings.personal.general.modelParameters.label')}</span>
 					<button
-						class=" text-xs font-medium {($settings?.highContrastMode ?? false)
-							? 'text-gray-800 dark:text-gray-100'
-							: 'text-gray-400 dark:text-gray-500'}"
+						id={`${labelId}-control`}
+						class={actionButtonClass}
 						type="button"
 						aria-expanded={showAdvanced}
 						on:click={() => {
 							showAdvanced = !showAdvanced;
 						}}>{showAdvanced ? $i18n.t('Hide') : $i18n.t('Show')}</button
 					>
-				</div>
+				</UserSettingRow>
 
 				{#if showAdvanced}
-					<AdvancedParams admin={$isAdmin} bind:params />
+					<AdvancedParams admin={$isAdmin} custom={true} bind:params />
 				{/if}
-			</div>
+			</UserSettingSection>
 		{/if}
 	</div>
 
-	<div class="flex justify-end pt-3 text-sm font-medium">
+	<div class="shrink-0 flex justify-end pt-3 text-sm font-normal">
 		<button
-			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+			class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-2.5 text-xs font-normal text-white transition hover:bg-black disabled:opacity-60 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
 			on:click={() => {
 				saveHandler();
 			}}

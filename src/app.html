@@ -2,6 +2,10 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<!-- LICENSE covers this Open WebUI branding surface, including name, logo,
+		visual, textual, symbolic identifiers, metadata, and surrounding UI.
+		Do not alter, remove, obscure, or replace it except as LICENSE permits:
+		https://docs.openwebui.com/license. -->
 		<link rel="icon" type="image/png" href="/static/favicon.png" crossorigin="use-credentials" />
 		<link
 			rel="icon"
@@ -52,6 +56,13 @@
 		<script>
 			// On page load or when changing themes, best to add inline in `head` to avoid FOUC
 			(() => {
+				document.documentElement.classList.toggle(
+					'native-scrollbars',
+					/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+						// iPadOS can report a desktop Mac user agent.
+						(/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+				);
+
 				const metaThemeColorTag = document.querySelector('meta[name="theme-color"]');
 				const prefersDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -78,6 +89,9 @@
 					metaThemeColorTag.setAttribute('content', '#0a1019');
 				}
 
+				// LICENSE covers these Open WebUI splash logo assets.
+				// Do not alter, remove, obscure, or replace them except as LICENSE permits:
+				// https://docs.openwebui.com/license.
 				const preloadHref = document.documentElement.classList.contains('dark')
 					? '/static/splash-dark.png'
 					: '/static/splash.png';
@@ -110,7 +124,11 @@
 					'position: absolute; width: auto; height: 8rem; top: 50%; left: 50%; transform: translate(-50%, -50%); display:block;';
 				logo.loading = 'eager';
 				logo.fetchPriority = 'high';
+				// LICENSE covers this Open WebUI splash logo.
+				// Do not alter, remove, obscure, or replace it except as LICENSE permits:
+				// https://docs.openwebui.com/license.
 				logo.src = isDarkMode ? '/static/splash-dark.png' : '/static/splash.png';
+				logo.alt = '';
 
 				document.addEventListener('DOMContentLoaded', function () {
 					const splash = document.getElementById('splash-screen');

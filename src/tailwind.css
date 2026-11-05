@@ -4,6 +4,17 @@
 @config '../tailwind.config.js';
 
 @theme {
+	--animate-cursor-pulse: cursor-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+	@keyframes cursor-pulse {
+		50% {
+			opacity: 0.25;
+		}
+	}
+
+	--font-primary: var(--font-sans);
+	--font-secondary: var(--font-sans);
+
 	/* Gnos3 brand palette (Gnos3-Kit/Gnos3-Brand-Kit/README.md, brand-tokens.css).
 	   Grays are the brand kit's UI neutrals, a slight navy tint; each step keeps the
 	   lightness of the neutral gray it replaces, so contrast across the app is unchanged.
@@ -44,7 +55,7 @@
 	   Faces in app.css, files and licences in static/assets/fonts/NOTICES.md.
 	   --font-cjk (below) picks the Chinese / Japanese / Korean font for the UI language. */
 	--font-sans:
-		'Geist', 'Vazirmatn', var(--font-cjk), ui-sans-serif, system-ui, 'Segoe UI', Roboto,
+		var(--app-font-family, 'Geist'), 'Vazirmatn', var(--font-cjk), ui-sans-serif, system-ui, 'Segoe UI', Roboto,
 		'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
 		'Noto Color Emoji';
 	--font-mono:
@@ -265,7 +276,10 @@
 }
 
 @layer base {
-	html,
+	html {
+		font-family: var(--font-sans);
+	}
+
 	pre {
 		font-family: var(--font-sans);
 	}
@@ -313,6 +327,13 @@
 
 	input[type='checkbox']:checked:after {
 		opacity: 1;
+	}
+}
+
+@layer utilities {
+	.font-primary,
+	.font-secondary {
+		font-family: var(--font-sans);
 	}
 }
 

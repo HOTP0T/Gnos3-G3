@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { onMount, tick, getContext } from 'svelte';
-	import { openDB, deleteDB } from 'idb';
-	import fileSaver from 'file-saver';
-	const { saveAs } = fileSaver;
 
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { getModels, getToolServersData } from '$lib/apis';
+	import { getBackendConfig, getModels, getToolServersData } from '$lib/apis';
 	import { getTools } from '$lib/apis/tools';
+	import { getSkills } from '$lib/apis/skills';
+	import { getSessionUser } from '$lib/apis/auths';
 	import { getBanners } from '$lib/apis/configs';
 	import { getTerminalServers } from '$lib/apis/terminal';
 	import { getUserSettings } from '$lib/apis/users';
+	import { setAppFontFamily, setTextScale } from '$lib/utils/text-scale';
 
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 
@@ -22,11 +22,12 @@
 		models,
 		knowledge,
 		tools,
+		skills,
+		socket,
 		functions,
 		tags,
 		banners,
 		showSettings,
-		showShortcuts,
 		showChangelog,
 		temporaryChatEnabled,
 		toolServers,
@@ -34,9 +35,11 @@
 		selectedTerminalId,
 		showSearch,
 		showSidebar,
-		showControls,
+		showTabs,
 		mobile,
-		isAdmin} from '$lib/stores';
+		chatId,
+		chats
+	} from '$lib/stores';
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
@@ -44,14 +47,14 @@
 	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import { Shortcut, shortcuts } from '$lib/shortcuts';
-	import { escapeTakenByLayer } from '$lib/utils/escapeLayers';
+	import { loadKeybindings, matchKeybinding, Shortcut } from '$lib/shortcuts';
+	import { canUseTemporaryChats } from '$lib/utils/settings-access';
 
 	const i18n = getContext('i18n');
 
 	let loaded = false;
-	let DB = null;
-	let localDBChats = [];
+
+	let handledSettingsUrl = '';
 
 	const clearChatInputStorage = () => {
 		const chatInputKeys = Object.keys(localStorage).filter((key) => key.startsWith('chat-input'));
@@ -62,44 +65,16 @@
 		}
 	};
 
-	const checkLocalDBChats = async () => {
-		try {
-			// Check if IndexedDB exists
-			DB = await openDB('Chats', 1);
-
-			if (!DB) {
-				return;
-			}
-
-			const chats = await DB.getAllFromIndex('chats', 'timestamp');
-			localDBChats = chats.map((item, idx) => chats[chats.length - 1 - idx]);
-
-			if (localDBChats.length === 0) {
-				await deleteDB('Chats');
-			}
-		} catch (error) {
-			// IndexedDB Not Found
-		}
-	};
-
-	const setUserSettings = async (cb: () => Promise<void>) => {
-		let userSettings = await getUserSettings(localStorage.token).catch((error) => {
-			console.error(error);
-			return null;
-		});
-
-		if (!userSettings) {
-			try {
-				userSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
-			} catch (e: unknown) {
-				console.error('Failed to parse settings from localStorage', e);
-				userSettings = {};
-			}
-		}
+	const setUserSettings = async (cb?: () => Promise<void>) => {
+		const userSettings = await getUserSettings(localStorage.token);
 
 		if (userSettings?.ui) {
 			settings.set(userSettings.ui);
 		}
+		loadKeybindings(userSettings?.keybindings);
+
+		setTextScale($settings?.textScale ?? 1);
+		setAppFontFamily($settings?.fontFamily ?? null);
 
 		if (cb) {
 			await cb();
@@ -116,7 +91,14 @@
 	};
 
 	const setToolServers = async () => {
-		let toolServersData = await getToolServersData($settings?.toolServers ?? []);
+		if (!$config?.features?.enable_tool_servers) {
+			toolServers.set([]);
+			terminalServers.set([]);
+			return;
+		}
+		let toolServersData = await getToolServersData(
+			$config?.features?.enable_direct_integrations ? ($settings?.toolServers ?? []) : []
+		);
 		toolServersData = toolServersData.filter((data) => {
 			if (!data || data.error) {
 				toast.error(
@@ -131,51 +113,54 @@
 		toolServers.set(toolServersData);
 
 		// Inject enabled terminal servers as always-on tool servers
-		const enabledTerminals = ($settings?.terminalServers ?? []).filter((s) => s.enabled);
-		if (enabledTerminals.length > 0) {
-			let terminalServersData = await getToolServersData(
-				enabledTerminals.map((t) => ({
-					url: t.url,
-					auth_type: t.auth_type ?? 'bearer',
-					key: t.key ?? '',
-					path: t.path ?? '/openapi.json',
-					config: { enable: true }
-				}))
-			);
-			terminalServersData = terminalServersData
-				.filter((data) => {
-					if (!data || data.error) {
-						toast.error(
-							$i18n.t(`Failed to connect to {{URL}} terminal server`, {
-								URL: data?.url
-							})
-						);
-						return false;
-					}
-					return true;
-				})
-				.map((data, i) => ({
-					...data,
-					key: enabledTerminals[i]?.key ?? ''
-				}));
-
-			terminalServers.set(terminalServersData);
-		} else {
-			terminalServers.set([]);
-		}
+		const enabledTerminals = (
+			$config?.features?.enable_direct_integrations
+				? (($settings as any)?.terminalServers ?? [])
+				: []
+		).filter((s: any) => s.enabled || s.url === $selectedTerminalId);
 
 		// Fetch terminal servers the user has access to (for FileNav + terminal_id)
 		const systemTerminals = await getTerminalServers(localStorage.token);
-		if (systemTerminals.length > 0) {
+		terminalServers.set([
+			...(enabledTerminals.length > 0
+				? (
+						await getToolServersData(
+							enabledTerminals.map((t: any) => ({
+								url: t.url,
+								auth_type: t.auth_type ?? 'bearer',
+								key: t.key ?? '',
+								path: t.path ?? '/openapi.json',
+								config: { enable: true }
+							}))
+						)
+					)
+						.filter((data) => {
+							if (!data || data.error) {
+								toast.error(
+									$i18n.t(`Failed to connect to {{URL}} terminal server`, {
+										URL: data?.url
+									})
+								);
+								return false;
+							}
+							return true;
+						})
+						.map((data, i) => ({
+							...data,
+							key: enabledTerminals[i]?.key ?? '',
+							config: enabledTerminals[i]?.config ?? data?.config ?? {}
+						}))
+				: []),
 			// Store with proxy URL and session key for FileNav file browsing
-			const terminalEntries = systemTerminals.map((t) => ({
+			...systemTerminals.map((t) => ({
 				id: t.id,
 				url: `${WEBUI_API_BASE_URL}/terminals/${t.id}`,
 				name: t.name,
-				key: localStorage.token
-			}));
-			terminalServers.update((existing) => [...existing, ...terminalEntries]);
-		}
+				key: localStorage.token,
+				contexts: t.contexts ?? {},
+				config: t.config ?? {}
+			}))
+		]);
 	};
 
 	const setBanners = async () => {
@@ -188,9 +173,83 @@
 		tools.set(toolsData);
 	};
 
+	const refreshAccess = async () => {
+		if (!localStorage.token) return;
+		try {
+			user.set(await getSessionUser(localStorage.token));
+			const results = await Promise.allSettled([
+				getBackendConfig().then((value) => config.set(value)),
+				setModels(),
+				setTools(),
+				setToolServers(),
+				getSkills(localStorage.token).then((value) => skills.set(value))
+			]);
+			for (const result of results) {
+				if (result.status === 'rejected') console.error('Unable to refresh access', result.reason);
+			}
+		} catch (error) {
+			console.error('Unable to refresh permissions', error);
+		}
+	};
+
+	onMount(() => {
+		const socketInstance = $socket;
+		socketInstance?.on('access:updated', refreshAccess);
+		return () => {
+			socketInstance?.off('access:updated', refreshAccess);
+		};
+	});
+
+	const openSettingsFromUrl = async () => {
+		const requestedSettings = $page.url.searchParams.get('settings');
+		if (!requestedSettings) {
+			// Param handled and stripped; allow the same deep link to be
+			// handled again later in this session.
+			handledSettingsUrl = '';
+			return;
+		}
+
+		const urlKey = `${$page.url.pathname}${$page.url.search}${$page.url.hash}`;
+		if (handledSettingsUrl === urlKey) {
+			return;
+		}
+		handledSettingsUrl = urlKey;
+
+		showSettings.set(
+			requestedSettings.startsWith('admin:') && $user?.role !== 'admin'
+				? 'general'
+				: requestedSettings
+		);
+
+		const params = new URLSearchParams($page.url.searchParams);
+		params.delete('settings');
+		const query = params.toString();
+		await goto(`${$page.url.pathname}${query ? `?${query}` : ''}${$page.url.hash}`, {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		});
+	};
+
+	const gotoAuth = async () => {
+		const currentUrl = `${$page.url.pathname}${$page.url.search}`;
+		await goto(`/auth?redirect=${encodeURIComponent(currentUrl)}`);
+	};
+
+	const navigateChat = async (direction: -1 | 1) => {
+		if (!$chats?.length) return;
+
+		const currentIndex = $chats.findIndex((chat) => chat.id === $chatId);
+		const nextChat = currentIndex === -1 ? $chats[0] : $chats[currentIndex + direction];
+
+		if (nextChat) {
+			await goto(`/c/${nextChat.id}`);
+		}
+	};
+
 	onMount(async () => {
 		if ($user === undefined || $user === null) {
-			await goto('/auth');
+			await gotoAuth();
 			return;
 		}
 		if (!['user', 'admin', 'superadmin'].includes($user?.role)) {
@@ -198,98 +257,94 @@
 		}
 
 		clearChatInputStorage();
-		await Promise.all([
-			checkLocalDBChats(),
-			setBanners().catch((e) => console.error('Failed to load banners:', e)),
-			setTools().catch((e) => console.error('Failed to load tools:', e)),
-			setUserSettings(async () => {
-				await Promise.all([
-					setModels().catch((e) => console.error('Failed to load models:', e)),
-					setToolServers().catch((e) => console.error('Failed to load tool servers:', e))
-				]);
-			}).catch((e) => console.error('Failed to load user settings:', e))
-		]);
+		try {
+			await Promise.all([
+				setBanners().catch((e) => console.error('Failed to load banners:', e)),
+				setTools().catch((e) => console.error('Failed to load tools:', e)),
+				setUserSettings(async () => {
+					await setModels().catch((e) => console.error('Failed to load models:', e));
+				})
+			]);
+		} catch (e) {
+			console.error('Failed to load user settings:', e);
+			toast.error($i18n.t('Failed to load Interface settings'));
+			return;
+		}
 
-		// Helper function to check if the pressed keys match the shortcut definition
-		const isShortcutMatch = (event: KeyboardEvent, shortcut): boolean => {
-			const keys = shortcut?.keys || [];
+		selectedTerminalId.set(
+			$config?.features?.enable_tool_servers ? (localStorage.selectedTerminalId ?? null) : null
+		);
 
-			const normalized = keys.map((k) => k.toLowerCase());
-			const needCtrl = normalized.includes('ctrl') || normalized.includes('mod');
-			const needShift = normalized.includes('shift');
-			const needAlt = normalized.includes('alt');
-
-			const mainKeys = normalized.filter((k) => !['ctrl', 'shift', 'alt', 'mod'].includes(k));
-
-			// Get the main key pressed
-			const keyPressed = event.key.toLowerCase();
-
-			// Check modifiers
-			if (needShift && !event.shiftKey) return false;
-
-			if (needCtrl && !(event.ctrlKey || event.metaKey)) return false;
-			if (!needCtrl && (event.ctrlKey || event.metaKey)) return false;
-			if (needAlt && !event.altKey) return false;
-			if (!needAlt && event.altKey) return false;
-
-			if (mainKeys.length && !mainKeys.includes(keyPressed)) return false;
-
-			return true;
-		};
+		setToolServers().catch((e) => {
+			console.error('Failed to load tool servers:', e);
+			terminalServers.set([]);
+		});
 
 		const setupKeyboardShortcuts = () => {
 			document.addEventListener('keydown', async (event) => {
-				if (isShortcutMatch(event, shortcuts[Shortcut.SEARCH])) {
+				if ($settings?.keyboardShortcuts === false) {
+					return;
+				}
+
+				const shortcut = matchKeybinding(event);
+				if (shortcut === Shortcut.SEARCH) {
 					console.log('Shortcut triggered: SEARCH');
 					event.preventDefault();
 					showSearch.set(!$showSearch);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.NEW_CHAT])) {
+				} else if (shortcut === Shortcut.NEW_CHAT) {
 					console.log('Shortcut triggered: NEW_CHAT');
 					event.preventDefault();
 					document.getElementById('sidebar-new-chat-button')?.click();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.FOCUS_INPUT])) {
+				} else if (shortcut === Shortcut.FOCUS_INPUT) {
 					console.log('Shortcut triggered: FOCUS_INPUT');
 					event.preventDefault();
 					document.getElementById('chat-input')?.focus();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.COPY_LAST_CODE_BLOCK])) {
+				} else if (shortcut === Shortcut.COPY_LAST_CODE_BLOCK) {
 					console.log('Shortcut triggered: COPY_LAST_CODE_BLOCK');
 					event.preventDefault();
 					[...document.getElementsByClassName('copy-code-button')]?.at(-1)?.click();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.COPY_LAST_RESPONSE])) {
+				} else if (shortcut === Shortcut.COPY_LAST_RESPONSE) {
 					console.log('Shortcut triggered: COPY_LAST_RESPONSE');
 					event.preventDefault();
 					[...document.getElementsByClassName('copy-response-button')]?.at(-1)?.click();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.TOGGLE_SIDEBAR])) {
+				} else if (shortcut === Shortcut.TOGGLE_SIDEBAR) {
 					console.log('Shortcut triggered: TOGGLE_SIDEBAR');
 					event.preventDefault();
 					showSidebar.set(!$showSidebar);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.DELETE_CHAT])) {
+				} else if (shortcut === Shortcut.NAVIGATE_CHAT_UP) {
+					console.log('Shortcut triggered: NAVIGATE_CHAT_UP');
+					event.preventDefault();
+					await navigateChat(-1);
+				} else if (shortcut === Shortcut.NAVIGATE_CHAT_DOWN) {
+					console.log('Shortcut triggered: NAVIGATE_CHAT_DOWN');
+					event.preventDefault();
+					await navigateChat(1);
+				} else if (shortcut === Shortcut.TOGGLE_CONTROLS) {
+					console.log('Shortcut triggered: TOGGLE_CONTROLS');
+					event.preventDefault();
+					showTabs.set(!$showTabs);
+				} else if (shortcut === Shortcut.DELETE_CHAT) {
 					console.log('Shortcut triggered: DELETE_CHAT');
 					event.preventDefault();
 					document.getElementById('delete-chat-button')?.click();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.OPEN_SETTINGS])) {
+				} else if (shortcut === Shortcut.OPEN_SETTINGS) {
 					console.log('Shortcut triggered: OPEN_SETTINGS');
 					event.preventDefault();
 					showSettings.set(!$showSettings);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.SHOW_SHORTCUTS])) {
+				} else if (shortcut === Shortcut.SHOW_SHORTCUTS) {
 					console.log('Shortcut triggered: SHOW_SHORTCUTS');
 					event.preventDefault();
-					showShortcuts.set(!$showShortcuts);
-				} else if (
-					isShortcutMatch(event, shortcuts[Shortcut.CLOSE_MODAL]) &&
-					!escapeTakenByLayer(event)
-				) {
-					console.log('Shortcut triggered: CLOSE_MODAL');
-					event.preventDefault();
-					showSettings.set(false);
-					showShortcuts.set(false);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.OPEN_MODEL_SELECTOR])) {
+					showSettings.set('shortcuts');
+				} else if (shortcut === Shortcut.OPEN_MODEL_SELECTOR) {
 					console.log('Shortcut triggered: OPEN_MODEL_SELECTOR');
 					event.preventDefault();
-					document.getElementById('model-selector-0-button')?.click();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.NEW_TEMPORARY_CHAT])) {
+					document.getElementById('model-selector-model-button')?.click();
+				} else if (shortcut === Shortcut.NEW_TEMPORARY_CHAT) {
 					console.log('Shortcut triggered: NEW_TEMPORARY_CHAT');
 					event.preventDefault();
+					if (!canUseTemporaryChats({ user: $user, config: null })) {
+						return;
+					}
 					if (!$isAdmin && $user?.permissions?.chat?.temporary_enforced) {
 						temporaryChatEnabled.set(true);
 					} else {
@@ -299,12 +354,30 @@
 					setTimeout(() => {
 						document.getElementById('new-chat-button')?.click();
 					}, 0);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.GENERATE_MESSAGE_PAIR])) {
+				} else if (shortcut === Shortcut.GENERATE_MESSAGE_PAIR) {
 					console.log('Shortcut triggered: GENERATE_MESSAGE_PAIR');
 					event.preventDefault();
 					document.getElementById('generate-message-pair-button')?.click();
+				} else if (shortcut === Shortcut.ALLOW_TOOL_CALL) {
+					const button = [...document.getElementsByClassName('tool-call-allow-button')]
+						.reverse()
+						.find((el) => !(el as HTMLButtonElement).disabled) as HTMLButtonElement | undefined;
+					if (button) {
+						console.log('Shortcut triggered: ALLOW_TOOL_CALL');
+						event.preventDefault();
+						button.click();
+					}
+				} else if (shortcut === Shortcut.DENY_TOOL_CALL) {
+					const button = [...document.getElementsByClassName('tool-call-deny-button')]
+						.reverse()
+						.find((el) => !(el as HTMLButtonElement).disabled) as HTMLButtonElement | undefined;
+					if (button) {
+						console.log('Shortcut triggered: DENY_TOOL_CALL');
+						event.preventDefault();
+						button.click();
+					}
 				} else if (
-					isShortcutMatch(event, shortcuts[Shortcut.REGENERATE_RESPONSE]) &&
+					shortcut === Shortcut.REGENERATE_RESPONSE &&
 					document.activeElement?.id === 'chat-input'
 				) {
 					console.log('Shortcut triggered: REGENERATE_RESPONSE');
@@ -329,16 +402,16 @@
 			}
 		}
 
-		// Persist showControls: track open/close state separately from saved size
+		// Persist showTabs: track open/close state separately from saved size
 		// chatControlsSize always retains the last width for openPane()
-		await showControls.set(!$mobile ? localStorage.showControls === 'true' : false);
-		showControls.subscribe((value) => {
-			localStorage.showControls = value ? 'true' : 'false';
+		await showTabs.set(!$mobile ? localStorage.showTabs === 'true' : false);
+		showTabs.subscribe((value) => {
+			localStorage.showTabs = value ? 'true' : 'false';
 		});
 
 		// Persist selectedTerminalId across page loads
-		selectedTerminalId.set(localStorage.selectedTerminalId ?? null);
 		selectedTerminalId.subscribe((value) => {
+			if (!$config?.features?.enable_tool_servers) return;
 			if (value === null) {
 				delete localStorage.selectedTerminalId;
 			} else {
@@ -350,6 +423,17 @@
 
 		loaded = true;
 	});
+
+	// `$page.url` must be referenced here: `$:` only tracks variables used in
+	// the statement itself, and reads inside openSettingsFromUrl don't count —
+	// without it, client-side navigations to `?settings=...` are never handled.
+	$: if (loaded && $page.url) {
+		void openSettingsFromUrl();
+	}
+
+	$: if (loaded && ($user === undefined || $user === null)) {
+		void gotoAuth();
+	}
 
 </script>
 
@@ -365,65 +449,13 @@
 			{#if !['user', 'admin', 'superadmin'].includes($user?.role)}
 				<AccountPending />
 			{:else}
-				{#if localDBChats.length > 0}
-					<div class="fixed w-full h-full flex z-50">
-						<div
-							class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
-						>
-							<div class="m-auto pb-44 flex flex-col justify-center">
-								<div class="max-w-md">
-									<div class="text-center dark:text-white text-2xl font-medium z-50">
-										{$i18n.t('Important Update')}<br />
-										{$i18n.t('Action Required for Chat Log Storage')}
-									</div>
-
-									<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-										{$i18n.t(
-											"Saving chat logs directly to your browser's storage is no longer supported. Please take a moment to download and delete your chat logs by clicking the button below. Don't worry, you can easily re-import your chat logs to the backend through"
-										)}
-										<span class="font-medium dark:text-white"
-											>{$i18n.t('Settings')} > {$i18n.t('Chats')} > {$i18n.t('Import Chats')}</span
-										>. {$i18n.t(
-											'This ensures that your valuable conversations are securely saved to your backend database. Thank you!'
-										)}
-									</div>
-
-									<div class=" mt-6 mx-auto relative group w-fit">
-										<button
-											class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-											on:click={async () => {
-												let blob = new Blob([JSON.stringify(localDBChats)], {
-													type: 'application/json'
-												});
-												saveAs(blob, `chat-export-${Date.now()}.json`);
-
-												const tx = DB.transaction('chats', 'readwrite');
-												await Promise.all([tx.store.clear(), tx.done]);
-												await deleteDB('Chats');
-
-												localDBChats = [];
-											}}
-										>
-											{$i18n.t('Download & Delete')}
-										</button>
-
-										<button
-											class="text-xs text-center w-full mt-2 text-gray-400 underline"
-											on:click={async () => {
-												localDBChats = [];
-											}}>{$i18n.t('Close')}</button
-										>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				{/if}
-
 				<Sidebar />
 
 				{#if loaded}
-					<slot />
+					<main class="contents">
+						<div id="main-content" tabindex="-1" class="sr-only left-0 top-0"></div>
+						<slot />
+					</main>
 				{:else}
 					<div
 						class="w-full flex-1 h-full flex items-center justify-center {$showSidebar
@@ -457,22 +489,22 @@
 		overflow: auto;
 
 		/* make space  */
-		margin: 5px 0;
+		margin: 0.3125rem 0;
 		padding: 1.75rem 0 1.75rem 1rem;
-		border-radius: 10px;
+		border-radius: 0.625rem;
 	}
 
 	pre[class*='language-'] button {
 		position: absolute;
-		top: 5px;
-		right: 5px;
+		top: 0.3125rem;
+		right: 0.3125rem;
 
 		font-size: 0.9rem;
 		padding: 0.15rem;
 		background-color: #828282;
 
 		border: ridge 1px #7b7b7c;
-		border-radius: 5px;
+		border-radius: 0.3125rem;
 		text-shadow: #c4c4c4 0 0 2px;
 	}
 

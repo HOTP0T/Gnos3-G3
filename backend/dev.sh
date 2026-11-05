@@ -45,4 +45,4 @@ PORT="${PORT:-8080}"
 # when the backend downloads embedding/reranker models on first boot. Never
 # hardcode a real token in this file (it's committed to git).
 export HF_TOKEN="${HF_TOKEN:-}"
-uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}" --reload
+uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}" --ws-per-message-deflate "${UVICORN_WS_PER_MESSAGE_DEFLATE:-true}" --reload
