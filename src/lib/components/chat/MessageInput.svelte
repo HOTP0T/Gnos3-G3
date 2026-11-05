@@ -1582,7 +1582,8 @@
 															console.log('Escape');
 															atSelectedModel = undefined;
 															selectedToolIds = [];
-															selectedFilterIds = [];
+															// Gnos3: Escape never turns the Anonymise switch off without notice.
+															selectedFilterIds = selectedFilterIds.filter((id) => id === 'gnos3_anonymise');
 
 															webSearchEnabled = false;
 															imageGenerationEnabled = false;

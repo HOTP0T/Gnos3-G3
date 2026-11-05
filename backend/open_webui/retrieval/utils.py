@@ -1250,7 +1250,9 @@ async def get_sources_from_items(
 
         elif item.get('type') == 'collection':
             # Manual Full Mode Toggle for Collection
-            knowledge_base = await Knowledges.get_knowledge_by_id(item.get('id'))
+            # Gnos3: a Notes folder / tag attached in chat names its vault's base in knowledge_id
+            # (its own id stays unique so two folders of one vault can be attached together).
+            knowledge_base = await Knowledges.get_knowledge_by_id(item.get('knowledge_id') or item.get('id'))
 
             if knowledge_base and (
                 user.role in ('admin', 'superadmin')

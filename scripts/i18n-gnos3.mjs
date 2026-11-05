@@ -57,7 +57,9 @@ const GNOS3_DIRS = [
 	'src/routes/(app)/business-cards',
 	'src/routes/(app)/office',
 	'src/routes/(app)/finances',
-	'src/routes/(app)/anonymiser'
+	'src/routes/(app)/anonymiser',
+	'src/lib/components/notes-vault',
+	'src/routes/(app)/notes'
 ];
 const GNOS3_FILES = [
 	'src/lib/utils/taxTerms.ts',
@@ -73,8 +75,23 @@ const BACKEND_DIRS = ['../invoice-processor/app', '../business-card-processor/ap
 // Gnos3 backend routes we added: their fixed error details are shown through t().
 const GNOS3_BACKEND_FILES = [
 	'backend/open_webui/routers/office_knowledge.py',
-	'backend/open_webui/routers/data_connectors.py'
+	'backend/open_webui/routers/data_connectors.py',
+	'backend/open_webui/routers/note_vaults.py'
 ];
+// Built-in Notes types (services/note_vaults.py DEFAULT_TYPES): names, field labels and choices
+// are shown through t() while a vault keeps them unedited.
+const NOTE_TYPES_FILE = 'backend/open_webui/services/note_vaults.py';
+const scanNoteTypes = () => {
+	const p = path.join(ROOT, NOTE_TYPES_FILE);
+	if (!fs.existsSync(p)) return [];
+	const s = fs.readFileSync(p, 'utf8');
+	const start = s.indexOf('DEFAULT_TYPES');
+	const block = s.slice(start, s.indexOf('\n]\n', start));
+	const keys = [...block.matchAll(/'(?:name|label)':\s*'([^']+)'/g)].map((m) => m[1]);
+	for (const m of block.matchAll(/'options':\s*\[([^\]]*)\]/g))
+		for (const o of m[1].matchAll(/'([^']+)'/g)) keys.push(o[1]);
+	return keys;
+};
 const PY_DETAIL_RE =
 	/HTTPException\(\s*(?:status\.\w+|\d+)\s*,\s*(?:detail=)?(['"])((?:(?!\1)[^{}\\])+)\1|detail=(['"])((?:(?!\3)[^{}\\])+)\3/g;
 
@@ -235,6 +252,7 @@ export const collectKeys = () => {
 		if (!fs.existsSync(p)) continue;
 		for (const m of fs.readFileSync(p, 'utf8').matchAll(PY_DETAIL_RE)) screens.add(m[2] ?? m[4]);
 	}
+	for (const k of scanNoteTypes()) screens.add(k);
 	const clean = (k) => k.trim() !== '' && /\p{L}/u.test(k) && k.length < 600;
 	for (const k of DYNAMIC_CONTEXT_KEYS) all.add(k);
 	const ours = new Set([...all].filter((k) => !(k in upstream) && clean(k)));

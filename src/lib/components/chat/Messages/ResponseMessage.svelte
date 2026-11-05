@@ -44,6 +44,8 @@
 	import Skeleton from './Skeleton.svelte';
 	import Image from '$lib/components/common/Image.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	// Gnos3: save an answer as a note (Notes vault).
+	import SaveToNotes from '$lib/components/notes-vault/chat/SaveToNotes.svelte';
 	import RateComment from './RateComment.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import WebSearchResults from './ResponseMessage/WebSearchResults.svelte';
@@ -1008,6 +1010,16 @@
 										</svg>
 									</button>
 								</Tooltip>
+
+								{#if !readOnly}
+									<SaveToNotes
+										content={message.content}
+										{chatId}
+										buttonClass="{isLastMessage || ($settings?.highContrastMode ?? false)
+											? 'visible'
+											: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
+									/>
+								{/if}
 
 								{#if !readOnly && ($isAdmin || ($user?.permissions?.chat?.tts ?? true))}
 									<Tooltip content={$i18n.t('Read Aloud')} placement="bottom">

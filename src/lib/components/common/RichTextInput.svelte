@@ -106,6 +106,13 @@
 		}
 	});
 
+	// Gnos3: nodes that know their own Markdown (Notes [[links]], links to Gnos3 data) carry it in
+	// data-md, so the Markdown copy of a note keeps them (see components/notes-vault/editor).
+	turndownService.addRule('gnos3DataMd', {
+		filter: (node) => node.nodeType === 1 && (node as HTMLElement).hasAttribute('data-md'),
+		replacement: (_content, node: HTMLElement) => node.getAttribute('data-md') || ''
+	});
+
 	// Convert TipTap mention spans -> <@id>
 	turndownService.addRule('mentions', {
 		filter: (node) => node.nodeName === 'SPAN' && node.getAttribute('data-type') === 'mention',
@@ -221,6 +228,8 @@
 	export let image = false;
 	export let fileHandler = false;
 	export let suggestions = null;
+	// Gnos3: extra TipTap extensions (Notes vault: [[links]], #tags, Gnos3 data, slash menu).
+	export let extensions = [];
 
 	export let onFileDrop = (currentEditor, files, pos) => {
 		files.forEach((file) => {
@@ -861,7 +870,8 @@
 							})
 						]
 					: []),
-				...(collaboration && provider ? [provider.getEditorExtension()] : [])
+				...(collaboration && provider ? [provider.getEditorExtension()] : []),
+				...(extensions ?? [])
 			],
 			content: collaboration ? undefined : content,
 			autofocus: messageInput ? true : false,

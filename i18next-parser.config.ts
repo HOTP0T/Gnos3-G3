@@ -29,8 +29,8 @@ export default {
 	// Gnos3's own screens keep their strings in gnos3.json (npm run i18n:gnos3).
 	input: [
 		'src/**/*.{js,svelte}',
-		'!src/lib/components/{accounting,invoices,business-cards,data-nav,gnos3-ui,ui,office,finances}/**',
-		'!src/routes/(app)/{accounting,invoices,business-cards,office,finances}/**'
+		'!src/lib/components/{accounting,invoices,business-cards,data-nav,gnos3-ui,ui,office,finances,anonymiser,notes-vault}/**',
+		'!src/routes/(app)/{accounting,invoices,business-cards,office,finances,anonymiser}/**'
 	],
 	sort: true,
 	verbose: true,

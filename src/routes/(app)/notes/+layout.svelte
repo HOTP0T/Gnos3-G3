@@ -2,6 +2,9 @@
 	import { onMount, getContext } from 'svelte';
 	import { WEBUI_NAME, showSidebar, functions, config, user, showArchivedChats, isAdmin} from '$lib/stores';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	// Gnos3: the Notes vault (folders, [[links]], graph…) stays mounted while notes change.
+	import NotesApp from '$lib/components/notes-vault/NotesApp.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -29,5 +32,9 @@
 </svelte:head>
 
 {#if loaded}
+	<NotesApp
+		noteId={$page.params.id ?? null}
+		view={$page.route.id?.endsWith('/notes/graph') ? 'graph' : $page.params.id ? 'note' : 'home'}
+	/>
 	<slot />
 {/if}

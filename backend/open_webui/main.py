@@ -97,6 +97,7 @@ from open_webui.routers import (
     models,
     knowledge,
     office_knowledge,
+    note_vaults,
     prompts,
     evaluations,
     skills,
@@ -714,6 +715,11 @@ async def lifespan(app: FastAPI):
     from open_webui.services.data_connector_worker import data_connector_sync_worker
 
     asyncio.create_task(data_connector_sync_worker(app))
+
+    # Gnos3: keeps the knowledge bases of Notes vaults used in chat current.
+    from open_webui.services.note_vault_knowledge import note_vault_knowledge_worker
+
+    asyncio.create_task(note_vault_knowledge_worker(app))
 
     from open_webui.utils.automations import scheduler_worker_loop
 
@@ -1462,6 +1468,7 @@ app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
 app.include_router(channels.router, prefix='/api/v1/channels', tags=['channels'])
 app.include_router(chats.router, prefix='/api/v1/chats', tags=['chats'])
 app.include_router(notes.router, prefix='/api/v1/notes', tags=['notes'])
+app.include_router(note_vaults.router, prefix='/api/v1/note-vaults', tags=['notes'])
 
 
 app.include_router(models.router, prefix='/api/v1/models', tags=['models'])

@@ -9,6 +9,8 @@
 	import PageEdit from '$lib/components/icons/PageEdit.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
+	// Gnos3: attach a whole Notes vault, a folder or a tag.
+	import VaultAttach from '$lib/components/notes-vault/chat/VaultAttach.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -67,6 +69,7 @@
 </script>
 
 {#if loaded}
+	<VaultAttach {onSelect} />
 	{#if items.length === 0}
 		<div class="text-center text-xs text-gray-500 py-3">{$i18n.t('No notes found')}</div>
 	{:else}
