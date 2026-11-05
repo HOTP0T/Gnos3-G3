@@ -111,7 +111,7 @@ const gnos3Brand = {
 	type: 'postProcessor' as const,
 	name: 'gnos3Brand',
 	process: (value: string) =>
-		typeof value === 'string' ? value.replace(/Open ?WebUI/g, 'Gnos3') : value
+		typeof value === 'string' ? value.replace(/(?:Open ?)?\bWebUI\b/g, 'Gnos3') : value
 };
 
 export const initI18n = (defaultLocale?: string, value: I18nOverrides = {}) => {

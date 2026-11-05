@@ -725,7 +725,7 @@
 				<div class="grid gap-1.5">
 					<Label for="exp-edit-payment">{$i18n.t('Payment')}</Label>
 					<NativeSelect.Root id="exp-edit-payment" class="w-full" bind:value={form.payment_method}>
-						<NativeSelect.Option value="personal">{$i18n.t('Personal')}</NativeSelect.Option>
+						<NativeSelect.Option value="personal">{$i18n.t('Personal', { context: 'gnos3' })}</NativeSelect.Option>
 						<NativeSelect.Option value="company_card">{$i18n.t('Company card')}</NativeSelect.Option
 						>
 					</NativeSelect.Root>
