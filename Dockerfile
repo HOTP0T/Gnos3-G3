@@ -37,6 +37,13 @@ ARG GID
 
 WORKDIR /app
 
+# Optional Alpine mirror for build hosts that cannot reach dl-cdn.alpinelinux.org, e.g.
+#   --build-arg ALPINE_MIRROR=https://mirrors.ustc.edu.cn/alpine
+ARG ALPINE_MIRROR=
+RUN if [ -n "$ALPINE_MIRROR" ]; then \
+    sed -i "s|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|" /etc/apk/repositories; \
+    fi
+
 # to store git revision in build
 RUN apk add --no-cache git
 
@@ -80,6 +87,12 @@ RUN NODE_OPTIONS=--max-old-space-size=8192 npm run build && \
 RUN chown -R $UID:$GID /app/backend && \
     chgrp -R 0 /app/backend/open_webui/static && \
     chmod -R g=u /app/backend/open_webui/static
+
+######## Optional tiktoken encoding, empty by default ########
+# For build hosts that cannot reach OpenAI's blob store, which the backend stage
+# downloads it from: --build-context tiktoken-seed=<dir holding the cached file>.
+# tiktoken checks the file's hash when it loads it.
+FROM scratch AS tiktoken-seed
 
 ######## WebUI backend ########
 FROM python:3.12-slim-trixie AS base
@@ -162,6 +175,13 @@ RUN echo -n 00000000-0000-0000-0000-000000000000 > $HOME/.cache/chroma/telemetry
 # Make sure the user has access to the app and root directory
 RUN chown -R $UID:$GID /app $HOME
 
+# Optional Debian mirror for build hosts with a slow link to deb.debian.org, e.g.
+#   --build-arg DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+ARG DEBIAN_MIRROR=
+RUN if [ -n "$DEBIAN_MIRROR" ]; then \
+    sed -i "s|http://deb.debian.org/debian|$DEBIAN_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi
+
 # Slim cannot bundle a local model server or GPU runtime.
 RUN if [ "$USE_SLIM" = "true" ] && { [ "$USE_CUDA" = "true" ] || [ "$USE_OLLAMA" = "true" ]; }; then \
     echo "USE_SLIM cannot be combined with USE_CUDA or USE_OLLAMA" >&2; exit 1; fi
@@ -202,6 +222,8 @@ ARG TORCH_INDEX_URL=https://download.pytorch.org/whl
 ENV PIP_INDEX_URL=$PIP_INDEX_URL \
     UV_DEFAULT_INDEX=$PIP_INDEX_URL
 
+COPY --chown=$UID:$GID --from=tiktoken-seed . /app/backend/data/cache/tiktoken/
+
 # BuildKit cache mounts: a failed attempt keeps every wheel it already
 # fetched, so retries accumulate instead of restarting from zero. On a link
 # that stalls or truncates large downloads this is the difference between
@@ -235,6 +257,11 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     mkdir -p /app/backend/data; chown -R $UID:$GID /app/backend/data/; \
     if [ -d /app/backend/data/cache ]; then chmod -R a+rX /app/backend/data/cache; fi; \
     rm -rf /var/lib/apt/lists/*;
+
+# A mirror above was for this build only: a box installing a tool's requirements
+# at run time uses PyPI.
+ENV PIP_INDEX_URL=https://pypi.org/simple \
+    UV_DEFAULT_INDEX=https://pypi.org/simple
 
 # Optional: PPTX parsing through unstructured may need spaCy's English model.
 # Keep this out of the default image to avoid the extra image bloat; deployments

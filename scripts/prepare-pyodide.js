@@ -45,6 +45,7 @@ const pypiDepends = {
 
 import { loadPyodide } from 'pyodide';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
+import { createHash } from 'crypto';
 import { writeFile, readFile, copyFile, readdir, rmdir, access, mkdir, rm } from 'fs/promises';
 
 /**
@@ -220,7 +221,10 @@ async function downloadPyPIWheels() {
 				continue;
 			}
 			version = local.split('-')[1];
-			wheel = { filename: local, digests: {} };
+			const sha256 = createHash('sha256')
+				.update(await readFile(`static/pyodide/${local}`))
+				.digest('hex');
+			wheel = { filename: local, digests: { sha256 } };
 			console.log(`  Using local wheel: ${local}`);
 		}
 
