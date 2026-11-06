@@ -216,9 +216,17 @@ ENV PIP_DEFAULT_TIMEOUT=300 \
 # build. On a link where the international CDNs stall mid-download, point
 # these at a regional mirror instead of waiting out repeated timeouts, e.g.
 #   --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+# A mirror that keeps PyTorch's wheels in a flat folder is not an index, and
+# PyTorch's index is where pip also looks for torch's dependencies, so it takes
+# all three of these:
 #   --build-arg TORCH_INDEX_URL=https://mirrors.aliyun.com/pytorch-wheels
+#   --build-arg PIP_FIND_LINKS=https://mirrors.aliyun.com/pytorch-wheels/cpu/
+#   --build-arg PIP_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+# pip reads the last two from the environment; ARG keeps them out of the image.
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl
+ARG PIP_FIND_LINKS=
+ARG PIP_EXTRA_INDEX_URL=
 ENV PIP_INDEX_URL=$PIP_INDEX_URL \
     UV_DEFAULT_INDEX=$PIP_INDEX_URL
 
