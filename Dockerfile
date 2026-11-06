@@ -88,11 +88,13 @@ RUN chown -R $UID:$GID /app/backend && \
     chgrp -R 0 /app/backend/open_webui/static && \
     chmod -R g=u /app/backend/open_webui/static
 
-######## Optional tiktoken encoding, empty by default ########
-# For build hosts that cannot reach OpenAI's blob store, which the backend stage
-# downloads it from: --build-context tiktoken-seed=<dir holding the cached file>.
-# tiktoken checks the file's hash when it loads it.
-FROM scratch AS tiktoken-seed
+######## Optional model cache, empty by default ########
+# The backend stage downloads the tiktoken encoding and the embedding and whisper
+# models. For a build host that cannot reach them (OpenAI's blob store, Hugging
+# Face's CDN): --build-context model-cache-seed=<a copy of /app/backend/data/cache
+# from an earlier image>. tiktoken and Hugging Face name their files by hash, and
+# the download step still runs: anything not in the copy is fetched as usual.
+FROM scratch AS model-cache-seed
 
 ######## WebUI backend ########
 FROM python:3.12-slim-trixie AS base
@@ -230,7 +232,7 @@ ARG PIP_EXTRA_INDEX_URL=
 ENV PIP_INDEX_URL=$PIP_INDEX_URL \
     UV_DEFAULT_INDEX=$PIP_INDEX_URL
 
-COPY --chown=$UID:$GID --from=tiktoken-seed . /app/backend/data/cache/tiktoken/
+COPY --chown=$UID:$GID --from=model-cache-seed . /app/backend/data/cache/
 
 # BuildKit cache mounts: a failed attempt keeps every wheel it already
 # fetched, so retries accumulate instead of restarting from zero. On a link
