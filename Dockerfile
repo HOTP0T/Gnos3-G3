@@ -73,7 +73,7 @@ ENV npm_config_registry=$NPM_REGISTRY \
 # a single flaky host rather than the package registry.
 ENV CYPRESS_INSTALL_BINARY=0
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm ci --legacy-peer-deps
+    npm ci --force
 
 COPY . .
 ENV APP_BUILD_HASH=${BUILD_HASH}
